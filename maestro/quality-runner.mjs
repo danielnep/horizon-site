@@ -3,6 +3,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
+import {MaestroMemory} from './memory-store.mjs';
 const exec=promisify(execFile);
 export const PROJECTS=Object.freeze({
   'maestro':{repo:'danielnep/horizon-site',stages:[
@@ -37,7 +38,7 @@ export async function runCommand(spec,{cwd,invoke=exec}={}){
     transient:TRANSIENT.test(msg),log:redact(msg)};
  }
 }
-export async function runProject({project,root,invoke=exec,now=()=>new Date(),reportPath=null,log=console.log}={}){
+export async function runProject({project,root,invoke=exec,now=()=>new Date(),reportPath=null,memoryRoot=null,log=console.log}={}){
  if(!Object.hasOwn(PROJECTS,project))throw new Error('Projeto nao autorizado: '+String(project));
  if(!root||typeof root!=='string')throw new Error('Root obrigatorio');
  const workdir=resolve(root);
@@ -61,6 +62,13 @@ export async function runProject({project,root,invoke=exec,now=()=>new Date(),re
  if(reportPath){
   const file=resolve(reportPath);await mkdir(dirname(file),{recursive:true});await writeFile(file,JSON.stringify(report,null,2)+'\n',{mode:0o600});
  }
+ if(memoryRoot){
+   const store=new MaestroMemory(memoryRoot);
+   const safeRunId=String(process.env.GITHUB_RUN_ID||'local').replace(/[^a-z0-9._-]/ig,'').slice(0,32);
+   const safeAttempt=String(process.env.GITHUB_RUN_ATTEMPT||'1').replace(/[^a-z0-9._-]/ig,'').slice(0,12);
+   const id='qa-'+project+'-'+safeRunId+'-'+safeAttempt;
+   await store.append({id,repo:config.repo,kind:'test',summary:report.status+'; '+stages.map(s=>s.id+':'+(s.passed?'ok':'failed')).join(', ').slice(0,1500),evidence:'CI automated '+(process.env.GITHUB_SERVER_URL||'local')+'/'+(process.env.GITHUB_REPOSITORY||config.repo)+'/actions/runs/'+safeRunId,at:report.endedAt});
+ }
  return report;
 }
 export function summarize(report){
@@ -70,7 +78,7 @@ export function summarize(report){
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
  const args=Object.fromEntries(process.argv.slice(2).filter(x=>x.startsWith('--')&&x.includes('=')).map(x=>x.slice(2).split(/=(.*)/s).slice(0,2)));
- runProject({project:args.project,root:args.root,reportPath:args.out}).then(async report=>{
+ runProject({project:args.project,root:args.root,reportPath:args.out,memoryRoot:process.env.MAESTRO_MEMORY_ROOT||null}).then(async report=>{
   const s=summarize(report);
   console.log(s);
   if(process.env.GITHUB_STEP_SUMMARY)await writeFile(process.env.GITHUB_STEP_SUMMARY,s+'\n',{flag:'a'});
