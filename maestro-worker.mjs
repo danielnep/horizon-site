@@ -24,7 +24,7 @@ export async function review({apiKey=process.env.GEMINI_API_KEY,fetcher=fetch,mo
     method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:AbortSignal.timeout(45000),
     body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.2,responseMimeType:'application/json',maxOutputTokens:2048}})
   });
-  if(!response.ok) throw new Error('Gemini HTTP '+response.status);
+  if(!response.ok) { const body=await response.text(); let message=''; try { const error=JSON.parse(body).error; message=String(error?.status||'')+' '+String(error?.message||'').replace(/AIza[\\w-]{20,}/g,'[redacted]').slice(0,180); } catch {} throw new Error('Gemini HTTP '+response.status+' '+message.trim()); }
   const data=await response.json();
   const output=(data.candidates?.[0]?.content?.parts??[]).map(p=>p.text||'').join('');
   const analysis=JSON.parse(output);
