@@ -52,6 +52,8 @@ jobs:
             npm ci --ignore-scripts --no-audit --no-fund
           fi
       - name: QA autonomo por camadas
+        env:
+          MAESTRO_MEMORY_ROOT: evidence/memory
         run: |
           node controller/maestro/quality-runner.mjs \
             --project=${{ matrix.project }} \
