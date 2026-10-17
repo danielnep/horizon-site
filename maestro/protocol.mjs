@@ -1,4 +1,5 @@
 import {MAESTRO} from './identity.mjs';
+import {ENGINEERING_CONTEXT} from './engineering.mjs';
 export function normalizeDecision(raw,{now=new Date(),checkpoint=null,checkpointStatus='unavailable'}={}){
  if(raw?.protocol_version!==2)throw Error('protocol_version deve ser 2');
  const n=raw.next_call_minutes;
@@ -23,8 +24,10 @@ export function normalizeDecision(raw,{now=new Date(),checkpoint=null,checkpoint
 }
 export function toMayHandoff(d){
  return {kind:'may-maestro-handoff-v2',target:'May no ChatGPT',priority:d.priority,
+ engineeringMethods:ENGINEERING_CONTEXT,
  focus:d.focus,dueAtUtc:d.nextCallAt,taskId:d.automationId,
  instruction:d.nextMayTask,acceptance:d.acceptanceCriteria,knownContext:d.contextSummary,
  checkpointStatus:d.checkpointStatus,checkpointExecutionId:d.checkpointExecutionId,
+ beforeWork:'Ler maestro/metodos-engenharia-may.md na revisao indicada pelo sha256. Aplicar investigacao causal, alteracao na origem e verificacao proporcional ao escopo.',
  afterWork:'Registrar fatos e provas em maestro/checkpoint.json via GitHub. Reagendar mesma tarefa ChatGPT via automations.update se a ferramenta estiver disponivel; nunca fingir convocacao externa.'};
 }

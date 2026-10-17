@@ -24,3 +24,7 @@ Em falhas de API, o executor reconsulta em uma hora e informa logs; nao assume q
 Rodar npm test, conferir Actions no PR, deploy Railway SUCCESS, e registro real [maestro-handoff] no log.
 Confirmar se checkpointStatus e fresh ou awaiting-first-checkpoint. Se unavailable, investigar leitura publica Github Raw.
 Verificar no proximo ciclo que May leu a ordem, executou um passo e registrou checkpoint atualizado com novo id; somente entao o feedback bidirecional esta validado.
+
+## Metodos de engenharia carregados pelo executor
+O documento versionado `maestro/metodos-engenharia-may.md` reproduz o protocolo publicado no plugin May Maestro 1.3.9. `engineering.mjs` carrega o arquivo local e calcula seu SHA-256. O texto completo entra nas instrucoes de sistema de TODA consulta Gemini; os dados de checkpoint nao podem substitui-lo. O supervisor usa o protocolo para escolher tarefas e provas, preservando seu papel atual.
+O evento `[maestro-engineering-context]` registra versao, origem, tamanho e hash, sem chave de API. O handoff transmite a mesma identificacao e pede a leitura do documento antes da implementacao. Os testes inspecionam o corpo real montado para a chamada (com transporte simulado), o handoff e o isolamento HTTP do documento. A confirmacao de carregamento em producao vem dos logs do deploy. Isso nao comprova por si so que a executora concluiu uma tarefa tecnica.

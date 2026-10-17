@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {consultGemini,runSupervisorCycle,startScheduledReviewer} from '../maestro-worker.mjs';
+import {ENGINEERING_METHODS,ENGINEERING_CONTEXT} from '../maestro/engineering.mjs';
 import {MAESTRO} from '../maestro/identity.mjs';
 import {loadCheckpoint} from '../maestro/checkpoint.mjs';
 import {normalizeDecision,toMayHandoff} from '../maestro/protocol.mjs';
@@ -19,6 +20,8 @@ test('API valida chave e envia identidade e checkpoint',async()=>{
   assert.equal(opts.headers['x-goog-api-key'],'teste');
   const p=JSON.parse(opts.body);
   assert.match(p.systemInstruction.parts[0].text,/SUPERVISOR/);
+  assert.ok(p.systemInstruction.parts[0].text.includes(ENGINEERING_METHODS));
+  assert.equal(JSON.parse(p.contents[0].parts[0].text.slice('CONTEXTO DE SUPERVISAO: '.length)).engineeringMethods.sha256,ENGINEERING_CONTEXT.sha256);
   assert.match(p.contents[0].parts[0].text,/cycle-17/);
   return {ok:true,json:async()=>({candidates:[{content:{parts:[{text:JSON.stringify(good)}]}}]})};
  };
@@ -49,8 +52,11 @@ test('traduz decisao em ordem para May nos logs',async()=>{
  gemini:async opts=>normalizeDecision(good,{now:opts.now,checkpoint:opts.checkpoint,checkpointStatus:opts.checkpointStatus}),
  clock:()=>new Date('2026-10-17T14:05:00Z'),log:s=>lines.push(s)});
  assert.equal(state.checkpointStatus,'fresh');
- assert.match(lines[0],/maestro-supervisor/);assert.match(lines[1],/maestro-handoff/);
- assert.match(lines[1],/cycle-17/);
+ assert.match(lines[0],/maestro-engineering-context/);
+ assert.match(lines[0],new RegExp(ENGINEERING_CONTEXT.sha256));
+ assert.match(lines[1],/maestro-supervisor/);assert.match(lines[2],/maestro-handoff/);
+ assert.match(lines[2],/cycle-17/);
+ assert.equal(state.handoff.engineeringMethods.sha256,ENGINEERING_CONTEXT.sha256);
 });
 test('indica ao Gemini falta de retorno da May',async()=>{
  const out=await runSupervisorCycle({fetcher:async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)}),
@@ -75,5 +81,6 @@ test('site e endpoints internos preservados',async()=>{
  assert.match(await(await fetch(base+'/')).text(),/Horizon/);
  assert.equal((await fetch(base+'/maestro-worker.mjs')).status,404);
  assert.equal((await fetch(base+'/maestro/checkpoint.json')).status,404);
+ assert.equal((await fetch(base+'/maestro/metodos-engenharia-may.md')).status,404);
  }finally{await new Promise(r=>srv.close(r));}
 });

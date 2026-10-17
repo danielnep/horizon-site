@@ -1,4 +1,5 @@
 import {MAESTRO} from './maestro/identity.mjs';
+import {ENGINEERING_CONTEXT} from './maestro/engineering.mjs';
 import {SUPERVISOR_INSTRUCTION,buildPrompt} from './maestro/prompt.mjs';
 import {loadCheckpoint} from './maestro/checkpoint.mjs';
 import {normalizeDecision,toMayHandoff} from './maestro/protocol.mjs';
@@ -26,6 +27,7 @@ export const review=consultGemini;
 export async function runSupervisorCycle({fetcher=fetch,gemini=consultGemini,clock=()=>new Date(),
  checkpointUrl=process.env.MAESTRO_CHECKPOINT_URL,previous=null,staleCount=0,log=console.log}={}){
  const now=clock();
+ log('[maestro-engineering-context] '+JSON.stringify(ENGINEERING_CONTEXT));
  const state=await loadCheckpoint({fetcher,...(checkpointUrl?{url:checkpointUrl}:{}),now});
  const currentId=state.checkpoint?.last_execution?.id||null;
  const oldId=previous?.checkpointExecutionId||null;
