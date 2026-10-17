@@ -1,19 +1,31 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-17T18:15:14.764Z",
+  "updated_at": "2026-10-17T19:17:52Z",
   "last_execution": {
-    "id": "may-maestro-bridge-v2-20261017",
-    "status": "partially-verified",
-    "summary": "May implementou no GitHub o script v2 de supervisor Gemini com identidade, checkpoint, validação de JSON e handoff de tarefas. CI passou e o Railway implantou a versão.",
-    "blocker": "A primeira consulta Gemini em produção ultrapassou 50 segundos. O ajuste de diagnóstico e timeout passou no CI do PR 4, porém a mesclagem desse PR foi bloqueada por segurança. Execução autônoma completa não comprovada.",
-    "verification": "GitHub PR 3 merged commit 07a3b1e52906e68124c2d2ced1c65c6cd1961a7e; workflow 39056846019 success; Railway deploy c0669ce1 SUCCESS healthcheck; PR 4 checks success."
+    "id": "may-maestro-20261017T191752Z",
+    "status": "completed-with-blockers",
+    "summary": "Auditoria factual dos logs do supervisor e dos repositórios prioritários concluída. Nenhum [maestro-handoff] v2 encontrado nos logs consultados; a última tentativa Gemini falhou por cota HTTP 429. Rondas Pro possui alterações recentes na main posteriores ao último deploy identificado. Romaneio Digital foi mesclado à main, mas não possui serviço no ambiente Railway Horizon inspecionado.",
+    "blocker": "Gemini HTTP 429 RESOURCE_EXHAUSTED em 2026-10-17T19:11:32Z impede obter nova decisão/handoff válido; implantação e teste real de Romaneio Digital seguem pendentes.",
+    "verification": "Railway horizon-site deployment c0669ce1 SUCCESS; ronda-pro deployment 98003ff2 SUCCESS em 2026-10-16T20:03Z; GitHub Rondas main 94c07a2793b879f2e2c719906dd6203aa1df6975 em 2026-10-17T18:37Z; Romaneio main e62332f6c8fe44158c1256a7684b8e925eff0491; leitura de maestro/README.md e docs dos projetos."
   },
   "projects": [
     {
       "repo": "danielnep/horizon-site",
-      "status": "v2-implanted-needs-gemini-handoff-test",
-      "evidence": "Main commit 07a3b1e; Railway deploy c0669ce1; API timeout em 2026-10-17T18:11:35Z.",
-      "next_action": "Verificar nova consulta Gemini e entrega de [maestro-handoff] nos logs; diagnosticar timeout, sem alterar site sem teste."
+      "status": "deployed-supervisor-blocked-quota",
+      "evidence": "GitHub main 3fd540fa68369e298b7ae87839abd294081ec5a1; Railway deploy c0669ce1 SUCCESS; [maestro-error] Gemini HTTP 429 às 2026-10-17T19:11:32Z; nenhum [maestro-handoff] v2 nos logs retornados.",
+      "next_action": "Após recuperação da cota, verificar último [maestro-supervisor] e [maestro-handoff] v2 válidos e validar ciclo completo sem presumir entrega."
+    },
+    {
+      "repo": "danielnep/app-hondas-maxvel",
+      "status": "main-ahead-of-last-observed-deployment",
+      "evidence": "Main 94c07a2793b879f2e2c719906dd6203aa1df6975 (PR 74 merged 2026-10-17T18:37Z); Railway ronda-pro último deploy 98003ff2 SUCCESS criado 2026-10-16T20:03Z; volume persistente /data montado.",
+      "next_action": "Verificar se versão em execução contém correções da PR 74 antes de declarar atualização; executar testes mobile e de central sem tocar dados reais."
+    },
+    {
+      "repo": "danielnep/romaneio-digital",
+      "status": "merged-no-service-in-inspected-horizon-environment",
+      "evidence": "Main e62332f6c8fe44158c1256a7684b8e925eff0491 (PR 1 merged 2026-10-16T22:28Z); ambiente Railway Horizon production inspecionado não contém serviço Romaneio Digital.",
+      "next_action": "Não anunciar sincronização remota. Antes de operação real, provisionar serviço próprio com volume e autenticação mediante autorização de custo; testar ACK, reinício e restauração."
     }
   ]
 }
