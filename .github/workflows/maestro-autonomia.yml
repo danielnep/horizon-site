@@ -1,0 +1,72 @@
+name: May Maestro | Autonomia QA
+on:
+  schedule:
+    - cron: '19 */6 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'maestro/quality-runner.mjs'
+      - 'tests/quality-runner.test.mjs'
+      - '.github/workflows/maestro-autonomia.yml'
+      - 'maestro/autonomia.md'
+permissions:
+  contents: read
+concurrency:
+  group: maestro-autonomia-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  independent-qa:
+    name: ${{ matrix.project }} | ${{ matrix.repo }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: maestro
+            repo: danielnep/horizon-site
+            node: '22'
+          - project: ronda-pro
+            repo: danielnep/app-hondas-maxvel
+            node: '24'
+          - project: romaneio-digital
+            repo: danielnep/romaneio-digital
+            node: '22'
+    steps:
+      - name: Checkout do executor (PR ou main)
+        uses: actions/checkout@v4
+        with:
+          path: controller
+          persist-credentials: false
+      - name: Checkout isolado do projeto validado (main)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          ref: main
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Preparar dependencias, sem scripts de instalacao
+        working-directory: candidate
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          fi
+      - name: QA autonomo por camadas
+        env:
+          MAESTRO_MEMORY_ROOT: evidence/memory
+        run: |
+          node controller/maestro/quality-runner.mjs \
+            --project=${{ matrix.project }} \
+            --root=candidate \
+            --out=evidence/${{ matrix.project }}.json
+      - name: Preservar historico desta execucao
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-quality-${{ matrix.project }}-${{ github.run_id }}
+          path: evidence/
+          retention-days: 60
+          if-no-files-found: warn
