@@ -25,10 +25,13 @@ jobs:
         include:
           - project: maestro
             repo: danielnep/horizon-site
+            node: '22'
           - project: ronda-pro
             repo: danielnep/app-hondas-maxvel
+            node: '24'
           - project: romaneio-digital
             repo: danielnep/romaneio-digital
+            node: '22'
     steps:
       - name: Checkout do executor (PR ou main)
         uses: actions/checkout@v4
@@ -44,7 +47,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
       - name: Preparar dependencias, sem scripts de instalacao
         working-directory: candidate
         run: |
