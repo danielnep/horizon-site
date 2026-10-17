@@ -13,7 +13,7 @@ export async function consultGemini({apiKey=process.env.GEMINI_API_KEY,model=pro
  generationConfig:{temperature:0.15,responseMimeType:'application/json',maxOutputTokens:2300}};
  const response=await fetcher('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',{
  method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
- body:JSON.stringify(payload),signal:AbortSignal.timeout(50000)});
+ body:JSON.stringify(payload),signal:AbortSignal.timeout(110000)});
  if(!response.ok){let msg='';try{const err=(await response.json()).error;msg=String(err?.status||'')+' '+String(err?.message||'').replace(/AIza[\\w-]{20,}/g,'[redacted]').slice(0,180);}catch{}
  throw Error('Gemini HTTP '+response.status+' '+msg);}
  const r=await response.json();
@@ -28,8 +28,10 @@ export async function runSupervisorCycle({fetcher=fetch,gemini=consultGemini,clo
  const now=clock();
  const state=await loadCheckpoint({fetcher,...(checkpointUrl?{url:checkpointUrl}:{}),now});
  const currentId=state.checkpoint?.last_execution?.id||null;
+ log('[maestro-checkpoint] '+JSON.stringify({status:state.status,executionId:currentId,reason:state.reason||null}));
  const oldId=previous?.checkpointExecutionId||null;
  const unacknowledged=oldId!==null&&oldId===currentId?staleCount+1:0;
+ log('[maestro-call] '+JSON.stringify({at:clock().toISOString(),model:process.env.GEMINI_MODEL||'gemini-3.8-flash',checkpointStatus:state.status}));
  const decision=await gemini({fetcher,checkpoint:state.checkpoint,checkpointStatus:state.status,
  previous,staleCount:unacknowledged,now});
  const handoff=toMayHandoff(decision);
