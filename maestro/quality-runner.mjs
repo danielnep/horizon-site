@@ -53,6 +53,7 @@ export async function runProject({project,root,invoke=exec,now=()=>new Date(),re
   }
   stages.push({id:stage.id,passed:result.ok,attempts});
   log('[maestro-quality] '+JSON.stringify({project,stage:stage.id,passed:result.ok,attempts:attempts.length}));
+  if(!result.ok)log('[maestro-diagnostic] '+JSON.stringify({project,stage:stage.id,exitCode:result.exitCode,transient:result.transient||false,excerpt:result.log.slice(-1300)}));
  }
  let head=null;
  try{const ref=await readFile(resolve(workdir,'.git/HEAD'),'utf8');head=ref.trim().slice(0,100)}catch{}
