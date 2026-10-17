@@ -49,10 +49,10 @@ test('traduz decisao em ordem para May nos logs',async()=>{
  gemini:async opts=>normalizeDecision(good,{now:opts.now,checkpoint:opts.checkpoint,checkpointStatus:opts.checkpointStatus}),
  clock:()=>new Date('2026-10-17T14:05:00Z'),log:s=>lines.push(s)});
  assert.equal(state.checkpointStatus,'fresh');
- assert.ok(lines.some(x=>/\\[maestro-checkpoint\\]/.test(x)));
- assert.ok(lines.some(x=>/\\[maestro-call\\]/.test(x)));
- assert.ok(lines.some(x=>/\\[maestro-supervisor\\]/.test(x)));
- assert.ok(lines.some(x=>/\\[maestro-handoff\\]/.test(x)&&/cycle-17/.test(x)));
+ assert.ok(lines.some(x=>x.includes('[maestro-checkpoint]')));
+ assert.ok(lines.some(x=>x.includes('[maestro-call]')));
+ assert.ok(lines.some(x=>x.includes('[maestro-supervisor]')));
+ assert.ok(lines.some(x=>x.includes('[maestro-handoff]')&&x.includes('cycle-17')));
 });
 test('indica ao Gemini falta de retorno da May',async()=>{
  const out=await runSupervisorCycle({fetcher:async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)}),
