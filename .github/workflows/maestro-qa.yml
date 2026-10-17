@@ -1,0 +1,26 @@
+name: May Maestro Runtime QA
+on:
+  pull_request:
+    paths:
+      - 'server.mjs'
+      - 'maestro-worker.mjs'
+      - 'package.json'
+      - 'tests/**'
+      - '.github/workflows/maestro-qa.yml'
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate syntax
+        run: |
+          node --check server.mjs
+          node --check maestro-worker.mjs
+      - name: Tests (mock Gemini, no secrets)
+        run: npm test
