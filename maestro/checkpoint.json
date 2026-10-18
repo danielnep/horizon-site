@@ -1,39 +1,39 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T05:42:32.490Z",
+  "updated_at": "2026-10-18T06:47:45.817Z",
   "last_execution": {
-    "id": "may-maestro-pr6-merged-20261018",
-    "status": "merged-deploy-awaiting-confirmation",
-    "summary": "PR 6 integrado na main apos aprovacao do proprietario; fonte lida na main confirma agents/checkpoints.",
-    "blocker": "Railway accept_deploy cancelado: ferramenta retornou user did not approve. Uma mudanca de fonte permanece STAGED, sem deploy.",
-    "verification": "Merge 4f578fd1aa276f1991561ec39308938bc8fad8a6; blob checkpoint.mjs 3db923736a7a3ea7d3ad31ad8dd2da3e0972e489. Patch Railway 31a50bcd-6420-4eba-8817-01f84e2acc53 STAGED; changeCount=1."
+    "id": "may-maestro-deploy-pr75-ready-20261018",
+    "status": "progress-with-supervisor-blocker",
+    "summary": "Deploy do horizon-site confirmado em producao sem mudancas staged; PR 75 do Ronda Pro confirmada pronta para revisao com quatro workflows verdes e Codex sem achados.",
+    "blocker": "Supervisor Gemini retornou HTTP 429 RESOURCE_EXHAUSTED no deploy atual. Nenhuma nova orientacao valida foi produzida. Integracao da PR 75 e qualquer publicacao de producao continuam dependentes de autorizacao expressa.",
+    "verification": "Railway deployment 099c0715-2e53-45a8-bcae-1f0c2a774b49 SUCCESS no commit 4f578fd1aa276f1991561ec39308938bc8fad8a6; servico horizon-site live em production, sem staged changes. PR 75 head e16eb43f37b9403a752d28cc812e69bb50e85791, mergeable=true; workflows 39075374528, 39075374519, 39075374560 e 39075374539 success; Codex review sem achados."
   },
   "projects": [
     {
       "repo": "danielnep/app-hondas-maxvel",
-      "status": "production-outdated",
-      "evidence": "Registro anterior; nao reinspecionado nesta correcao: main 0cbb2053; Railway 98003ff2 commit 4f8d3995; sem novos deploys; /health 2x 200.",
-      "next_action": "Verificar gatilho de autodeploy, branch e watch paths; nao publicar sem autorizacao."
+      "status": "pr-ready-for-review-production-source-unresolved",
+      "evidence": "main 0cbb20533cbde439371cc0c752d32d031ec42818. PR 75 em chore/css-hygiene-20261017, head e16eb43f37b9403a752d28cc812e69bb50e85791, mergeable; quatro workflows GitHub Actions success e Codex review sem achados. Railway autenticado lista somente Horizon Site e Power BI Michelle; a atribuicao anterior do Ronda Pro a Railway nao foi confirmada neste ciclo.",
+      "next_action": "Aguardar revisao/autorizacao do proprietario para integrar PR 75. Antes de qualquer publicacao, identificar e verificar a origem real da hospedagem do Ronda Pro; nao assumir Railway."
     },
     {
       "repo": "danielnep/horizon-site",
-      "status": "merged-deploy-awaiting-confirmation",
-      "evidence": "PR 6 merged: 4f578fd1. Codigo confirmado na main; Railway patch de uma mudanca STAGED.",
-      "next_action": "Solicitar confirmacao aplicavel do deploy pendente e verificar SUCCESS, commit e leitura de checkpoint; nao contornar cancelamento da ferramenta."
+      "status": "deployed-supervisor-quota-blocked",
+      "evidence": "Deploy 099c0715-2e53-45a8-bcae-1f0c2a774b49 SUCCESS no commit 4f578fd1; servico live em production, dominio horizonsolucoes.com, healthcheck /health configurado e zero mudancas staged. Log carregou metodos de engenharia hash 2277f762... e em seguida recebeu Gemini HTTP 429 RESOURCE_EXHAUSTED.",
+      "next_action": "Manter a recorrencia de seguranca e, no proximo ciclo, usar checkpoint atual mesmo sem Gemini. Nao alterar API key, plano, variaveis ou producao sem autorizacao aplicavel."
     },
     {
       "repo": "danielnep/romaneio-digital",
       "status": "not-verified-this-cycle",
-      "evidence": "Registro anterior; nao reinspecionado nesta correcao: Sem inspecao nova neste ciclo.",
+      "evidence": "Registro anterior preservado; nao reinspecionado neste ciclo.",
       "next_action": "Homologacao isolada quando priorizada."
     }
   ],
   "previous_execution": {
-    "id": "may-maestro-installation-verified-20261018",
-    "status": "installed-and-enabled-verified",
-    "summary": "Interface autenticada confirma os sete plugins instalados e todas as habilidades ligadas. Seis principais ja instalados quando inspecionados; Corregedoria instalada agora e confirmada.",
-    "blocker": "Instalacao resolvida. Supervisor producao ainda depende da revisao do PR 6 para ler branch; sem merge/deploy. Erros Gemini 429/503/timeout permanecem; tarefa ChatGPT tem fallback.",
-    "verification": "Sete paginas de configuracao: botao Desinstalar e switches checked. Corregedoria: notificacao de instalacao e leitura posterior. May 1.3.30 com regra de reconciliar not_installed versus UI; fonte f42c564."
+    "id": "may-maestro-pr6-merged-20261018",
+    "status": "merged-deploy-awaiting-confirmation",
+    "summary": "PR 6 integrado na main apos aprovacao do proprietario; fonte lida na main confirma agents/checkpoints.",
+    "blocker": "Railway accept_deploy cancelado: ferramenta retornou user did not approve. Uma mudanca de fonte permanecia STAGED, sem deploy.",
+    "verification": "Merge 4f578fd1aa276f1991561ec39308938bc8fad8a6; blob checkpoint.mjs 3db923736a7a3ea7d3ad31ad8dd2da3e0972e489. Estado posteriormente superado pelo deploy SUCCESS 099c0715."
   },
   "plugins": [
     {
@@ -78,7 +78,7 @@
     "installed_this_session": [
       "corregedoria-may"
     ],
-    "source": "Authenticated ChatGPT plugin settings",
+    "source": "Authenticated ChatGPT plugin settings (registro anterior preservado)",
     "may_correction_version": "1.3.30"
   }
 }
