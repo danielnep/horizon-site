@@ -1,19 +1,19 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T06:47:45.817Z",
+  "updated_at": "2026-10-18T07:44:31.317Z",
   "last_execution": {
-    "id": "may-maestro-deploy-pr75-ready-20261018",
-    "status": "progress-with-supervisor-blocker",
-    "summary": "Deploy do horizon-site confirmado em producao sem mudancas staged; PR 75 do Ronda Pro confirmada pronta para revisao com quatro workflows verdes e Codex sem achados.",
-    "blocker": "Supervisor Gemini retornou HTTP 429 RESOURCE_EXHAUSTED no deploy atual. Nenhuma nova orientacao valida foi produzida. Integracao da PR 75 e qualquer publicacao de producao continuam dependentes de autorizacao expressa.",
-    "verification": "Railway deployment 099c0715-2e53-45a8-bcae-1f0c2a774b49 SUCCESS no commit 4f578fd1aa276f1991561ec39308938bc8fad8a6; servico horizon-site live em production, sem staged changes. PR 75 head e16eb43f37b9403a752d28cc812e69bb50e85791, mergeable=true; workflows 39075374528, 39075374519, 39075374560 e 39075374539 success; Codex review sem achados."
+    "id": "may-maestro-pages-source-root-cause-20261018",
+    "status": "diagnosed-and-documented-in-pr",
+    "summary": "Causa raiz do descompasso do Ronda Pro identificada: a demonstracao publica usa GitHub Pages configurado para a branch feat/ronda-pro-glass-ui-20261017, nao Railway nem main. README corrigido em branch isolada e PR 76 aberta.",
+    "blocker": "A troca da fonte do GitHub Pages, merge da PR 76 ou qualquer publicacao em producao exigem autorizacao expressa. CI da PR 76 estava em fila no encerramento. Supervisor Gemini retornou HTTP 503 UNAVAILABLE as 2026-10-18T07:16:07Z.",
+    "verification": "GitHub Pages run 39099995891 SUCCESS, head 45f50c8ec26fe0b86127aff2444554adbcc227f1; jobs build 117594132123, deploy 117594198768 e report-build-status 117594198774 SUCCESS. Branch docs/ronda-pro-publicacao-20261018 commit c3173b1d77b0b2081ca83310e551eb7f510e2a76; PR 76 aberta e mergeable=true. Railway list_projects confirmou somente Horizon Site e Power BI Michelle."
   },
   "projects": [
     {
       "repo": "danielnep/app-hondas-maxvel",
-      "status": "pr-ready-for-review-production-source-unresolved",
-      "evidence": "main 0cbb20533cbde439371cc0c752d32d031ec42818. PR 75 em chore/css-hygiene-20261017, head e16eb43f37b9403a752d28cc812e69bb50e85791, mergeable; quatro workflows GitHub Actions success e Codex review sem achados. Railway autenticado lista somente Horizon Site e Power BI Michelle; a atribuicao anterior do Ronda Pro a Railway nao foi confirmada neste ciclo.",
-      "next_action": "Aguardar revisao/autorizacao do proprietario para integrar PR 75. Antes de qualquer publicacao, identificar e verificar a origem real da hospedagem do Ronda Pro; nao assumir Railway."
+      "status": "pages-source-diagnosed-pr76-open",
+      "evidence": "Causa raiz confirmada: GitHub Pages publicou feat/ronda-pro-glass-ui-20261017 no commit 45f50c8 pelo run 39099995891; build/deploy/report SUCCESS. Nao existe projeto Ronda Pro na conta Railway conectada, que lista somente Horizon Site e Power BI Michelle. Documentacao corrigida na branch docs/ronda-pro-publicacao-20261018, commit c3173b1d, PR 76 aberta e mergeable. CI da PR 76 iniciou em fila.",
+      "next_action": "Revisar PR 76. Se o proprietario quiser que a URL publica acompanhe main ou outra branch aprovada, autorizar explicitamente a troca da fonte do GitHub Pages; nao criar/deployar Railway sem ordem."
     },
     {
       "repo": "danielnep/horizon-site",
@@ -29,11 +29,11 @@
     }
   ],
   "previous_execution": {
-    "id": "may-maestro-pr6-merged-20261018",
-    "status": "merged-deploy-awaiting-confirmation",
-    "summary": "PR 6 integrado na main apos aprovacao do proprietario; fonte lida na main confirma agents/checkpoints.",
-    "blocker": "Railway accept_deploy cancelado: ferramenta retornou user did not approve. Uma mudanca de fonte permanecia STAGED, sem deploy.",
-    "verification": "Merge 4f578fd1aa276f1991561ec39308938bc8fad8a6; blob checkpoint.mjs 3db923736a7a3ea7d3ad31ad8dd2da3e0972e489. Estado posteriormente superado pelo deploy SUCCESS 099c0715."
+    "id": "may-maestro-deploy-pr75-ready-20261018",
+    "status": "progress-with-supervisor-blocker",
+    "summary": "Deploy do horizon-site confirmado em producao sem mudancas staged; PR 75 do Ronda Pro confirmada pronta para revisao com quatro workflows verdes e Codex sem achados.",
+    "blocker": "Supervisor Gemini retornou HTTP 429 RESOURCE_EXHAUSTED no deploy atual. Nenhuma nova orientacao valida foi produzida. Integracao da PR 75 e qualquer publicacao de producao continuam dependentes de autorizacao expressa.",
+    "verification": "Railway deployment 099c0715-2e53-45a8-bcae-1f0c2a774b49 SUCCESS no commit 4f578fd1aa276f1991561ec39308938bc8fad8a6; servico horizon-site live em production, sem staged changes. PR 75 head e16eb43f37b9403a752d28cc812e69bb50e85791, mergeable=true; workflows 39075374528, 39075374519, 39075374560 e 39075374539 success; Codex review sem achados."
   },
   "plugins": [
     {
