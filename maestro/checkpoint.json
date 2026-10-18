@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T11:21:58.696Z",
+  "updated_at": "2026-10-18T14:23:28.025Z",
   "last_execution": {
-    "id": "may-maestro-fluxo-restaurantes-readiness-20261018",
-    "status": "web-demo-published-ci-green-production-pending",
-    "summary": "Sistema Fluxo Restaurantes mapeado em leitura. A interface mobile premium já foi integrada na main; CI e GitHub Pages concluíram com sucesso no SHA atual. A versão web é uma demonstração v0.2, não APK nem ambiente de produção homologado.",
-    "blocker": "Produção cliente permanece pendente de APK Android, HTTPS/TLS local, persistência e backup/restauração, monitoramento, homologação com múltiplos aparelhos e restaurante piloto. O README declara uma instância Railway temporária sem volume, mas ela não aparece nos projetos Railway conectados; saúde e persistência desse serviço não puderam ser confirmadas pelo conector.",
-    "verification": "main 3ff0bec56a8f96473b6936d3f381a06a98884699, merge da PR 3 em 2026-10-18T06:55:29Z. Actions 39105766168 SUCCESS no mesmo SHA; job 117611142018 passou checagem de sintaxe e 2/2 testes de integração. Pages run 39105765712: build, report e deploy SUCCESS no mesmo SHA. PR 3 teve revisão Codex concluída sem achados nem threads. Node >=22, zero dependências npm externas, SQLite experimental; Dockerfile usa /data/fluxo.sqlite. Railway list_projects mostrou apenas Horizon Site e Power BI Michelle."
+    "id": "may-maestro-fluxo-auth-a11y-pr4-20261018",
+    "status": "implemented-tested-pr-ready",
+    "summary": "Correção pequena de acessibilidade entregue no Sistema Fluxo Restaurantes: os rótulos de Nome completo, Usuário e Senha agora estão associados programaticamente aos inputs. Implementação direta pela May após jobs reais de auditoria UI e QA.",
+    "blocker": "PR 4 aguarda revisão/integração; não houve merge nem deploy. Revisão Codex ainda estava em execução na última leitura. Supervisor Gemini retornou HTTP 503 às 2026-10-18T14:16:42Z; recorrência existente foi preservada.",
+    "verification": "Jobs MAESTRO-FLUXO-UI-01 e MAESTRO-FLUXO-QA-01 concluídos em leitura. Branch fix/auth-label-association-20261018, commit 89525b98bd627b518c8760430ea47bc23cc1f251, arquivo public/app.js. Releitura confirmou três pares label[for]/input[id]. PR 4 aberta, mergeable=true. Actions run 39135700208/job 117699645067 SUCCESS: checagem de sintaxe e 2/2 testes de integração, 0 falhas. Nenhuma produção alterada."
   },
   "projects": [
     {
@@ -29,17 +29,17 @@
     },
     {
       "repo": "danielnep/sistema-fluxo-restaurantes",
-      "status": "web-demo-published-ci-green-production-pending",
-      "evidence": "Verificado neste ciclo: main=3ff0bec56a8f96473b6936d3f381a06a98884699. PR 3 de UI mobile premium mergeada; CI run 39105766168/job 117611142018 passou sintaxe e 2/2 integrações. Pages run 39105765712 publicou esse SHA com todos os jobs verdes. README identifica demo web e Docker/Railway, sem APK ou homologação física.",
-      "next_action": "Preservar a demo. Em branch isolada, priorizar preparação verificável para APK/Android e endurecimento operacional; deploy persistente, TLS, dados reais e custos somente com autorização aplicável."
+      "status": "pr4-accessibility-ready",
+      "evidence": "Verificado neste ciclo: branch fix/auth-label-association-20261018, commit 89525b98bd627b518c8760430ea47bc23cc1f251, PR 4 mergeable=true. public/app.js associa os três rótulos de autenticação aos inputs. CI run 39135700208/job 117699645067 passou sintaxe e 2/2 integrações. Jobs de especialistas: MAESTRO-FLUXO-UI-01 localizou o defeito; MAESTRO-FLUXO-QA-01 registrou separadamente a lacuna de smoke dos ativos públicos.",
+      "next_action": "Revisar PR 4 e o resultado final do Codex. Não mesclar sem autorização. Depois, em branch própria, adicionar smoke HTTP de /, /app.js, /styles.css e /mobile.css conforme job QA."
     }
   ],
   "previous_execution": {
-    "id": "may-maestro-romaneio-readiness-diagnosis-20261018",
-    "status": "diagnosed-not-ready-for-homologation",
-    "summary": "Romaneio Digital inspecionado em modo somente leitura. A main contém o backend offline-first/SQLite do PR 1, mas o estado publicado e o CI da branch principal não acompanham esse SHA; homologação integrada não está pronta.",
-    "blocker": "Não existe serviço Romaneio Digital no Railway conectado. O workflow não executa em push para main, não há run no merge commit e62332f6, e o último build GitHub Pages da main falhou num commit antigo. Provisionar serviço/volume/variáveis, corrigir publicação, testar celular e migrar dados exigem autorização e ambiente apropriados.",
-    "verification": "main head e62332f6c8fe44158c1256a7684b8e925eff0491. PR 1 mergeado em 2026-10-16. Actions run 38973503022 SUCCESS no head f825131a; job 117217261776 executou npm ci e npm test: 22 pass, 0 fail. Não há workflow run associado ao merge commit. test.yml dispara somente em pull_request para main e push da antiga branch fix/ui-guardian-operacional-20261016. Último Pages run 34563189267 falhou no commit antigo 63f86b3 por conflito Jekyll _site/assets; deploy foi skipped. Revisão Codex não terminou por limite de uso; não há threads nem reviews registradas. Automação 6ad32bbba5488191aee18ef5fafd37b7 manteve-se habilitada e sua RRULE foi atualizada para intervalo de 3 horas; next_run_time não foi informado pela API."
+    "id": "may-maestro-fluxo-restaurantes-readiness-20261018",
+    "status": "web-demo-published-ci-green-production-pending",
+    "summary": "Sistema Fluxo Restaurantes mapeado em leitura. A interface mobile premium já foi integrada na main; CI e GitHub Pages concluíram com sucesso no SHA atual. A versão web é uma demonstração v0.2, não APK nem ambiente de produção homologado.",
+    "blocker": "Produção cliente permanece pendente de APK Android, HTTPS/TLS local, persistência e backup/restauração, monitoramento, homologação com múltiplos aparelhos e restaurante piloto. O README declara uma instância Railway temporária sem volume, mas ela não aparece nos projetos Railway conectados; saúde e persistência desse serviço não puderam ser confirmadas pelo conector.",
+    "verification": "main 3ff0bec56a8f96473b6936d3f381a06a98884699, merge da PR 3 em 2026-10-18T06:55:29Z. Actions 39105766168 SUCCESS no mesmo SHA; job 117611142018 passou checagem de sintaxe e 2/2 testes de integração. Pages run 39105765712: build, report e deploy SUCCESS no mesmo SHA. PR 3 teve revisão Codex concluída sem achados nem threads. Node >=22, zero dependências npm externas, SQLite experimental; Dockerfile usa /data/fluxo.sqlite. Railway list_projects mostrou apenas Horizon Site e Power BI Michelle."
   },
   "plugins": [
     {
