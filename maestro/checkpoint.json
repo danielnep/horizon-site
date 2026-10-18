@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T17:16:34.968Z",
+  "updated_at": "2026-10-18T17:17:06.390Z",
   "last_execution": {
     "id": "may-maestro-fluxo-static-smoke-pr5-20261018",
     "status": "implemented-tested-pr-ready",
     "summary": "Smoke HTTP dos ativos públicos entregue no Sistema Fluxo Restaurantes. A May executou diretamente o escopo definido pelo job QA MAESTRO-FLUXO-QA-01: /, /app.js, /styles.css e /mobile.css agora têm cobertura automatizada de status, Content-Type e corpo; a raiz também valida o shell #app. Somente testes foram alterados.",
-    "blocker": "PR 5 aguarda revisão Codex/integração; PR 4 continua aberta. Não houve merge nem deploy. A execução local não conseguiu iniciar os servidores porque o executor retornou uv_interface_addresses em os.networkInterfaces(), inclusive no teste cloud preexistente; o commit exato passou integralmente no GitHub Actions.",
-    "verification": "Branch test/static-assets-smoke-20261018, commit 82183fa247965cab7a3724e51603fc69c6409a41, blob tests/flow.test.mjs 9142148acfcf5aa4e70e834f7e4e14efc6712ee6. Diff: 1 arquivo de teste, +14/-0; git diff --check aprovado. PR 5 aberta, mergeable=true. Actions run 39148740155/job 117737852520 SUCCESS em Ubuntu/Node 22: checagem de sintaxe e npm test com 2/2 testes, 0 falhas. PR 4 segue aberta/mergeable e revisão Codex concluída sem achados. Supervisor v2 grounded de 2026-10-18T16:35:25.337Z confirmou o escopo e intervalo de 180 minutos; automação 6ad32bbba5488191aee18ef5fafd37b7 atualizada mantendo RRULE de 3 horas."
+    "blocker": "PRs 4 e 5 aguardam revisão humana/integração; não houve merge nem deploy. A execução local não conseguiu iniciar os servidores porque o executor retornou uv_interface_addresses em os.networkInterfaces(), inclusive no teste cloud preexistente; o commit exato passou integralmente no GitHub Actions.",
+    "verification": "Branch test/static-assets-smoke-20261018, commit 82183fa247965cab7a3724e51603fc69c6409a41, blob tests/flow.test.mjs 9142148acfcf5aa4e70e834f7e4e14efc6712ee6. Diff: 1 arquivo de teste, +14/-0; git diff --check aprovado. PR 5 aberta, mergeable=true. Actions run 39148740155/job 117737852520 SUCCESS em Ubuntu/Node 22: checagem de sintaxe e npm test com 2/2 testes, 0 falhas. PRs 4 e 5 seguem abertas/mergeable e ambas tiveram revisão Codex concluída sem achados. Supervisor v2 grounded de 2026-10-18T16:35:25.337Z confirmou o escopo e intervalo de 180 minutos; automação 6ad32bbba5488191aee18ef5fafd37b7 atualizada mantendo RRULE de 3 horas."
   },
   "projects": [
     {
@@ -30,8 +30,8 @@
     {
       "repo": "danielnep/sistema-fluxo-restaurantes",
       "status": "pr4-a11y-pr5-static-smoke-ready",
-      "evidence": "Verificado neste ciclo: PR 4 continua aberta e mergeable; revisão Codex concluída sem achados no commit 89525b98bd627b518c8760430ea47bc23cc1f251. Nova branch test/static-assets-smoke-20261018 e commit 82183fa247965cab7a3724e51603fc69c6409a41 alteram somente tests/flow.test.mjs (+14/-0), cobrindo HTTP 200, MIME e corpo de /, /app.js, /styles.css e /mobile.css, além do shell #app. PR 5 aberta e mergeable. Actions run 39148740155/job 117737852520 passou sintaxe e 2/2 testes. Execução local foi tentada, mas o sandbox falhou antes dos fluxos em uv_interface_addresses; CI do SHA exato ficou verde.",
-      "next_action": "Aguardar revisão Codex da PR 5 e revisão humana das PRs 4 e 5. Não mesclar nem implantar sem autorização expressa."
+      "evidence": "Verificado neste ciclo: PR 4 continua aberta e mergeable; revisão Codex concluída sem achados no commit 89525b98bd627b518c8760430ea47bc23cc1f251. Nova branch test/static-assets-smoke-20261018 e commit 82183fa247965cab7a3724e51603fc69c6409a41 alteram somente tests/flow.test.mjs (+14/-0), cobrindo HTTP 200, MIME e corpo de /, /app.js, /styles.css e /mobile.css, além do shell #app. PR 5 aberta e mergeable; revisão Codex concluída sem achados. Actions run 39148740155/job 117737852520 passou sintaxe e 2/2 testes. Execução local foi tentada, mas o sandbox falhou antes dos fluxos em uv_interface_addresses; CI do SHA exato ficou verde.",
+      "next_action": "Realizar revisão humana das PRs 4 e 5. Não mesclar nem implantar sem autorização expressa."
     }
   ],
   "previous_execution": {
