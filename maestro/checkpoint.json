@@ -1,19 +1,19 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T07:44:31.317Z",
+  "updated_at": "2026-10-18T07:45:47.378Z",
   "last_execution": {
-    "id": "may-maestro-pages-source-root-cause-20261018",
-    "status": "diagnosed-and-documented-in-pr",
-    "summary": "Causa raiz do descompasso do Ronda Pro identificada: a demonstracao publica usa GitHub Pages configurado para a branch feat/ronda-pro-glass-ui-20261017, nao Railway nem main. README corrigido em branch isolada e PR 76 aberta.",
-    "blocker": "A troca da fonte do GitHub Pages, merge da PR 76 ou qualquer publicacao em producao exigem autorizacao expressa. CI da PR 76 estava em fila no encerramento. Supervisor Gemini retornou HTTP 503 UNAVAILABLE as 2026-10-18T07:16:07Z.",
-    "verification": "GitHub Pages run 39099995891 SUCCESS, head 45f50c8ec26fe0b86127aff2444554adbcc227f1; jobs build 117594132123, deploy 117594198768 e report-build-status 117594198774 SUCCESS. Branch docs/ronda-pro-publicacao-20261018 commit c3173b1d77b0b2081ca83310e551eb7f510e2a76; PR 76 aberta e mergeable=true. Railway list_projects confirmou somente Horizon Site e Power BI Michelle."
+    "id": "may-maestro-pages-source-root-cause-pr77-20261018",
+    "status": "diagnosed-documented-stacked-pr-ready",
+    "summary": "Causa raiz do descompasso do Ronda Pro confirmada e documentada em PR isolada: a demonstracao publica usa GitHub Pages na branch feat/ronda-pro-glass-ui-20261017, nao Railway nem main. A PR documental foi empilhada sobre a PR 75 validada.",
+    "blocker": "Trocar a fonte do GitHub Pages, integrar PR 75/77 ou publicar em Railway exige autorizacao expressa. Supervisor Gemini retornou HTTP 503 UNAVAILABLE as 2026-10-18T07:16:07Z.",
+    "verification": "Pages run 39099995891 SUCCESS no head 45f50c8; jobs build 117594132123, deploy 117594198768 e report 117594198774 SUCCESS. Railway list_projects: somente Horizon Site e Power BI Michelle. PR 76 fechada apos revelar 14 testes legados quebrados na main; causa: referencias CSS antigas. PR 77 aberta, mergeable=true, base chore/css-hygiene-20261017, head db874dfb8dccef2973b0cd6837a4567c98077c07, somente README."
   },
   "projects": [
     {
       "repo": "danielnep/app-hondas-maxvel",
-      "status": "pages-source-diagnosed-pr76-open",
-      "evidence": "Causa raiz confirmada: GitHub Pages publicou feat/ronda-pro-glass-ui-20261017 no commit 45f50c8 pelo run 39099995891; build/deploy/report SUCCESS. Nao existe projeto Ronda Pro na conta Railway conectada, que lista somente Horizon Site e Power BI Michelle. Documentacao corrigida na branch docs/ronda-pro-publicacao-20261018, commit c3173b1d, PR 76 aberta e mergeable. CI da PR 76 iniciou em fila.",
-      "next_action": "Revisar PR 76. Se o proprietario quiser que a URL publica acompanhe main ou outra branch aprovada, autorizar explicitamente a troca da fonte do GitHub Pages; nao criar/deployar Railway sem ordem."
+      "status": "pages-source-diagnosed-pr77-ready",
+      "evidence": "GitHub Pages publica feat/ronda-pro-glass-ui-20261017, commit 45f50c8, run 39099995891 SUCCESS. Nao existe projeto Ronda Pro no Railway conectado. PR 77 documenta a causa em README, branch docs/ronda-pro-publicacao-pr75-20261018, commit db874dfb, base PR 75, mergeable=true. PR 76 foi fechada; seus testes expuseram 14 assercoes CSS obsoletas na main, ja tratadas pela PR 75.",
+      "next_action": "Revisar PR 75 e PR 77 em conjunto. Trocar a fonte do GitHub Pages somente com autorizacao explicita; nao criar/deployar Railway sem ordem."
     },
     {
       "repo": "danielnep/horizon-site",
