@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0f82bf">
+  <meta name="description" content="Sua empresa, seu sistema. Experimente e combine ferramentas da Horizon para criar sua solução.">
+  <title>Ferramentas Horizon — Monte sua solução</title>
+  <link rel="icon" href="./assets/horizon-logo.png" type="image/png">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./horizon-theme.css"><link rel="stylesheet" href="./site-bridge.css">
+</head>
+<body><div class="horizon-site-bridge" role="navigation" aria-label="Site Horizon"><a href="/" aria-label="Voltar ao site Horizon"><span aria-hidden="true">←</span> Voltar ao site Horizon</a><span>Laboratório de ferramentas · Demonstração</span></div>
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+  <aside id="sidebar" class="sidebar" aria-label="Menu de ferramentas">
+    <a class="brand" href="#inicio" aria-label="Ferramentas Horizon, início"><span class="brand-logo"><img src="./assets/horizon-logo.png" alt="Horizon" width="210" height="70"></span><span class="brand-subtitle">FERRAMENTAS <span>Personalize sua solução</span></span></a>
+    <button class="icon-button drawer-close" id="drawer-close" aria-label="Fechar menu"></button>
+    <div id="navigation" class="nav-body"></div>
+    <div class="sidebar-footer"><a class="custom-nav" href="#personalizada"><span id="custom-icon"></span><span>Criar ferramenta personalizada<small>Sua necessidade, nossa próxima criação.</small></span><span class="nav-arrow">↗</span></a><p class="sidebar-signature">Tecnologia conectada ao seu negócio.</p></div>
+  </aside>
+  <div class="app-shell" id="app-shell">
+    <header class="topbar">
+      <div class="topbar-left"><button class="icon-button mobile-menu" id="menu-button" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false"></button><span class="topbar-title" id="topbar-title">Vitrine de ferramentas</span></div>
+      <div class="topbar-actions"><span class="mode-badge"><i></i> Demonstração</span><button class="icon-button" id="share-button" aria-label="Compartilhar Ferramentas Horizon" title="Compartilhar"></button></div>
+    </header>
+    <main id="conteudo" tabindex="-1"></main>
+    <footer class="app-footer"><span>Horizon Ferramentas</span><span>Feito para se adaptar à sua empresa.</span><button class="text-button" data-action="reset">Restaurar exemplos</button></footer>
+  </div>
+  <div id="selection-bar" class="selection-bar" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="modal" class="modal" aria-labelledby="modal-title"><div class="modal-top"><h2 id="modal-title"></h2><button id="modal-close" class="icon-button" aria-label="Fechar janela"></button></div><div id="modal-content"></div></dialog>
+  <noscript><div class="noscript">Ative o JavaScript para experimentar as ferramentas do Ferramentas Horizon.</div></noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

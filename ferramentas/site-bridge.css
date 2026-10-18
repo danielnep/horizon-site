@@ -1,0 +1,9 @@
+/* Integração com o site Horizon; o motor da vitrine mantém seus arquivos originais. */
+.horizon-site-bridge{position:relative;z-index:70;min-height:41px;padding:8px clamp(14px,3vw,34px);
+display:flex;justify-content:space-between;align-items:center;gap:14px;
+background:#131d29;color:#b5d5ed;font:500 12px/1.5 Inter,Arial,sans-serif}
+.horizon-site-bridge a{display:inline-flex;gap:9px;align-items:center;color:#e4f2ff;text-decoration:none;font-weight:600}
+.horizon-site-bridge a:hover{text-decoration:underline;text-underline-offset:3px}
+.horizon-site-bridge a:focus-visible{outline:2px solid #1f98ff;outline-offset:3px}
+.horizon-site-bridge>span{color:#8ba9be}
+@media(max-width:580px){.horizon-site-bridge{padding:8px 14px}.horizon-site-bridge>span{font-size:10px;max-width:130px;text-align:right}}
