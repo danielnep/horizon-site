@@ -1,31 +1,75 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T02:23:00Z",
+  "updated_at": "2026-10-18T05:31:06.721Z",
   "last_execution": {
+    "id": "may-maestro-agent-repair-20261018",
+    "status": "branch-checkpoint-and-policies-verified",
+    "summary": "Sete plugins atualizados e relidos; autonomia de edicao/commit/push/PR/checkpoint em branches confirmada. QA delegado em trabalho separado. Mesma automacao com RRULE e fallback sem Gemini.",
+    "blocker": "Instalacao nao confirmada: host retorna not_installed e navegador sem login. Supervisor em producao ainda usa leitura antiga; PR 6 preparado, sem merge/deploy. Gemini com 429/503/timeouts.",
+    "verification": "7 releases relidas e arquivos preservados; JSON/YAML/ZIP e QA aprovados. Fonte sincronizada commit 854e396. Correcao runtime 41e94a7 / PR 6; testes locais com transporte simulado. Automacao 6ad32bbba5488191aee18ef5fafd37b7 habilitada RRULE HOURLY."
+  },
+  "projects": [
+    {
+      "repo": "danielnep/app-hondas-maxvel",
+      "status": "production-outdated",
+      "evidence": "Registro anterior; nao reinspecionado nesta correcao: main 0cbb2053; Railway 98003ff2 commit 4f8d3995; sem novos deploys; /health 2x 200.",
+      "next_action": "Verificar gatilho de autodeploy, branch e watch paths; nao publicar sem autorizacao."
+    },
+    {
+      "repo": "danielnep/horizon-site",
+      "status": "branch-checkpoints-active-runtime-pr-pending",
+      "evidence": "agents/checkpoints criada e fonte dos sete plugins sincronizada. PR 6 em fix/maestro-checkpoint-branch, commit 41e94a7714e483d4c3612d08493a529b2e6b3741.",
+      "next_action": "Usar checkpoint da branch nesta automacao; revisar PR 6 antes de integrar/deploy. Quando supervisor indisponivel, executar tarefa autorizada em branch a partir do estado atual."
+    },
+    {
+      "repo": "danielnep/romaneio-digital",
+      "status": "not-verified-this-cycle",
+      "evidence": "Registro anterior; nao reinspecionado nesta correcao: Sem inspecao nova neste ciclo.",
+      "next_action": "Homologacao isolada quando priorizada."
+    }
+  ],
+  "previous_execution": {
     "id": "may-maestro-20261018T022300Z",
     "status": "verified-readonly",
     "summary": "Ronda Pro: GitHub main e Railway inspecionados; nenhum novo deploy ou build registrado apos 4f8d3995. /health retornou HTTP 200 em dois registros.",
     "blocker": "Deploy de producao pedido no handoff sem autorizacao direta do usuario; causa do autodeploy ainda nao demonstrada.",
     "verification": "main 0cbb2053; 69 commits apos 4f8d3995; Railway deploy 98003ff2 SUCCESS; build 2026-10-16T20:03Z; GET /health HTTP 200 em 2026-10-17T22:17:33Z e 22:17:38Z; /data configurado."
   },
-  "projects": [
+  "plugins": [
     {
-      "repo": "danielnep/app-hondas-maxvel",
-      "status": "production-outdated",
-      "evidence": "main 0cbb2053; Railway 98003ff2 commit 4f8d3995; sem novos deploys; /health 2x 200.",
-      "next_action": "Verificar gatilho de autodeploy, branch e watch paths; nao publicar sem autorizacao."
+      "name": "may-maestro",
+      "version": "1.3.14",
+      "source_verified": true
     },
     {
-      "repo": "danielnep/horizon-site",
-      "status": "maestro-handoff-v2-active",
-      "evidence": "Railway [maestro-handoff] v2 em 2026-10-18T00:24:42Z.",
-      "next_action": "Consultar decisao mais recente e reagendar a mesma automacao."
+      "name": "horizon-ui-guardian",
+      "version": "0.1.13",
+      "source_verified": true
     },
     {
-      "repo": "danielnep/romaneio-digital",
-      "status": "not-verified-this-cycle",
-      "evidence": "Sem inspecao nova neste ciclo.",
-      "next_action": "Homologacao isolada quando priorizada."
+      "name": "horizon-project-studio",
+      "version": "0.2.12",
+      "source_verified": true
+    },
+    {
+      "name": "horizon-evolution-agent",
+      "version": "0.2.14",
+      "source_verified": true
+    },
+    {
+      "name": "horizon-skills",
+      "version": "1.1.12",
+      "source_verified": true
+    },
+    {
+      "name": "may-persona",
+      "version": "1.3.28",
+      "source_verified": true
+    },
+    {
+      "name": "corregedoria-may",
+      "version": "1.0.10",
+      "source_verified": true
     }
   ]
 }
