@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T08:42:37.012Z",
+  "updated_at": "2026-10-18T11:21:58.696Z",
   "last_execution": {
-    "id": "may-maestro-romaneio-readiness-diagnosis-20261018",
-    "status": "diagnosed-not-ready-for-homologation",
-    "summary": "Romaneio Digital inspecionado em modo somente leitura. A main contém o backend offline-first/SQLite do PR 1, mas o estado publicado e o CI da branch principal não acompanham esse SHA; homologação integrada não está pronta.",
-    "blocker": "Não existe serviço Romaneio Digital no Railway conectado. O workflow não executa em push para main, não há run no merge commit e62332f6, e o último build GitHub Pages da main falhou num commit antigo. Provisionar serviço/volume/variáveis, corrigir publicação, testar celular e migrar dados exigem autorização e ambiente apropriados.",
-    "verification": "main head e62332f6c8fe44158c1256a7684b8e925eff0491. PR 1 mergeado em 2026-10-16. Actions run 38973503022 SUCCESS no head f825131a; job 117217261776 executou npm ci e npm test: 22 pass, 0 fail. Não há workflow run associado ao merge commit. test.yml dispara somente em pull_request para main e push da antiga branch fix/ui-guardian-operacional-20261016. Último Pages run 34563189267 falhou no commit antigo 63f86b3 por conflito Jekyll _site/assets; deploy foi skipped. Revisão Codex não terminou por limite de uso; não há threads nem reviews registradas. Automação 6ad32bbba5488191aee18ef5fafd37b7 manteve-se habilitada e sua RRULE foi atualizada para intervalo de 3 horas; next_run_time não foi informado pela API."
+    "id": "may-maestro-fluxo-restaurantes-readiness-20261018",
+    "status": "web-demo-published-ci-green-production-pending",
+    "summary": "Sistema Fluxo Restaurantes mapeado em leitura. A interface mobile premium já foi integrada na main; CI e GitHub Pages concluíram com sucesso no SHA atual. A versão web é uma demonstração v0.2, não APK nem ambiente de produção homologado.",
+    "blocker": "Produção cliente permanece pendente de APK Android, HTTPS/TLS local, persistência e backup/restauração, monitoramento, homologação com múltiplos aparelhos e restaurante piloto. O README declara uma instância Railway temporária sem volume, mas ela não aparece nos projetos Railway conectados; saúde e persistência desse serviço não puderam ser confirmadas pelo conector.",
+    "verification": "main 3ff0bec56a8f96473b6936d3f381a06a98884699, merge da PR 3 em 2026-10-18T06:55:29Z. Actions 39105766168 SUCCESS no mesmo SHA; job 117611142018 passou checagem de sintaxe e 2/2 testes de integração. Pages run 39105765712: build, report e deploy SUCCESS no mesmo SHA. PR 3 teve revisão Codex concluída sem achados nem threads. Node >=22, zero dependências npm externas, SQLite experimental; Dockerfile usa /data/fluxo.sqlite. Railway list_projects mostrou apenas Horizon Site e Power BI Michelle."
   },
   "projects": [
     {
@@ -24,16 +24,22 @@
     {
       "repo": "danielnep/romaneio-digital",
       "status": "diagnosed-not-ready-for-homologation",
-      "evidence": "Verificado neste ciclo: main=e62332f6c8fe44158c1256a7684b8e925eff0491. CI pré-merge run 38973503022/job 117217261776 passou 22/22 no head f825131a; não existe run no merge SHA. Workflow não dispara em push main. Pages run mais recente 34563189267 falhou em SHA antigo 63f86b3 e não implantou. PR 1 foi mergeado apesar de registrar ausência de serviço Railway e validação integrada pendente.",
+      "evidence": "Evidência anterior preservada (não reinspecionada neste ciclo): Verificado neste ciclo: main=e62332f6c8fe44158c1256a7684b8e925eff0491. CI pré-merge run 38973503022/job 117217261776 passou 22/22 no head f825131a; não existe run no merge SHA. Workflow não dispara em push main. Pages run mais recente 34563189267 falhou em SHA antigo 63f86b3 e não implantou. PR 1 foi mergeado apesar de registrar ausência de serviço Railway e validação integrada pendente.",
       "next_action": "Antes de homologar: obter autorização para infraestrutura/custo; criar serviço isolado com volume persistente e variáveis; corrigir estratégia de Pages; fazer CI rodar no SHA de main em branch/PR; depois validar HTTPS, reinício, celular e migração. Não publicar nem tocar dados reais sem autorização."
+    },
+    {
+      "repo": "danielnep/sistema-fluxo-restaurantes",
+      "status": "web-demo-published-ci-green-production-pending",
+      "evidence": "Verificado neste ciclo: main=3ff0bec56a8f96473b6936d3f381a06a98884699. PR 3 de UI mobile premium mergeada; CI run 39105766168/job 117611142018 passou sintaxe e 2/2 integrações. Pages run 39105765712 publicou esse SHA com todos os jobs verdes. README identifica demo web e Docker/Railway, sem APK ou homologação física.",
+      "next_action": "Preservar a demo. Em branch isolada, priorizar preparação verificável para APK/Android e endurecimento operacional; deploy persistente, TLS, dados reais e custos somente com autorização aplicável."
     }
   ],
   "previous_execution": {
-    "id": "may-maestro-pages-source-root-cause-pr77-20261018",
-    "status": "diagnosed-documented-stacked-pr-ready",
-    "summary": "Causa raiz do descompasso do Ronda Pro confirmada e documentada em PR isolada: a demonstracao publica usa GitHub Pages na branch feat/ronda-pro-glass-ui-20261017, nao Railway nem main. A PR documental foi empilhada sobre a PR 75 validada.",
-    "blocker": "Trocar a fonte do GitHub Pages, integrar PR 75/77 ou publicar em Railway exige autorizacao expressa. Supervisor Gemini retornou HTTP 503 UNAVAILABLE as 2026-10-18T07:16:07Z.",
-    "verification": "Pages run 39099995891 SUCCESS no head 45f50c8; jobs build 117594132123, deploy 117594198768 e report 117594198774 SUCCESS. Railway list_projects: somente Horizon Site e Power BI Michelle. PR 76 fechada apos revelar 14 testes legados quebrados na main; causa: referencias CSS antigas. PR 77 aberta, mergeable=true, base chore/css-hygiene-20261017, head db874dfb8dccef2973b0cd6837a4567c98077c07, somente README."
+    "id": "may-maestro-romaneio-readiness-diagnosis-20261018",
+    "status": "diagnosed-not-ready-for-homologation",
+    "summary": "Romaneio Digital inspecionado em modo somente leitura. A main contém o backend offline-first/SQLite do PR 1, mas o estado publicado e o CI da branch principal não acompanham esse SHA; homologação integrada não está pronta.",
+    "blocker": "Não existe serviço Romaneio Digital no Railway conectado. O workflow não executa em push para main, não há run no merge commit e62332f6, e o último build GitHub Pages da main falhou num commit antigo. Provisionar serviço/volume/variáveis, corrigir publicação, testar celular e migrar dados exigem autorização e ambiente apropriados.",
+    "verification": "main head e62332f6c8fe44158c1256a7684b8e925eff0491. PR 1 mergeado em 2026-10-16. Actions run 38973503022 SUCCESS no head f825131a; job 117217261776 executou npm ci e npm test: 22 pass, 0 fail. Não há workflow run associado ao merge commit. test.yml dispara somente em pull_request para main e push da antiga branch fix/ui-guardian-operacional-20261016. Último Pages run 34563189267 falhou no commit antigo 63f86b3 por conflito Jekyll _site/assets; deploy foi skipped. Revisão Codex não terminou por limite de uso; não há threads nem reviews registradas. Automação 6ad32bbba5488191aee18ef5fafd37b7 manteve-se habilitada e sua RRULE foi atualizada para intervalo de 3 horas; next_run_time não foi informado pela API."
   },
   "plugins": [
     {
