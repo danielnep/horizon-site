@@ -1,5 +1,5 @@
-const MAX_BYTES=18000,DEFAULT_URL='https://raw.githubusercontent.com/danielnep/horizon-site/main/maestro/checkpoint.json';
-const ACCEPT=/^https:\/\/raw\.githubusercontent\.com\/danielnep\/horizon-site\/main\/maestro\/checkpoint\.json$/;
+const MAX_BYTES=18000,DEFAULT_URL='https://raw.githubusercontent.com/danielnep/horizon-site/agents/checkpoints/maestro/checkpoint.json';
+const ACCEPT=/^https:\/\/raw\.githubusercontent\.com\/danielnep\/horizon-site\/agents\/checkpoints\/maestro\/checkpoint\.json$/;
 export function sanitizeCheckpoint(input){
  if(!input||typeof input!=='object'||Array.isArray(input)||input.schema_version!==2)throw Error('Checkpoint invalido ou versao errada');
  let updated=null;if(input.updated_at!==null){updated=new Date(input.updated_at);if(!Number.isFinite(updated.getTime()))throw Error('Data invalida');}
@@ -12,6 +12,8 @@ export function sanitizeCheckpoint(input){
  return checkpoint;
 }
 export async function loadCheckpoint({fetcher=fetch,url=DEFAULT_URL,now=new Date()}={}){
+ // Compatibilidade com configuracao existente: sempre ler o checkpoint da branch de trabalho.
+ if(url==='https://raw.githubusercontent.com/danielnep/horizon-site/main/maestro/checkpoint.json')url=DEFAULT_URL;
  if(!ACCEPT.test(url))return {status:'unavailable',checkpoint:null,reason:'Fonte nao autorizada'};
  try{
   const r=await fetcher(url,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
