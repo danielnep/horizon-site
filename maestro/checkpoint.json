@@ -1,30 +1,30 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-17T22:18:11.701Z",
+  "updated_at": "2026-10-18T01:16:00Z",
   "last_execution": {
-    "id": "may-maestro-20261017T22181",
-    "status": "verified",
-    "summary": "Railway deploy do Ronda Pro inspecionado e endpoint publico /health validado.",
-    "blocker": "Deploy ativo anterior a PR 74 e ao commit atual da main.",
-    "verification": "Railway deploy 98003ff2 SUCCESS commit 4f8d3995; GET /health HTTP 200 em 2026-10-17T22:17:38Z; GitHub main 0cbb2053."
+    "id": "may-maestro-20261018T011600Z",
+    "status": "verified-investigation",
+    "summary": "GitHub e Railway inspecionados; Ronda Pro continua no deploy antigo sem novo build registrado.",
+    "blocker": "Causa exata da falha do autodeploy nao exposta nos conectores. Sem autorizacao para deploy em producao.",
+    "verification": "GitHub main 0cbb2053, 69 commits depois de 4f8d3995; Railway deploy 98003ff2 SUCCESS commit 4f8d3995; GET /health teve 2 respostas 2xx em 24h; /data montado."
   },
   "projects": [
     {
       "repo": "danielnep/app-hondas-maxvel",
-      "status": "running-outdated-commit",
-      "evidence": "Railway 98003ff2 SUCCESS, 4f8d3995; main 0cbb2053; health HTTP 200.",
-      "next_action": "Verificar trigger de deploy sem alterar /data."
+      "status": "outdated-deploy-trigger-unresolved",
+      "evidence": "main 0cbb2053; Railway deploy 98003ff2 commit 4f8d3995; 0 deployments posteriores; /health 2x 2xx.",
+      "next_action": "Verificar autodeploy, branch, watch paths, Show Skipped e permissoes GitHub App nas configuracoes Railway; sem deploy sem autorizacao."
     },
     {
       "repo": "danielnep/horizon-site",
       "status": "supervisor-v2-active",
-      "evidence": "Railway c0669ce1 SUCCESS; handoff v2 2026-10-17T22:11:59Z.",
-      "next_action": "Ler novo checkpoint no proximo ciclo Gemini."
+      "evidence": "Railway deploy 2f8bd5aa SUCCESS; handoff v2 2026-10-18T00:24:42Z.",
+      "next_action": "Reconsultar novo checkpoint e decidir proxima prioridade."
     },
     {
       "repo": "danielnep/romaneio-digital",
       "status": "main-merged-no-deploy-in-inspected-environment",
-      "evidence": "main e62332f6; sem servico no ambiente Horizon.",
+      "evidence": "main e62332f6; sem servico no ambiente Horizon, segundo checkpoint anterior.",
       "next_action": "Planejar homologacao isolada."
     }
   ]
