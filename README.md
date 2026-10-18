@@ -46,3 +46,10 @@ O portfólio inclui Romaneio Digital / Farmax, AirSoft / Anônimo e ProspectIA /
 O formulário de contato prepara a mensagem e abre o WhatsApp. O menu para celular, as abas de soluções e os detalhes do portfólio são controlados pelo JavaScript no final do arquivo.
 
 Consulte [docs/estrutura.md](docs/estrutura.md) para localizar os blocos do código. O `index.html` mantém a versão completa do site existente.
+
+## Ferramentas Horizon: Preview integrado ao domínio
+
+A página institucional oferece a seleção em /#ferramentas e o aplicativo funcional em /ferramentas/, com oito módulos demonstráveis e combináveis. O servidor serve estes recursos por uma lista fechada sem alterar o backend Maestro. Dados de demonstração permanecem no navegador, sem sincronização externa por padrão.
+
+Consulte docs/horizon-ferramentas.md para arquitetura, limites, fontes, atualização e testes. Use npm test para verificar o aplicativo integrado.
+

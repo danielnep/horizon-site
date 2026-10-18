@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "project": "danielnep/horizon-site",
+  "origin": "danielnep/horizon-preview",
+  "origin_sha": "6434dbf2528a3de49afaac477c6580f1f29c9c6c",
+  "base_main_sha": "4f578fd1aa276f1991561ec39308938bc8fad8a6",
+  "branch": "feat/horizon-preview-unificado-20261018",
+  "phase": "implemented-tested-locally-awaiting-review",
+  "executor": "Horizon Project Studio, via ferramentas reais do ChatGPT",
+  "changes": [
+    "Seletor 8 modulos no site",
+    "Workspace mesmo dominio em /ferramentas/",
+    "Integracao sem iframe com CTA de montagem",
+    "Roteamento de arquivos allowlist",
+    "Retorno ao site e branding harmonizado",
+    "Documentacao e capturas mobile"
+  ],
+  "checks": {
+    "site_node_tests": {
+      "passed": 26,
+      "failed": 0
+    },
+    "origin_preview_node_tests": {
+      "passed": 29,
+      "failed": 0
+    },
+    "origin_preview_check": "passed",
+    "browser_widths": [
+      320,
+      390,
+      430,
+      768,
+      1280
+    ],
+    "interactive_flow": [
+      "selecionar",
+      "montar",
+      "checklist",
+      "retornar"
+    ],
+    "browser_errors": 0,
+    "no_horizontal_overflow": true
+  },
+  "source_of_truth": "horizon-site branch para experiencia integrada; snapshot Preview de origem documentado",
+  "production_changed": false,
+  "main_changed": false,
+  "next_action": "Revisar PR, aprovar eventual merge e deploy; verificar dominio e Railway apos autorizacao"
+}
