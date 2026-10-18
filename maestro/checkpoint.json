@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T05:40:42.017Z",
+  "updated_at": "2026-10-18T05:42:32.490Z",
   "last_execution": {
-    "id": "may-maestro-installation-verified-20261018",
-    "status": "installed-and-enabled-verified",
-    "summary": "Interface autenticada confirma os sete plugins instalados e todas as habilidades ligadas. Seis principais ja instalados quando inspecionados; Corregedoria instalada agora e confirmada.",
-    "blocker": "Instalacao resolvida. Supervisor producao ainda depende da revisao do PR 6 para ler branch; sem merge/deploy. Erros Gemini 429/503/timeout permanecem; tarefa ChatGPT tem fallback.",
-    "verification": "Sete paginas de configuracao: botao Desinstalar e switches checked. Corregedoria: notificacao de instalacao e leitura posterior. May 1.3.30 com regra de reconciliar not_installed versus UI; fonte f42c564."
+    "id": "may-maestro-pr6-merged-20261018",
+    "status": "merged-deploy-awaiting-confirmation",
+    "summary": "PR 6 integrado na main apos aprovacao do proprietario; fonte lida na main confirma agents/checkpoints.",
+    "blocker": "Railway accept_deploy cancelado: ferramenta retornou user did not approve. Uma mudanca de fonte permanece STAGED, sem deploy.",
+    "verification": "Merge 4f578fd1aa276f1991561ec39308938bc8fad8a6; blob checkpoint.mjs 3db923736a7a3ea7d3ad31ad8dd2da3e0972e489. Patch Railway 31a50bcd-6420-4eba-8817-01f84e2acc53 STAGED; changeCount=1."
   },
   "projects": [
     {
@@ -17,9 +17,9 @@
     },
     {
       "repo": "danielnep/horizon-site",
-      "status": "branch-checkpoints-active-runtime-pr-pending",
-      "evidence": "agents/checkpoints criada e fonte dos sete plugins sincronizada. PR 6 em fix/maestro-checkpoint-branch, commit 41e94a7714e483d4c3612d08493a529b2e6b3741.",
-      "next_action": "Usar checkpoint da branch nesta automacao; revisar PR 6 antes de integrar/deploy. Quando supervisor indisponivel, executar tarefa autorizada em branch a partir do estado atual."
+      "status": "merged-deploy-awaiting-confirmation",
+      "evidence": "PR 6 merged: 4f578fd1. Codigo confirmado na main; Railway patch de uma mudanca STAGED.",
+      "next_action": "Solicitar confirmacao aplicavel do deploy pendente e verificar SUCCESS, commit e leitura de checkpoint; nao contornar cancelamento da ferramenta."
     },
     {
       "repo": "danielnep/romaneio-digital",
@@ -29,11 +29,11 @@
     }
   ],
   "previous_execution": {
-    "id": "may-maestro-agent-repair-20261018",
-    "status": "branch-checkpoint-and-policies-verified",
-    "summary": "Sete plugins atualizados e relidos; autonomia de edicao/commit/push/PR/checkpoint em branches confirmada. QA delegado em trabalho separado. Mesma automacao com RRULE e fallback sem Gemini.",
-    "blocker": "Instalacao nao confirmada: host retorna not_installed e navegador sem login. Supervisor em producao ainda usa leitura antiga; PR 6 preparado, sem merge/deploy. Gemini com 429/503/timeouts.",
-    "verification": "7 releases relidas e arquivos preservados; JSON/YAML/ZIP e QA aprovados. Fonte sincronizada commit 854e396. Correcao runtime 41e94a7 / PR 6; testes locais com transporte simulado. Automacao 6ad32bbba5488191aee18ef5fafd37b7 habilitada RRULE HOURLY."
+    "id": "may-maestro-installation-verified-20261018",
+    "status": "installed-and-enabled-verified",
+    "summary": "Interface autenticada confirma os sete plugins instalados e todas as habilidades ligadas. Seis principais ja instalados quando inspecionados; Corregedoria instalada agora e confirmada.",
+    "blocker": "Instalacao resolvida. Supervisor producao ainda depende da revisao do PR 6 para ler branch; sem merge/deploy. Erros Gemini 429/503/timeout permanecem; tarefa ChatGPT tem fallback.",
+    "verification": "Sete paginas de configuracao: botao Desinstalar e switches checked. Corregedoria: notificacao de instalacao e leitura posterior. May 1.3.30 com regra de reconciliar not_installed versus UI; fonte f42c564."
   },
   "plugins": [
     {
