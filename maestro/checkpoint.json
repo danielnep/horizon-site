@@ -1,31 +1,31 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T01:16:00Z",
+  "updated_at": "2026-10-18T02:23:00Z",
   "last_execution": {
-    "id": "may-maestro-20261018T011600Z",
-    "status": "verified-investigation",
-    "summary": "GitHub e Railway inspecionados; Ronda Pro continua no deploy antigo sem novo build registrado.",
-    "blocker": "Causa exata da falha do autodeploy nao exposta nos conectores. Sem autorizacao para deploy em producao.",
-    "verification": "GitHub main 0cbb2053, 69 commits depois de 4f8d3995; Railway deploy 98003ff2 SUCCESS commit 4f8d3995; GET /health teve 2 respostas 2xx em 24h; /data montado."
+    "id": "may-maestro-20261018T022300Z",
+    "status": "verified-readonly",
+    "summary": "Ronda Pro: GitHub main e Railway inspecionados; nenhum novo deploy ou build registrado apos 4f8d3995. /health retornou HTTP 200 em dois registros.",
+    "blocker": "Deploy de producao pedido no handoff sem autorizacao direta do usuario; causa do autodeploy ainda nao demonstrada.",
+    "verification": "main 0cbb2053; 69 commits apos 4f8d3995; Railway deploy 98003ff2 SUCCESS; build 2026-10-16T20:03Z; GET /health HTTP 200 em 2026-10-17T22:17:33Z e 22:17:38Z; /data configurado."
   },
   "projects": [
     {
       "repo": "danielnep/app-hondas-maxvel",
-      "status": "outdated-deploy-trigger-unresolved",
-      "evidence": "main 0cbb2053; Railway deploy 98003ff2 commit 4f8d3995; 0 deployments posteriores; /health 2x 2xx.",
-      "next_action": "Verificar autodeploy, branch, watch paths, Show Skipped e permissoes GitHub App nas configuracoes Railway; sem deploy sem autorizacao."
+      "status": "production-outdated",
+      "evidence": "main 0cbb2053; Railway 98003ff2 commit 4f8d3995; sem novos deploys; /health 2x 200.",
+      "next_action": "Verificar gatilho de autodeploy, branch e watch paths; nao publicar sem autorizacao."
     },
     {
       "repo": "danielnep/horizon-site",
-      "status": "supervisor-v2-active",
-      "evidence": "Railway deploy 2f8bd5aa SUCCESS; handoff v2 2026-10-18T00:24:42Z.",
-      "next_action": "Reconsultar novo checkpoint e decidir proxima prioridade."
+      "status": "maestro-handoff-v2-active",
+      "evidence": "Railway [maestro-handoff] v2 em 2026-10-18T00:24:42Z.",
+      "next_action": "Consultar decisao mais recente e reagendar a mesma automacao."
     },
     {
       "repo": "danielnep/romaneio-digital",
-      "status": "main-merged-no-deploy-in-inspected-environment",
-      "evidence": "main e62332f6; sem servico no ambiente Horizon, segundo checkpoint anterior.",
-      "next_action": "Planejar homologacao isolada."
+      "status": "not-verified-this-cycle",
+      "evidence": "Sem inspecao nova neste ciclo.",
+      "next_action": "Homologacao isolada quando priorizada."
     }
   ]
 }
