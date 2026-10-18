@@ -1,39 +1,39 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-18T07:45:47.378Z",
+  "updated_at": "2026-10-18T08:42:37.012Z",
   "last_execution": {
-    "id": "may-maestro-pages-source-root-cause-pr77-20261018",
-    "status": "diagnosed-documented-stacked-pr-ready",
-    "summary": "Causa raiz do descompasso do Ronda Pro confirmada e documentada em PR isolada: a demonstracao publica usa GitHub Pages na branch feat/ronda-pro-glass-ui-20261017, nao Railway nem main. A PR documental foi empilhada sobre a PR 75 validada.",
-    "blocker": "Trocar a fonte do GitHub Pages, integrar PR 75/77 ou publicar em Railway exige autorizacao expressa. Supervisor Gemini retornou HTTP 503 UNAVAILABLE as 2026-10-18T07:16:07Z.",
-    "verification": "Pages run 39099995891 SUCCESS no head 45f50c8; jobs build 117594132123, deploy 117594198768 e report 117594198774 SUCCESS. Railway list_projects: somente Horizon Site e Power BI Michelle. PR 76 fechada apos revelar 14 testes legados quebrados na main; causa: referencias CSS antigas. PR 77 aberta, mergeable=true, base chore/css-hygiene-20261017, head db874dfb8dccef2973b0cd6837a4567c98077c07, somente README."
+    "id": "may-maestro-romaneio-readiness-diagnosis-20261018",
+    "status": "diagnosed-not-ready-for-homologation",
+    "summary": "Romaneio Digital inspecionado em modo somente leitura. A main contém o backend offline-first/SQLite do PR 1, mas o estado publicado e o CI da branch principal não acompanham esse SHA; homologação integrada não está pronta.",
+    "blocker": "Não existe serviço Romaneio Digital no Railway conectado. O workflow não executa em push para main, não há run no merge commit e62332f6, e o último build GitHub Pages da main falhou num commit antigo. Provisionar serviço/volume/variáveis, corrigir publicação, testar celular e migrar dados exigem autorização e ambiente apropriados.",
+    "verification": "main head e62332f6c8fe44158c1256a7684b8e925eff0491. PR 1 mergeado em 2026-10-16. Actions run 38973503022 SUCCESS no head f825131a; job 117217261776 executou npm ci e npm test: 22 pass, 0 fail. Não há workflow run associado ao merge commit. test.yml dispara somente em pull_request para main e push da antiga branch fix/ui-guardian-operacional-20261016. Último Pages run 34563189267 falhou no commit antigo 63f86b3 por conflito Jekyll _site/assets; deploy foi skipped. Revisão Codex não terminou por limite de uso; não há threads nem reviews registradas. Automação 6ad32bbba5488191aee18ef5fafd37b7 manteve-se habilitada e sua RRULE foi atualizada para intervalo de 3 horas; next_run_time não foi informado pela API."
   },
   "projects": [
     {
       "repo": "danielnep/app-hondas-maxvel",
       "status": "pages-source-diagnosed-pr77-ready",
-      "evidence": "GitHub Pages publica feat/ronda-pro-glass-ui-20261017, commit 45f50c8, run 39099995891 SUCCESS. Nao existe projeto Ronda Pro no Railway conectado. PR 77 documenta a causa em README, branch docs/ronda-pro-publicacao-pr75-20261018, commit db874dfb, base PR 75, mergeable=true. PR 76 foi fechada; seus testes expuseram 14 assercoes CSS obsoletas na main, ja tratadas pela PR 75.",
+      "evidence": "Evidência anterior preservada (não reinspecionada neste ciclo): GitHub Pages publica feat/ronda-pro-glass-ui-20261017, commit 45f50c8, run 39099995891 SUCCESS. Nao existe projeto Ronda Pro no Railway conectado. PR 77 documenta a causa em README, branch docs/ronda-pro-publicacao-pr75-20261018, commit db874dfb, base PR 75, mergeable=true. PR 76 foi fechada; seus testes expuseram 14 assercoes CSS obsoletas na main, ja tratadas pela PR 75.",
       "next_action": "Revisar PR 75 e PR 77 em conjunto. Trocar a fonte do GitHub Pages somente com autorizacao explicita; nao criar/deployar Railway sem ordem."
     },
     {
       "repo": "danielnep/horizon-site",
       "status": "deployed-supervisor-quota-blocked",
-      "evidence": "Deploy 099c0715-2e53-45a8-bcae-1f0c2a774b49 SUCCESS no commit 4f578fd1; servico live em production, dominio horizonsolucoes.com, healthcheck /health configurado e zero mudancas staged. Log carregou metodos de engenharia hash 2277f762... e em seguida recebeu Gemini HTTP 429 RESOURCE_EXHAUSTED.",
+      "evidence": "Evidência anterior preservada (não reinspecionada neste ciclo): Deploy 099c0715-2e53-45a8-bcae-1f0c2a774b49 SUCCESS no commit 4f578fd1; servico live em production, dominio horizonsolucoes.com, healthcheck /health configurado e zero mudancas staged. Log carregou metodos de engenharia hash 2277f762... e em seguida recebeu Gemini HTTP 429 RESOURCE_EXHAUSTED.",
       "next_action": "Manter a recorrencia de seguranca e, no proximo ciclo, usar checkpoint atual mesmo sem Gemini. Nao alterar API key, plano, variaveis ou producao sem autorizacao aplicavel."
     },
     {
       "repo": "danielnep/romaneio-digital",
-      "status": "not-verified-this-cycle",
-      "evidence": "Registro anterior preservado; nao reinspecionado neste ciclo.",
-      "next_action": "Homologacao isolada quando priorizada."
+      "status": "diagnosed-not-ready-for-homologation",
+      "evidence": "Verificado neste ciclo: main=e62332f6c8fe44158c1256a7684b8e925eff0491. CI pré-merge run 38973503022/job 117217261776 passou 22/22 no head f825131a; não existe run no merge SHA. Workflow não dispara em push main. Pages run mais recente 34563189267 falhou em SHA antigo 63f86b3 e não implantou. PR 1 foi mergeado apesar de registrar ausência de serviço Railway e validação integrada pendente.",
+      "next_action": "Antes de homologar: obter autorização para infraestrutura/custo; criar serviço isolado com volume persistente e variáveis; corrigir estratégia de Pages; fazer CI rodar no SHA de main em branch/PR; depois validar HTTPS, reinício, celular e migração. Não publicar nem tocar dados reais sem autorização."
     }
   ],
   "previous_execution": {
-    "id": "may-maestro-deploy-pr75-ready-20261018",
-    "status": "progress-with-supervisor-blocker",
-    "summary": "Deploy do horizon-site confirmado em producao sem mudancas staged; PR 75 do Ronda Pro confirmada pronta para revisao com quatro workflows verdes e Codex sem achados.",
-    "blocker": "Supervisor Gemini retornou HTTP 429 RESOURCE_EXHAUSTED no deploy atual. Nenhuma nova orientacao valida foi produzida. Integracao da PR 75 e qualquer publicacao de producao continuam dependentes de autorizacao expressa.",
-    "verification": "Railway deployment 099c0715-2e53-45a8-bcae-1f0c2a774b49 SUCCESS no commit 4f578fd1aa276f1991561ec39308938bc8fad8a6; servico horizon-site live em production, sem staged changes. PR 75 head e16eb43f37b9403a752d28cc812e69bb50e85791, mergeable=true; workflows 39075374528, 39075374519, 39075374560 e 39075374539 success; Codex review sem achados."
+    "id": "may-maestro-pages-source-root-cause-pr77-20261018",
+    "status": "diagnosed-documented-stacked-pr-ready",
+    "summary": "Causa raiz do descompasso do Ronda Pro confirmada e documentada em PR isolada: a demonstracao publica usa GitHub Pages na branch feat/ronda-pro-glass-ui-20261017, nao Railway nem main. A PR documental foi empilhada sobre a PR 75 validada.",
+    "blocker": "Trocar a fonte do GitHub Pages, integrar PR 75/77 ou publicar em Railway exige autorizacao expressa. Supervisor Gemini retornou HTTP 503 UNAVAILABLE as 2026-10-18T07:16:07Z.",
+    "verification": "Pages run 39099995891 SUCCESS no head 45f50c8; jobs build 117594132123, deploy 117594198768 e report 117594198774 SUCCESS. Railway list_projects: somente Horizon Site e Power BI Michelle. PR 76 fechada apos revelar 14 testes legados quebrados na main; causa: referencias CSS antigas. PR 77 aberta, mergeable=true, base chore/css-hygiene-20261017, head db874dfb8dccef2973b0cd6837a4567c98077c07, somente README."
   },
   "plugins": [
     {
