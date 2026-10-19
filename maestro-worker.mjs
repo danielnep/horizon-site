@@ -41,7 +41,7 @@ export async function consultDeepSeek({deepSeekKey=process.env.DEEPSEEK_API_KEY,
  if(typeof output!=='string'||!output.trim())throw Error('DeepSeek devolveu resposta vazia');
  let raw;
  try{raw=JSON.parse(output);}catch{throw Error('DeepSeek devolveu JSON invalido');}
- return normalizeDecision(raw,{now,checkpoint,checkpointStatus});
+ return normalizeDecision(raw,{now,checkpoint,checkpointStatus,provider:'deepseek'});
 }
 function safeFailure(error){
  const message=String(error?.message||error);
