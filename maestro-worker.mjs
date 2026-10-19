@@ -48,22 +48,37 @@ function safeFailure(error){
  const match=message.match(/(?:Gemini|DeepSeek) HTTP \d{3}/);
  return match?match[0]:message.includes('ausente')?'credential_missing':error?.name==='TimeoutError'?'timeout':'provider_error';
 }
+// Process-local circuit: a payment error will not be fixed by retrying every 10 min.
+// Gemini is still consulted, and recovery never depends on the DeepSeek balance.
+let deepSeekPaymentHoldUntil=0;
+export function paymentCircuitStatus(now=Date.now()){
+ return {blocked:now<deepSeekPaymentHoldUntil,retryAfterMs:Math.max(0,deepSeekPaymentHoldUntil-now)};
+}
 export async function consultWithFallback(options={}){
  try{return await consultGemini(options);}
  catch(geminiError){
-  // Do not retry a non-idempotent action: both providers generate only a decision.
-  // Never pass API errors or secrets as model instructions.
+  // Both providers produce a decision only. Do not retry tools or leak secrets.
+  const nowMs=options.now instanceof Date?options.now.getTime():Date.now();
+  const log=options.log||console.log;
+  if(nowMs<deepSeekPaymentHoldUntil){
+   log('[maestro-provider-fallback] '+JSON.stringify({from:'gemini',to:'deepseek',
+     reason:safeFailure(geminiError),fallback:'DeepSeek HTTP 402',
+     result:'skipped_payment_circuit',retryAfterSeconds:Math.ceil((deepSeekPaymentHoldUntil-nowMs)/1000)}));
+   throw Error('Supervisor indisponivel: Gemini '+safeFailure(geminiError)+'; DeepSeek payment_circuit_open');
+  }
   try{
    const decision=await consultDeepSeek(options);
-   const log=options.log||console.log;
+   deepSeekPaymentHoldUntil=0;
    log('[maestro-provider-fallback] '+JSON.stringify({from:'gemini',to:'deepseek',
      reason:safeFailure(geminiError),result:'success'}));
    return decision;
   }catch(deepSeekError){
-   const log=options.log||console.log;
+   const failure=safeFailure(deepSeekError);
+   if(failure==='DeepSeek HTTP 402')deepSeekPaymentHoldUntil=nowMs+60*60*1000;
    log('[maestro-provider-fallback] '+JSON.stringify({from:'gemini',to:'deepseek',
-     reason:safeFailure(geminiError),fallback:safeFailure(deepSeekError),result:'failed'}));
-   throw Error('Supervisor indisponivel: Gemini '+safeFailure(geminiError)+'; DeepSeek '+safeFailure(deepSeekError));
+     reason:safeFailure(geminiError),fallback:failure,result:'failed',
+     paymentCircuitSeconds:failure==='DeepSeek HTTP 402'?3600:0}));
+   throw Error('Supervisor indisponivel: Gemini '+safeFailure(geminiError)+'; DeepSeek '+failure);
   }
  }
 }
