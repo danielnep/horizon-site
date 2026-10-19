@@ -7,7 +7,7 @@ const AUDIENCE = 'horizon-maestro-state';
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const WORKFLOW = 'danielnep/May-Maestro-Executor/.github/workflows/chat-requests.yml@refs/heads/main';
 const SMOKE_WORKFLOW = 'danielnep/May-Maestro-Executor/.github/workflows/agent-state-smoke.yml@refs/heads/main';
-const SUBJECT = 'repo:danielnep/May-Maestro-Executor:ref:refs/heads/main';
+const SUBJECT = 'repo:danielnep@63399664/May-Maestro-Executor@1423033369:ref:refs/heads/main';
 const MAX_SNAPSHOT = 20 * 1024 * 1024;
 let databasePromise;
 let jwksCache = { expires: 0, keys: [] };
