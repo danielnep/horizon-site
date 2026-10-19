@@ -5,10 +5,22 @@ import {randomUUID} from 'node:crypto';
 const VERSION=1;
 const MAX_HANDOFFS=256;
 const ID=/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i;
-export const emptyHandoffState=()=>({version:VERSION,handoffs:[]});
+export const emptyHandoffState=()=>({version:VERSION,handoffs:[],lastObservation:null});
 
 function assertState(state){
   if(!state||state.version!==VERSION||!Array.isArray(state.handoffs)||state.handoffs.length>MAX_HANDOFFS)throw Error('Estado de handoffs invalido');
+  const o=state.lastObservation;
+  if(o!==undefined&&o!==null){
+    if(typeof o!=='object'||Array.isArray(o)||!Number.isFinite(Date.parse(o.checkedAt))||
+       !['readable','unavailable'].includes(o.checkpointReadability)||
+       !['fresh','stale','unavailable','awaiting-first-checkpoint'].includes(o.checkpointRecencyStatus)||
+       !['overdue','pending','acknowledged','unverified'].includes(o.executionStatus)||
+       !(o.checkpointAgeMinutes===null||(Number.isSafeInteger(o.checkpointAgeMinutes)&&o.checkpointAgeMinutes>=0))||
+       !Number.isSafeInteger(o.pendingHandoffs)||o.pendingHandoffs<0||
+       !Number.isSafeInteger(o.overdueHandoffs)||o.overdueHandoffs<0){
+      throw Error('Observacao de checkpoint invalida');
+    }
+  }
   const seen=new Set();
   for(const h of state.handoffs){
     if(!h||typeof h.id!=='string'||!ID.test(h.id)||seen.has(h.id)||!['pending','overdue','acknowledged'].includes(h.status))throw Error('Handoff invalido');
@@ -57,7 +69,7 @@ export function reconcileHandoffs(state,checkpoint,now=new Date()){
     }
     return h;
   });
-  return {state:{version:VERSION,handoffs},changes};
+  return {state:{...state,handoffs},changes};
 }
 
 export function summarizeHandoffs(state,checkpointState){
@@ -79,6 +91,21 @@ export function summarizeHandoffs(state,checkpointState){
   };
 }
 
+export function observeCheckpoint(state,audit,now=new Date()){
+  assertState(state);
+  const observation={
+    checkedAt:now.toISOString(),
+    checkpointReadability:audit.checkpointReadability,
+    checkpointUpdatedAt:audit.checkpointUpdatedAt,
+    checkpointAgeMinutes:audit.checkpointAgeMinutes,
+    checkpointRecencyStatus:audit.checkpointRecencyStatus,
+    executionStatus:audit.executionStatus,
+    pendingHandoffs:audit.pendingHandoffs,
+    overdueHandoffs:audit.overdueHandoffs
+  };
+  return assertState({...state,lastObservation:observation});
+}
+
 export function registerHandoff(state,decision,{id=randomUUID()}={}){
   assertState(state);
   if(state.handoffs.length>=MAX_HANDOFFS)throw Error('Limite de handoffs atingido; preservar historico e investigar');
@@ -88,5 +115,5 @@ export function registerHandoff(state,decision,{id=randomUUID()}={}){
     checkpointExecutionId:decision.checkpointExecutionId,status:'pending'
   };
   if(!Number.isFinite(Date.parse(handoff.issuedAt))||!Number.isFinite(Date.parse(handoff.dueAtUtc)))throw Error('Data de handoff invalida');
-  return {version:VERSION,handoffs:[...state.handoffs,handoff]};
+  return {...state,handoffs:[...state.handoffs,handoff]};
 }

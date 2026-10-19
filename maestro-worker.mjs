@@ -3,7 +3,7 @@ import {ENGINEERING_CONTEXT} from './maestro/engineering.mjs';
 import {SUPERVISOR_INSTRUCTION,buildPrompt} from './maestro/prompt.mjs';
 import {loadCheckpoint} from './maestro/checkpoint.mjs';
 import {randomUUID} from 'node:crypto';
-import {createFileHandoffStore,emptyHandoffState,reconcileHandoffs,registerHandoff,summarizeHandoffs} from './maestro/handoff-store.mjs';
+import {createFileHandoffStore,emptyHandoffState,reconcileHandoffs,observeCheckpoint,registerHandoff,summarizeHandoffs} from './maestro/handoff-store.mjs';
 import {normalizeDecision,toMayHandoff} from './maestro/protocol.mjs';
 export const IDENTITY=MAESTRO,PLUGINS=MAESTRO.plugins;
 export async function consultGemini({apiKey=process.env.GEMINI_API_KEY,model=process.env.GEMINI_MODEL||'gemini-3.8-flash',
@@ -93,12 +93,20 @@ export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallba
  // Durable handoff receipts are separate from the public May-owned checkpoint.
  const stored=handoffStore?await handoffStore.read():emptyHandoffState();
  const reconciled=reconcileHandoffs(stored,state.checkpoint,now);
- if(handoffStore && reconciled.changes.length)await handoffStore.write(reconciled.state);
+ const audit=summarizeHandoffs(reconciled.state,state);
+ if(!handoffStore)audit.executionStatus='unverified';
+ // Always write the checkpoint observation before contacting AI. A 429/402/503
+ // cannot suppress evidence of an unchanged, unreadable or overdue checkpoint.
+ const durableState=handoffStore?observeCheckpoint(reconciled.state,audit,now):reconciled.state;
+ if(handoffStore){
+  await handoffStore.write(durableState);
+  log('[maestro-checkpoint-audit] '+JSON.stringify({
+   observedAt:now.toISOString(),...audit,persistenceStatus:'persisted'
+  }));
+ }
  for(const change of reconciled.changes){
   if(change.status==='overdue')log('[maestro-handoff-alert] '+JSON.stringify({handoffId:change.id,status:'overdue',reason:'no_matching_verified_checkpoint'}));
  }
- const audit=summarizeHandoffs(reconciled.state,state);
- if(!handoffStore)audit.executionStatus='unverified';
  const currentId=state.checkpoint?.last_execution?.id||null;
  const oldId=previous?.checkpointExecutionId||null;
  const unacknowledged=handoffStore?audit.pendingHandoffs+audit.overdueHandoffs:
@@ -109,7 +117,7 @@ export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallba
   persistenceStatus:handoffStore?'persisted':'unavailable'};
  // Persist BEFORE publishing the handoff. On storage failure, the cycle fails
  // visibly and the scheduler retries instead of advertising an untracked job.
- if(handoffStore)await handoffStore.write(registerHandoff(reconciled.state,decision,{id:decision.handoffId}));
+ if(handoffStore)await handoffStore.write(registerHandoff(durableState,decision,{id:decision.handoffId}));
  const handoff=toMayHandoff(decision);
  log('[maestro-supervisor] '+JSON.stringify(decision));
  log('[maestro-handoff] '+JSON.stringify(handoff));
