@@ -28,6 +28,9 @@ export function toMayHandoff(d){
  focus:d.focus,dueAtUtc:d.nextCallAt,taskId:d.automationId,
  instruction:d.nextMayTask,acceptance:d.acceptanceCriteria,knownContext:d.contextSummary,
  checkpointStatus:d.checkpointStatus,checkpointExecutionId:d.checkpointExecutionId,
+ handoffId:d.handoffId??null,checkpointReadability:d.checkpointReadability??'unavailable',
+ checkpointAgeMinutes:d.checkpointAgeMinutes??null,executionStatus:d.executionStatus??'unverified',
+ pendingHandoffs:d.pendingHandoffs??0,overdueHandoffs:d.overdueHandoffs??0,
  beforeWork:'Ler maestro/metodos-engenharia-may.md na revisao indicada pelo sha256. Aplicar investigacao causal, alteracao na origem e verificacao proporcional ao escopo.',
- afterWork:'Registrar fatos e provas em maestro/checkpoint.json via GitHub. Reagendar mesma tarefa ChatGPT via automations.update se a ferramenta estiver disponivel; nunca fingir convocacao externa.'};
+ afterWork:'Registrar evidencias e o handoff_id exato no campo last_execution.handoff_id do maestro/checkpoint.json na branch agents/checkpoints; sem recibo verificado esta ordem permanece pendente. Reagendar mesma automacao somente se ferramenta disponivel.'};
 }
