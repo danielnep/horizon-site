@@ -2,6 +2,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto';
 import { gzipSync, gunzipSync } from 'node:zlib';
+import { statfs } from 'node:fs/promises';
 
 const DATA_DIR = '/data/horizon-agents-postgres';
 const AUDIENCE = 'horizon-maestro-state';
@@ -13,14 +14,39 @@ const MAX_SNAPSHOT = 20 * 1024 * 1024;
 let databasePromise;
 let jwksCache = { expires: 0, keys: [] };
 let compactWrites = 0;
+let storageReadOnly = false;
+const MIN_MIGRATION_FREE_BYTES = 64 * 1024 * 1024;
+
+export function hasMigrationHeadroom({ bavail, bsize }) {
+  return Number(bavail) * Number(bsize) >= MIN_MIGRATION_FREE_BYTES;
+}
+
 
 export function initAgentDatabase() {
   if (!databasePromise) databasePromise = (async () => {
     const pg = await PGlite.create(DATA_DIR);
-    // Recycle PostgreSQL WAL before allocating additional tables: the 500 MB
-    // existing volume has previously exhausted its free pages under MVCC writes.
-    await pg.exec('CHECKPOINT');
-    await pg.exec('VACUUM');
+    // Never attempt VACUUM, DDL or migration while the persistent volume is full.
+    // VACUUM itself creates visibility-map pages; under ENOSPC even GET was 503.
+    // This emergency path preserves the original snapshot for authenticated GET.
+    try {
+      const disk = await statfs(DATA_DIR);
+      if (!hasMigrationHeadroom(disk)) {
+        storageReadOnly = true;
+        console.error('[horizon-agent-db] low disk: preserving snapshots in read-only mode');
+        return pg;
+      }
+      await pg.exec('CHECKPOINT');
+      await pg.exec('VACUUM');
+    } catch (error) {
+      if (/No space left on device|ENOSPC/i.test(String(error?.message))) {
+        storageReadOnly = true;
+        console.error('[horizon-agent-db] no free disk: read-only rescue active');
+        return pg;
+      }
+      throw error;
+    }
+    storageReadOnly = false;
+    try {
     await pg.exec('CREATE TABLE IF NOT EXISTS horizon_agent_snapshots (key TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision > 0), snapshot BYTEA NOT NULL, checksum TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
     await pg.exec('CREATE TABLE IF NOT EXISTS horizon_agent_snapshots_compact (key TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision > 0), snapshot BYTEA NOT NULL, checksum TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
     const compact = await pg.query("SELECT revision FROM horizon_agent_snapshots_compact WHERE key='primary'");
@@ -45,10 +71,53 @@ export function initAgentDatabase() {
         console.log('[horizon-agent-db] recycled legacy uncompressed storage');
       }
     }
+    } catch (error) {
+      if (/No space left on device|ENOSPC/i.test(String(error?.message))) {
+        storageReadOnly = true;
+        console.error('[horizon-agent-db] migration deferred: low disk, old snapshot preserved');
+        return pg;
+      }
+      throw error;
+    }
     return pg;
   })().catch(error => { databasePromise = undefined; throw error; });
   return databasePromise;
 }
+/**
+ * Recover a verified snapshot without mutating PostgreSQL, including installations
+ * where a low-space failure interrupted the gzip-table migration.
+ */
+export async function readStoredSnapshot(pg) {
+  const { rows: schema } = await pg.query(
+    "SELECT to_regclass('public.horizon_agent_snapshots_compact') AS compact, " +
+    "to_regclass('public.horizon_agent_snapshots') AS legacy");
+  const { compact, legacy } = schema[0] || {};
+  if (compact) {
+    const { rows } = await pg.query(
+      "SELECT revision, replace(encode(snapshot,'base64'),chr(10),'') AS snapshot,checksum " +
+      "FROM horizon_agent_snapshots_compact WHERE key='primary'");
+    if (rows[0]) {
+      const original = gunzipSync(Buffer.from(rows[0].snapshot, 'base64'),
+        { maxOutputLength: MAX_SNAPSHOT });
+      const checksum = createHash('sha256').update(original).digest('hex');
+      if (checksum !== rows[0].checksum) throw Error('Compact snapshot integrity mismatch');
+      return { revision: rows[0].revision, snapshot: original.toString('base64'), checksum };
+    }
+  }
+  if (legacy) {
+    const { rows } = await pg.query(
+      "SELECT revision, replace(encode(snapshot,'base64'),chr(10),'') AS snapshot,checksum " +
+      "FROM horizon_agent_snapshots WHERE key='primary'");
+    if (rows[0]) {
+      const original = Buffer.from(rows[0].snapshot, 'base64');
+      const checksum = createHash('sha256').update(original).digest('hex');
+      if (checksum !== rows[0].checksum) throw Error('Legacy snapshot integrity mismatch');
+      return { revision: rows[0].revision, snapshot: original.toString('base64'), checksum };
+    }
+  }
+  return { revision: 0, snapshot: null, checksum: null };
+}
+
 function b64urlJSON(value) {
   return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
 }
@@ -110,13 +179,11 @@ export async function handleAgentState(req, res) {
     }
     const pg = await initAgentDatabase();
     if (req.method === 'GET') {
-      const rows = await pg.query("SELECT revision, replace(encode(snapshot, 'base64'), chr(10), '') AS snapshot, checksum FROM horizon_agent_snapshots_compact WHERE key = 'primary'");
-      const row = rows.rows[0];
-      if (!row) {json(res,200,{revision:0,snapshot:null,checksum:null});return;}
-      const restored = gunzipSync(Buffer.from(row.snapshot,'base64'),{maxOutputLength:MAX_SNAPSHOT});
-      if (createHash('sha256').update(restored).digest('hex') !== row.checksum)
-        throw Error('Compact snapshot integrity mismatch');
-      json(res,200,{revision:row.revision,snapshot:restored.toString('base64'),checksum:row.checksum});
+      json(res, 200, await readStoredSnapshot(pg));
+      return;
+    }
+    if (storageReadOnly) {
+      json(res, 507, {error:'agent_storage_full', detail:'read_only_rescue'});
       return;
     }
     const data = await readBody(req, Math.ceil(MAX_SNAPSHOT * 4 / 3) + 2048);

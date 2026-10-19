@@ -6,6 +6,7 @@ on:
       - 'maestro-worker.mjs'
       - 'package.json'
       - 'tests/**'
+      - 'maestro/**'
       - '.github/workflows/maestro-qa.yml'
   workflow_dispatch:
 jobs:
@@ -22,5 +23,7 @@ jobs:
         run: |
           node --check server.mjs
           node --check maestro-worker.mjs
+      - name: Install Node dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Tests (mock Gemini, no secrets)
         run: npm test
