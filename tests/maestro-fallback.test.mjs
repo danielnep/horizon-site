@@ -58,7 +58,7 @@ test('ambos indisponíveis: falha clara e sem segredo em logs',async()=>{
   return {ok:false,status:url.includes('generativelanguage')?429:503,
     json:async()=>({error:{message:'secret'}})};
  },x=>logs.push(x))),/Gemini HTTP 429; DeepSeek DeepSeek HTTP 503/);
- assert.doesNotMatch(logs.join(''),'deepseek-test');
+ assert.doesNotMatch(logs.join(''),/deepseek-test/);
 });
 test('sem chave DeepSeek registra bloqueio, não ignora a falha',async()=>{
  const logs=[];
