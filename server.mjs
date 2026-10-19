@@ -77,7 +77,7 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   // The active worker uses encrypted SQLite checkpoints on GitHub.
   // Never eagerly open/VACUUM the full legacy PGlite volume on normal site startup.
   // Its authenticated GET endpoint may still recover a verified historical snapshot.
-  console.log('[horizon-agent-db] legacy PGlite preserved; initialization deferred');
+  console.log(retirementConfirmed()?'[horizon-agent-db] legacy PGlite retired; active state is GitHub encrypted SQLite':'[horizon-agent-db] legacy PGlite archive preserved; initialization deferred');
   // Startup maintenance is an explicit owner-armed, SHA-pinned one-time retirement.
   // The legacy endpoint is disabled before any deletion, and active handoffs remain untouched.
   if(background){
