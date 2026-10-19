@@ -72,7 +72,7 @@ test('agenda a frequencia pedida e reconsulta com erro',async()=>{
  const fail=[],queue=[];
  const stop2=startScheduledReviewer({env:{MAESTRO_ENABLE_AUTO:'1'},run:async()=>{throw Error('offline')},
  schedule:(fn,ms)=>{queue.push(fn);fail.push(ms);return {unref(){}}},cancel:()=>{},log:()=>{}});
- await queue[0]();assert.equal(fail[1],3600000);stop2();
+ await queue[0]();assert.equal(fail[1],600000);stop2();
 });
 test('site e endpoints internos preservados',async()=>{
  const srv=startServer({listenPort:0,background:false,reader:async()=>Buffer.from('<html>Horizon</html>')});
