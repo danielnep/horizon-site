@@ -2,13 +2,15 @@ import {MAESTRO} from './maestro/identity.mjs';
 import {ENGINEERING_CONTEXT} from './maestro/engineering.mjs';
 import {SUPERVISOR_INSTRUCTION,buildPrompt} from './maestro/prompt.mjs';
 import {loadCheckpoint} from './maestro/checkpoint.mjs';
+import {randomUUID} from 'node:crypto';
+import {createFileHandoffStore,emptyHandoffState,reconcileHandoffs,registerHandoff,summarizeHandoffs} from './maestro/handoff-store.mjs';
 import {normalizeDecision,toMayHandoff} from './maestro/protocol.mjs';
 export const IDENTITY=MAESTRO,PLUGINS=MAESTRO.plugins;
 export async function consultGemini({apiKey=process.env.GEMINI_API_KEY,model=process.env.GEMINI_MODEL||'gemini-3.8-flash',
- fetcher=fetch,now=new Date(),checkpoint=null,checkpointStatus='unavailable',previous=null,staleCount=0}={}){
+ fetcher=fetch,now=new Date(),checkpoint=null,checkpointStatus='unavailable',checkpointAudit=null,previous=null,staleCount=0}={}){
  if(!apiKey)throw Error('GEMINI_API_KEY ausente');
  if(!/^[a-zA-Z0-9_.-]{3,80}$/.test(model))throw Error('Modelo invalido');
- const userContext=buildPrompt({checkpoint,checkpointStatus,previous,staleCount,now});
+ const userContext=buildPrompt({checkpoint,checkpointStatus,checkpointAudit,previous,staleCount,now});
  const payload={systemInstruction:{parts:[{text:SUPERVISOR_INSTRUCTION}]},
  contents:[{role:'user',parts:[{text:userContext}]}],
  generationConfig:{temperature:0.15,responseMimeType:'application/json',maxOutputTokens:2300}};
@@ -25,10 +27,10 @@ export async function consultGemini({apiKey=process.env.GEMINI_API_KEY,model=pro
 }
 export async function consultDeepSeek({deepSeekKey=process.env.DEEPSEEK_API_KEY,
  deepSeekModel=process.env.DEEPSEEK_MODEL||'deepseek-chat',fetcher=fetch,now=new Date(),
- checkpoint=null,checkpointStatus='unavailable',previous=null,staleCount=0}={}){
+ checkpoint=null,checkpointStatus='unavailable',checkpointAudit=null,previous=null,staleCount=0}={}){
  if(!deepSeekKey)throw Error('DEEPSEEK_API_KEY ausente no supervisor');
  if(!/^[a-zA-Z0-9_.-]{3,80}$/.test(deepSeekModel))throw Error('Modelo DeepSeek invalido');
- const userContext=buildPrompt({checkpoint,checkpointStatus,previous,staleCount,now});
+ const userContext=buildPrompt({checkpoint,checkpointStatus,checkpointAudit,previous,staleCount,now});
  const payload={model:deepSeekModel,
    messages:[{role:'system',content:SUPERVISOR_INSTRUCTION},{role:'user',content:userContext}],
    response_format:{type:'json_object'},temperature:0.15,max_tokens:2300};
@@ -84,29 +86,44 @@ export async function consultWithFallback(options={}){
 }
 export const review=consultWithFallback;
 export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallback,clock=()=>new Date(),
- checkpointUrl=process.env.MAESTRO_CHECKPOINT_URL,previous=null,staleCount=0,log=console.log}={}){
+ checkpointUrl=process.env.MAESTRO_CHECKPOINT_URL,previous=null,staleCount=0,log=console.log,handoffStore=null}={}){
  const now=clock();
  log('[maestro-engineering-context] '+JSON.stringify(ENGINEERING_CONTEXT));
  const state=await loadCheckpoint({fetcher,...(checkpointUrl?{url:checkpointUrl}:{}),now});
+ // Durable handoff receipts are separate from the public May-owned checkpoint.
+ const stored=handoffStore?await handoffStore.read():emptyHandoffState();
+ const reconciled=reconcileHandoffs(stored,state.checkpoint,now);
+ if(handoffStore && reconciled.changes.length)await handoffStore.write(reconciled.state);
+ for(const change of reconciled.changes){
+  if(change.status==='overdue')log('[maestro-handoff-alert] '+JSON.stringify({handoffId:change.id,status:'overdue',reason:'no_matching_verified_checkpoint'}));
+ }
+ const audit=summarizeHandoffs(reconciled.state,state);
+ if(!handoffStore)audit.executionStatus='unverified';
  const currentId=state.checkpoint?.last_execution?.id||null;
  const oldId=previous?.checkpointExecutionId||null;
- const unacknowledged=oldId!==null&&oldId===currentId?staleCount+1:0;
- const decision=await gemini({fetcher,checkpoint:state.checkpoint,checkpointStatus:state.status,
- previous,staleCount:unacknowledged,now,log});
+ const unacknowledged=handoffStore?audit.pendingHandoffs+audit.overdueHandoffs:
+   oldId!==null&&oldId===currentId?staleCount+1:0;
+ const rawDecision=await gemini({fetcher,checkpoint:state.checkpoint,checkpointStatus:state.status,
+ checkpointAudit:audit,previous,staleCount:unacknowledged,now,log});
+ const decision={...rawDecision,...audit,handoffId:randomUUID(),
+  persistenceStatus:handoffStore?'persisted':'unavailable'};
+ // Persist BEFORE publishing the handoff. On storage failure, the cycle fails
+ // visibly and the scheduler retries instead of advertising an untracked job.
+ if(handoffStore)await handoffStore.write(registerHandoff(reconciled.state,decision,{id:decision.handoffId}));
  const handoff=toMayHandoff(decision);
  log('[maestro-supervisor] '+JSON.stringify(decision));
  log('[maestro-handoff] '+JSON.stringify(handoff));
  return {decision,handoff,checkpointStatus:state.status,staleCount:unacknowledged};
 }
 export function startScheduledReviewer({env=process.env,run=runSupervisorCycle,clock=()=>new Date(),
- log=console.log,schedule=(fn,ms)=>setTimeout(fn,ms),cancel=clearTimeout}={}){
+ log=console.log,schedule=(fn,ms)=>setTimeout(fn,ms),cancel=clearTimeout,handoffStore=createFileHandoffStore()}={}){
  if(env.MAESTRO_ENABLE_AUTO!=='1'){log('[maestro] supervisor desabilitado');return ()=>{};}
  let stopped=false,active=false,timer=null,previous=null,unchanged=0;
  const tick=async()=>{
  if(stopped||active)return;
  active=true;let minutes=10;
  try{
-  const r=await run({clock,log,previous,staleCount:unchanged});
+  const r=await run({clock,log,previous,staleCount:unchanged,handoffStore});
   if(stopped)return;
   previous=r.decision;unchanged=r.staleCount;minutes=r.decision.nextCallMinutes;
   log('[maestro-scheduler] '+JSON.stringify({nextAt:r.decision.nextCallAt,minutes,checkpointStatus:r.checkpointStatus}));
