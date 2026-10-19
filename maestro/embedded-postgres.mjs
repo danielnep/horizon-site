@@ -25,6 +25,13 @@ export function hasMigrationHeadroom({ bavail, bsize }) {
 export function initAgentDatabase() {
   if (!databasePromise) databasePromise = (async () => {
     const pg = await PGlite.create(DATA_DIR);
+    // Archived state: the worker now uses encrypted GitHub SQLite. Preserve this
+    // volume until a separately verified migration/backup; never VACUUM on GET.
+    if (process.env.HORIZON_LEGACY_STATE_WRITE !== '1') {
+      storageReadOnly = true;
+      console.log('[horizon-agent-db] legacy PGlite archive opened without DDL/VACUUM');
+      return pg;
+    }
     // Never attempt VACUUM, DDL or migration while the persistent volume is full.
     // VACUUM itself creates visibility-map pages; under ENOSPC even GET was 503.
     // This emergency path preserves the original snapshot for authenticated GET.
@@ -183,7 +190,7 @@ export async function handleAgentState(req, res) {
       return;
     }
     if (storageReadOnly) {
-      json(res, 507, {error:'agent_storage_full', detail:'read_only_rescue'});
+      json(res, 507, {error:'legacy_state_read_only', detail:'github_sqlite_is_active'});
       return;
     }
     const data = await readBody(req, Math.ceil(MAX_SNAPSHOT * 4 / 3) + 2048);
