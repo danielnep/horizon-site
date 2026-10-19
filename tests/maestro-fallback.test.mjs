@@ -25,6 +25,7 @@ test('Gemini 429 executa fallback DeepSeek na MESMA chamada',async()=>{
  assert.equal(calls.length,2);assert.match(calls[0].url,/generativelanguage/);
  assert.match(calls[1].url,/api.deepseek.com/);
  assert.equal(got.focus,'danielnep/michelle-preview');
+ assert.equal(got.source,'deepseek-supervisor');
  assert.match(logs[0],/"result":"success"/);
  assert.doesNotMatch(logs[0],/deepseek-test/);
 });
@@ -50,7 +51,7 @@ test('Gemini saudável não usa DeepSeek',async()=>{
   assert.match(url,/generativelanguage/);
   return {ok:true,json:async()=>({candidates:[{content:{parts:[{text:JSON.stringify(decision)}]}}]})};
  }));
- assert.equal(calls,1);assert.equal(data.priority,'high');
+ assert.equal(calls,1);assert.equal(data.priority,'high');assert.equal(data.source,'gemini-supervisor');
 });
 test('ambos indisponíveis: falha clara e sem segredo em logs',async()=>{
  const logs=[];
@@ -84,5 +85,6 @@ test('supervisor completo publica decisão do DeepSeek quando Gemini 429',async(
   gemini:options=>consultWithFallback({...options,apiKey:'test',deepSeekKey:'test'}),
   checkpointUrl:'',clock:()=>now,log:x=>logs.push(x)});
  assert.equal(providerCalls,2);assert.equal(status.decision.focus,'danielnep/michelle-preview');
+ assert.equal(status.decision.source,'deepseek-supervisor');
  assert.ok(logs.some(x=>x.startsWith('[maestro-handoff]')));
 });
