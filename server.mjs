@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {startScheduledReviewer} from './maestro-worker.mjs';
 import {handleAgentState} from './maestro/embedded-postgres.mjs';
 import {inspectVolume} from './maestro/volume-inventory.mjs';
+import {retirementConfirmed,retireLegacyVolume} from './maestro/retire-legacy-volume.mjs';
 const indexPath=fileURLToPath(new URL('./index.html',import.meta.url));
 // Primeira ferramenta Horizon: um workspace próprio, hospedado no mesmo domínio.
 // Lista explícita evita exposição de arquivos internos e caminhos fora da pasta.
@@ -27,7 +28,14 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   const server=http.createServer(async(req,res)=>{
     const path=(req.url||'/').split('?')[0];
     if(path==='/mcp'){await handleHorizonMcp(req,res);return;}
-    if(path==='/api/internal/horizon-agent-state'){await handleAgentState(req,res);return;}
+    if(path==='/api/internal/horizon-agent-state'){
+      if(retirementConfirmed()){
+        res.writeHead(410,{'content-type':'application/json','cache-control':'no-store'});
+        res.end(JSON.stringify({error:'legacy_archive_retired',activeBackend:'github-encrypted-sqlite'}));
+        return;
+      }
+      await handleAgentState(req,res);return;
+    }
     if(path==='/health'){res.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify({status:'ok'}));return;}
     if(path==='/ferramentas'){
       res.writeHead(308,{'location':'/ferramentas/','cache-control':'no-store'});
@@ -70,9 +78,21 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   // Never eagerly open/VACUUM the full legacy PGlite volume on normal site startup.
   // Its authenticated GET endpoint may still recover a verified historical snapshot.
   console.log('[horizon-agent-db] legacy PGlite preserved; initialization deferred');
-  // Nonblocking, read-only inventory at startup; filenames outside allowlist are redacted.
-  if(background)void inspectVolume().then(r=>console.log('[horizon-volume-inventory] '+JSON.stringify(r)))
-    .catch(e=>console.error('[horizon-volume-inventory-error] '+String(e?.code||e?.message||e).slice(0,120)));
+  // Startup maintenance is an explicit owner-armed, SHA-pinned one-time retirement.
+  // The legacy endpoint is disabled before any deletion, and active handoffs remain untouched.
+  if(background){
+    void (async()=>{
+      try{
+        const retired=await retireLegacyVolume();
+        if(retired.status==='disabled')console.log('[horizon-legacy-retirement] disabled');
+        else if(retired.status==='already_retired')console.log('[horizon-legacy-retirement] already retired');
+      }catch(e){console.error('[horizon-legacy-retirement-error] '+String(e?.code||e?.message||e).slice(0,150));}
+      try{
+        const inventory=await inspectVolume();
+        console.log('[horizon-volume-inventory] '+JSON.stringify(inventory));
+      }catch(e){console.error('[horizon-volume-inventory-error] '+String(e?.code||e?.message||e).slice(0,120));}
+    })();
+  }
   server.on('close',stop);
   server.listen(listenPort,'0.0.0.0');
   return server;
