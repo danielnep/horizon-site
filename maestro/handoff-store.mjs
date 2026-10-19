@@ -1,0 +1,92 @@
+import {mkdir, readFile, rename, unlink, writeFile} from 'node:fs/promises';
+import {dirname} from 'node:path';
+import {randomUUID} from 'node:crypto';
+
+const VERSION=1;
+const MAX_HANDOFFS=256;
+const ID=/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i;
+export const emptyHandoffState=()=>({version:VERSION,handoffs:[]});
+
+function assertState(state){
+  if(!state||state.version!==VERSION||!Array.isArray(state.handoffs)||state.handoffs.length>MAX_HANDOFFS)throw Error('Estado de handoffs invalido');
+  const seen=new Set();
+  for(const h of state.handoffs){
+    if(!h||typeof h.id!=='string'||!ID.test(h.id)||seen.has(h.id)||!['pending','overdue','acknowledged'].includes(h.status))throw Error('Handoff invalido');
+    if(!Number.isFinite(Date.parse(h.issuedAt))||!Number.isFinite(Date.parse(h.dueAtUtc)))throw Error('Data de handoff invalida');
+    seen.add(h.id);
+  }
+  return state;
+}
+
+export function createFileHandoffStore({file=process.env.MAESTRO_HANDOFF_STATE_PATH||'/data/maestro-supervisor-handoffs.json'}={}){
+  return {
+    file,
+    async read(){
+      try{return assertState(JSON.parse(await readFile(file,'utf8')));}
+      catch(error){if(error?.code==='ENOENT')return emptyHandoffState();throw error;}
+    },
+    async write(state){
+      assertState(state);
+      const tmp=file+'.'+process.pid+'.'+randomUUID()+'.tmp';
+      await mkdir(dirname(file),{recursive:true});
+      try{
+        await writeFile(tmp,JSON.stringify(state,null,2)+'\n',{mode:0o600,flag:'wx'});
+        await rename(tmp,file);
+      }catch(error){await unlink(tmp).catch(()=>{});throw error;}
+    }
+  };
+}
+
+export function reconcileHandoffs(state,checkpoint,now=new Date()){
+  assertState(state);
+  const confirmedId=checkpoint?.last_execution?.handoff_id;
+  const confirmation=checkpoint?.last_execution?.verification;
+  const checkpointTime=Date.parse(checkpoint?.updated_at||'');
+  const changes=[];
+  const handoffs=state.handoffs.map(h=>{
+    if(h.status==='acknowledged')return h;
+    // A timestamp, a new execution ID or an LLM claim is NOT proof of acknowledgment.
+    if(h.id===confirmedId && typeof confirmation==='string' && confirmation.trim() &&
+       checkpointTime>Date.parse(h.issuedAt)){
+      changes.push({id:h.id,status:'acknowledged'});
+      return {...h,status:'acknowledged',acknowledgedAt:new Date(checkpointTime).toISOString()};
+    }
+    if(now.getTime()>=Date.parse(h.dueAtUtc) && h.status!=='overdue'){
+      changes.push({id:h.id,status:'overdue'});
+      return {...h,status:'overdue'};
+    }
+    return h;
+  });
+  return {state:{version:VERSION,handoffs},changes};
+}
+
+export function summarizeHandoffs(state,checkpointState){
+  assertState(state);
+  const pending=state.handoffs.filter(h=>h.status==='pending');
+  const overdue=state.handoffs.filter(h=>h.status==='overdue');
+  const acknowledged=state.handoffs.filter(h=>h.status==='acknowledged');
+  const readability=checkpointState.readable?'readable':'unavailable';
+  const executionStatus=overdue.length?'overdue':pending.length?'pending':acknowledged.length?'acknowledged':'unverified';
+  return {
+    checkpointReadability:readability,
+    checkpointUpdatedAt:checkpointState.checkpoint?.updated_at??null,
+    checkpointAgeMinutes:checkpointState.ageMinutes??null,
+    checkpointRecencyStatus:checkpointState.status,
+    executionStatus,
+    pendingHandoffs:pending.length,
+    overdueHandoffs:overdue.length,
+    lastAcknowledgedHandoffId:acknowledged.at(-1)?.id??null
+  };
+}
+
+export function registerHandoff(state,decision,{id=randomUUID()}={}){
+  assertState(state);
+  if(state.handoffs.length>=MAX_HANDOFFS)throw Error('Limite de handoffs atingido; preservar historico e investigar');
+  if(!ID.test(id)||state.handoffs.some(h=>h.id===id))throw Error('ID de handoff duplicado ou invalido');
+  const handoff={
+    id,issuedAt:decision.decisionAt,dueAtUtc:decision.nextCallAt,
+    checkpointExecutionId:decision.checkpointExecutionId,status:'pending'
+  };
+  if(!Number.isFinite(Date.parse(handoff.issuedAt))||!Number.isFinite(Date.parse(handoff.dueAtUtc)))throw Error('Data de handoff invalida');
+  return {version:VERSION,handoffs:[...state.handoffs,handoff]};
+}

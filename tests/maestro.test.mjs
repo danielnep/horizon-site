@@ -1,4 +1,9 @@
 import {test} from 'node:test';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createFileHandoffStore,reconcileHandoffs,registerHandoff,summarizeHandoffs} from '../maestro/handoff-store.mjs';
+
 import assert from 'node:assert/strict';
 import {consultGemini,runSupervisorCycle,startScheduledReviewer} from '../maestro-worker.mjs';
 import {ENGINEERING_METHODS,ENGINEERING_CONTEXT} from '../maestro/engineering.mjs';
@@ -83,4 +88,95 @@ test('site e endpoints internos preservados',async()=>{
  assert.equal((await fetch(base+'/maestro/checkpoint.json')).status,404);
  assert.equal((await fetch(base+'/maestro/metodos-engenharia-may.md')).status,404);
  }finally{await new Promise(r=>srv.close(r));}
+});
+
+
+test('fresh de 26 horas indica legibilidade, nao execucao comprovada',async()=>{
+ const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
+ const status=await loadCheckpoint({fetcher,now:new Date('2026-10-18T16:05:00Z')});
+ assert.equal(status.readable,true);
+ assert.equal(status.status,'fresh');
+ assert.equal(status.ageMinutes,1565);
+ const audit=summarizeHandoffs({version:1,handoffs:[]},status);
+ assert.equal(audit.executionStatus,'unverified');
+ assert.equal(audit.checkpointAgeMinutes,1565);
+ assert.equal(audit.checkpointReadability,'readable');
+});
+
+test('handoff continua vencido apos reinicio e so reconhece recibo exato com evidencia',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'maestro-handoff-'));
+ const file=join(dir,'receipts.json');
+ const id='6fc0de12-34ab-4567-8901-1234567890ab';
+ const issuedAt='2026-10-19T09:00:00Z';
+ const dueAt='2026-10-19T10:30:00Z';
+ try{
+  const store=createFileHandoffStore({file});
+  const state=registerHandoff(await store.read(),{
+   decisionAt:issuedAt,nextCallAt:dueAt,checkpointExecutionId:'previous'
+  },{id});
+  await store.write(state);
+  const afterRestart=createFileHandoffStore({file});
+  const notConfirmed={...checkpoint,updated_at:'2026-10-19T10:01:00Z',
+    last_execution:{...checkpoint.last_execution,id:'new-execution',verification:'tested'}};
+  const missed=reconcileHandoffs(await afterRestart.read(),notConfirmed,new Date('2026-10-19T10:31:00Z'));
+  assert.deepEqual(missed.changes,[{id,status:'overdue'}]);
+  await afterRestart.write(missed.state);
+  assert.equal((await store.read()).handoffs[0].status,'overdue');
+  const withoutProof={...notConfirmed,last_execution:{...notConfirmed.last_execution,handoff_id:id,verification:''}};
+  assert.equal(reconcileHandoffs(await store.read(),withoutProof,new Date('2026-10-19T10:32:00Z')).state.handoffs[0].status,'overdue');
+  const withProof={...notConfirmed,updated_at:'2026-10-19T10:33:00Z',
+    last_execution:{...notConfirmed.last_execution,handoff_id:id,verification:'sha verified'}};
+  const confirmed=reconcileHandoffs(await store.read(),withProof,new Date('2026-10-19T10:34:00Z'));
+  assert.equal(confirmed.state.handoffs[0].status,'acknowledged');
+  await store.write(confirmed.state);
+  assert.equal(summarizeHandoffs(await store.read(),{...statusFromCheckpoint(withProof)}).executionStatus,'acknowledged');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+function statusFromCheckpoint(cp){
+ return {status:'fresh',readable:true,checkpoint:cp,ageMinutes:0};
+}
+
+test('estado corrompido bloqueia leitura e nao regrava silenciosamente',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'maestro-invalid-'));
+ try{
+  const file=join(dir,'receipts.json');
+  await writeFile(file,'{invalid-json');
+  await assert.rejects(()=>createFileHandoffStore({file}).read(),SyntaxError);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('supervisor publica recibo somente apos escrita duravel e sinaliza atraso',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'maestro-cycle-'));
+ try{
+  const store=createFileHandoffStore({file:join(dir,'state.json')});
+  const now1=new Date('2026-10-19T09:00:00Z');
+  const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
+  const gemini=async ({now,checkpoint:cp,checkpointStatus})=>normalizeDecision(good,{now,checkpoint:cp,checkpointStatus});
+  const logs=[];
+  const first=await runSupervisorCycle({fetcher,gemini,clock:()=>now1,handoffStore:store,log:x=>logs.push(x)});
+  assert.equal(first.decision.persistenceStatus,'persisted');
+  assert.equal(first.decision.executionStatus,'unverified');
+  assert.equal((await store.read()).handoffs.length,1);
+  assert.equal(first.handoff.handoffId,first.decision.handoffId);
+  const second=await runSupervisorCycle({fetcher,gemini,clock:()=>new Date('2026-10-19T10:31:00Z'),
+   handoffStore:store,log:x=>logs.push(x)});
+  assert.equal(second.decision.executionStatus,'overdue');
+  assert.equal(second.decision.overdueHandoffs,1);
+  assert.equal(second.decision.pendingHandoffs,0);
+  assert.equal((await store.read()).handoffs.length,2);
+  assert.ok(logs.some(x=>x.startsWith('[maestro-handoff-alert] ')));
+  assert.equal(second.handoff.executionStatus,'overdue');
+  assert.equal(second.handoff.checkpointReadability,'readable');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('falha de persistencia impede publicar handoff ou marcar sucesso',async()=>{
+ const logs=[];
+ const store={read:async()=>({version:1,handoffs:[]}),write:async()=>{throw Error('ENOSPC');}};
+ const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
+ const gemini=async ({now,checkpoint:cp,checkpointStatus})=>normalizeDecision(good,{now,checkpoint:cp,checkpointStatus});
+ await assert.rejects(()=>runSupervisorCycle({fetcher,gemini,clock:()=>new Date('2026-10-19T09:00:00Z'),
+   handoffStore:store,log:x=>logs.push(x)}),/ENOSPC/);
+ assert.equal(logs.some(x=>x.startsWith('[maestro-handoff] ')),false);
 });
