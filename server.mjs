@@ -3,7 +3,7 @@ import {handleHorizonMcp} from './maestro/mcp-server.mjs';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {startScheduledReviewer} from './maestro-worker.mjs';
-import {handleAgentState,initAgentDatabase} from './maestro/embedded-postgres.mjs';
+import {handleAgentState} from './maestro/embedded-postgres.mjs';
 const indexPath=fileURLToPath(new URL('./index.html',import.meta.url));
 // Primeira ferramenta Horizon: um workspace próprio, hospedado no mesmo domínio.
 // Lista explícita evita exposição de arquivos internos e caminhos fora da pasta.
@@ -65,8 +65,10 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
     res.writeHead(404,{'content-type':'text/plain'});res.end('Nao encontrado');
   });
   const stop=background?startScheduledReviewer():()=>{};
-  // Initialize persistent PostgreSQL on the existing service's /data volume.
-  void initAgentDatabase().then(()=>console.log('[horizon-agent-db] ready')).catch(()=>console.error('[horizon-agent-db] startup failed'));
+  // The active worker uses encrypted SQLite checkpoints on GitHub.
+  // Never eagerly open/VACUUM the full legacy PGlite volume on normal site startup.
+  // Its authenticated GET endpoint may still recover a verified historical snapshot.
+  console.log('[horizon-agent-db] legacy PGlite preserved; initialization deferred');
   server.on('close',stop);
   server.listen(listenPort,'0.0.0.0');
   return server;
