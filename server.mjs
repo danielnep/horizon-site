@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {handleHorizonMcp} from './maestro/mcp-server.mjs';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {startScheduledReviewer} from './maestro-worker.mjs';
@@ -24,6 +25,7 @@ export const TOOL_ASSETS=Object.freeze({
 export function startServer({listenPort=Number(process.env.PORT||3000),reader=readFile,background=true}={}) {
   const server=http.createServer(async(req,res)=>{
     const path=(req.url||'/').split('?')[0];
+    if(path==='/mcp'){await handleHorizonMcp(req,res);return;}
     if(path==='/api/internal/horizon-agent-state'){await handleAgentState(req,res);return;}
     if(path==='/health'){res.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify({status:'ok'}));return;}
     if(path==='/ferramentas'){
