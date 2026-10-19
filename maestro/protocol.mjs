@@ -1,6 +1,6 @@
 import {MAESTRO} from './identity.mjs';
 import {ENGINEERING_CONTEXT} from './engineering.mjs';
-export function normalizeDecision(raw,{now=new Date(),checkpoint=null,checkpointStatus='unavailable'}={}){
+export function normalizeDecision(raw,{now=new Date(),checkpoint=null,checkpointStatus='unavailable',provider='gemini'}={}){
  if(raw?.protocol_version!==2)throw Error('protocol_version deve ser 2');
  const n=raw.next_call_minutes;
  if(!Number.isInteger(n)||n<60||n>10080)throw Error('next_call_minutes deve estar entre 60 e 10080');
@@ -11,7 +11,7 @@ export function normalizeDecision(raw,{now=new Date(),checkpoint=null,checkpoint
   fields[key]=raw[key].trim().slice(0,500);
  }
  if(!Array.isArray(raw.checkpoint_needed))throw Error('checkpoint_needed precisa ser array');
- return {protocolVersion:2,source:'gemini-supervisor',decisionAt:now.toISOString(),
+ return {protocolVersion:2,source:provider==='deepseek'?'deepseek-supervisor':'gemini-supervisor',decisionAt:now.toISOString(),
  nextCallAt:new Date(now.getTime()+n*60000).toISOString(),nextCallMinutes:n,
  priority:raw.priority,focus:fields.focus,nextMayTask:fields.next_may_task,
  acceptanceCriteria:fields.acceptance_criteria,whyThisTime:fields.why_this_time,
@@ -20,7 +20,7 @@ export function normalizeDecision(raw,{now=new Date(),checkpoint=null,checkpoint
  confidence:raw.confidence==='grounded'?'grounded':'limited-context',
  checkpointStatus,checkpointExecutionId:checkpoint?.last_execution?.id||'none',
  automationId:MAESTRO.existing_task_id,
- reminder:'Railway apenas agenda consulta Gemini. So May no ChatGPT pode reajustar a tarefa do ChatGPT.'};
+ reminder:'Railway agenda consultas do supervisor com fallback Gemini e DeepSeek. So May no ChatGPT pode reajustar a tarefa do ChatGPT.'};
 }
 export function toMayHandoff(d){
  return {kind:'may-maestro-handoff-v2',target:'May no ChatGPT',priority:d.priority,
