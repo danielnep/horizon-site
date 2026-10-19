@@ -180,3 +180,46 @@ test('falha de persistencia impede publicar handoff ou marcar sucesso',async()=>
    handoffStore:store,log:x=>logs.push(x)}),/ENOSPC/);
  assert.equal(logs.some(x=>x.startsWith('[maestro-handoff] ')),false);
 });
+
+
+test('persiste auditoria antes de Gemini 429 e DeepSeek 402, sem declarar handoff',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'maestro-audit-offline-'));
+ try{
+  const file=join(dir,'state.json');
+  const store=createFileHandoffStore({file});
+  const logs=[];
+  const now=new Date('2026-10-18T16:05:00Z');
+  const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
+  const gemini=async()=>{throw Error('Supervisor indisponivel: Gemini HTTP 429; DeepSeek HTTP 402');};
+  await assert.rejects(()=>runSupervisorCycle({fetcher,gemini,clock:()=>now,
+    handoffStore:store,log:x=>logs.push(x)}),/Gemini HTTP 429/);
+  const restored=await createFileHandoffStore({file}).read();
+  assert.equal(restored.lastObservation.checkedAt,now.toISOString());
+  assert.equal(restored.lastObservation.checkpointAgeMinutes,1565);
+  assert.equal(restored.lastObservation.executionStatus,'unverified');
+  assert.deepEqual(restored.handoffs,[]);
+  assert.equal(logs.filter(x=>x.startsWith('[maestro-checkpoint-audit] ')).length,1);
+  assert.equal(logs.some(x=>x.startsWith('[maestro-handoff] ')),false);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('auditoria preserva observacao e handoffs existentes entre ciclos',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'maestro-audit-retain-'));
+ try{
+  const store=createFileHandoffStore({file:join(dir,'state.json')});
+  const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
+  const gemini=async({now,checkpoint:cp,checkpointStatus})=>normalizeDecision(good,{now,checkpoint:cp,checkpointStatus});
+  await runSupervisorCycle({fetcher,gemini,clock:()=>new Date('2026-10-18T16:05:00Z'),handoffStore:store,log:()=>{}});
+  let state=await store.read();
+  assert.equal(state.handoffs.length,1);
+  assert.equal(state.lastObservation.executionStatus,'unverified');
+  await assert.rejects(()=>runSupervisorCycle({fetcher,gemini:async()=>{throw Error('quota');},
+   clock:()=>new Date('2026-10-18T17:40:00Z'),handoffStore:store,log:()=>{}}),/quota/);
+  state=await createFileHandoffStore({file:store.file}).read();
+  assert.equal(state.handoffs.length,1);
+  assert.equal(state.handoffs[0].status,'overdue');
+  assert.equal(state.lastObservation.executionStatus,'overdue');
+  assert.equal(state.lastObservation.pendingHandoffs,0);
+  assert.equal(state.lastObservation.overdueHandoffs,1);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
