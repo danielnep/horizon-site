@@ -6,6 +6,7 @@ const DATA_DIR = '/data/horizon-agents-postgres';
 const AUDIENCE = 'horizon-maestro-state';
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const WORKFLOW = 'danielnep/May-Maestro-Executor/.github/workflows/chat-requests.yml@refs/heads/main';
+const SMOKE_WORKFLOW = 'danielnep/May-Maestro-Executor/.github/workflows/agent-state-smoke.yml@refs/heads/main';
 const SUBJECT = 'repo:danielnep/May-Maestro-Executor:ref:refs/heads/main';
 const MAX_SNAPSHOT = 20 * 1024 * 1024;
 let databasePromise;
@@ -22,7 +23,7 @@ export function initAgentDatabase() {
 function b64urlJSON(value) {
   return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
 }
-async function validOidc(authorization) {
+async function validOidc(authorization, method) {
   if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) return false;
   const jwt = authorization.slice(7);
   if (jwt.length > 12000 || jwt.length < 100) return false;
@@ -35,7 +36,8 @@ async function validOidc(authorization) {
   if (header.alg !== 'RS256' || typeof header.kid !== 'string'
     || claims.iss !== ISSUER || claims.sub !== SUBJECT
     || claims.repository !== 'danielnep/May-Maestro-Executor'
-    || claims.ref !== 'refs/heads/main' || claims.workflow_ref !== WORKFLOW
+    || claims.ref !== 'refs/heads/main'
+    || !(claims.workflow_ref === WORKFLOW || (method === 'GET' && claims.workflow_ref === SMOKE_WORKFLOW))
     || !(claims.aud === AUDIENCE || (Array.isArray(claims.aud) && claims.aud.includes(AUDIENCE)))
     || !Number.isInteger(claims.exp) || claims.exp <= now || claims.exp > now + 3600
     || !Number.isInteger(claims.iat) || claims.iat > now + 60
@@ -74,7 +76,7 @@ export async function handleAgentState(req, res) {
     json(res, 405, {error:'method_not_allowed'}); return;
   }
   try {
-    if (!await validOidc(req.headers.authorization)) {
+    if (!await validOidc(req.headers.authorization, req.method)) {
       json(res, 401, {error:'unauthorized'}); return;
     }
     const pg = await initAgentDatabase();
