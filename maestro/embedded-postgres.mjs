@@ -46,6 +46,7 @@ export function initAgentDatabase() {
       throw error;
     }
     storageReadOnly = false;
+    try {
     await pg.exec('CREATE TABLE IF NOT EXISTS horizon_agent_snapshots (key TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision > 0), snapshot BYTEA NOT NULL, checksum TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
     await pg.exec('CREATE TABLE IF NOT EXISTS horizon_agent_snapshots_compact (key TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision > 0), snapshot BYTEA NOT NULL, checksum TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
     const compact = await pg.query("SELECT revision FROM horizon_agent_snapshots_compact WHERE key='primary'");
@@ -69,6 +70,14 @@ export function initAgentDatabase() {
         await pg.exec('CHECKPOINT');
         console.log('[horizon-agent-db] recycled legacy uncompressed storage');
       }
+    }
+    } catch (error) {
+      if (/No space left on device|ENOSPC/i.test(String(error?.message))) {
+        storageReadOnly = true;
+        console.error('[horizon-agent-db] migration deferred: low disk, old snapshot preserved');
+        return pg;
+      }
+      throw error;
     }
     return pg;
   })().catch(error => { databasePromise = undefined; throw error; });
