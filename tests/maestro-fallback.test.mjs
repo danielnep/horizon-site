@@ -62,7 +62,8 @@ test('ambos indisponíveis: falha clara e sem segredo em logs',async()=>{
 });
 test('sem chave DeepSeek registra bloqueio, não ignora a falha',async()=>{
  const logs=[];
- await assert.rejects(()=>consultWithFallback({...args(async()=>({ok:false,status:429,json:async()=>({error:{}})}),x=>logs.push(x))),deepSeekKey:''}),
+ const options=args(async()=>({ok:false,status:429,json:async()=>({error:{}})}),x=>logs.push(x));
+ await assert.rejects(()=>consultWithFallback({...options,deepSeekKey:''}),
  /DeepSeek credential_missing/);
  assert.match(logs[0],/"result":"failed"/);
 });
