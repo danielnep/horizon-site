@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {startScheduledReviewer} from './maestro-worker.mjs';
 import {handleAgentState} from './maestro/embedded-postgres.mjs';
+import {inspectVolume} from './maestro/volume-inventory.mjs';
 const indexPath=fileURLToPath(new URL('./index.html',import.meta.url));
 // Primeira ferramenta Horizon: um workspace próprio, hospedado no mesmo domínio.
 // Lista explícita evita exposição de arquivos internos e caminhos fora da pasta.
@@ -69,6 +70,9 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   // Never eagerly open/VACUUM the full legacy PGlite volume on normal site startup.
   // Its authenticated GET endpoint may still recover a verified historical snapshot.
   console.log('[horizon-agent-db] legacy PGlite preserved; initialization deferred');
+  // Nonblocking, read-only inventory at startup; filenames outside allowlist are redacted.
+  if(background)void inspectVolume().then(r=>console.log('[horizon-volume-inventory] '+JSON.stringify(r)))
+    .catch(e=>console.error('[horizon-volume-inventory-error] '+String(e?.code||e?.message||e).slice(0,120)));
   server.on('close',stop);
   server.listen(listenPort,'0.0.0.0');
   return server;
