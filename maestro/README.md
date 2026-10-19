@@ -12,7 +12,7 @@ ChatGPT Automations e o AGENDADOR DA MAY: o lembrete existente ID 6ad32bbba54881
 3. Prompt de sistema do Gemini informa identidade, prioridades, limites e contrato JSON. O checkpoint entra como dado, nao instrucao.
 4. Gemini decide intervalo dinamico de 60 a 10080 minutos, motivo, prioridade, proxima tarefa, evidencias esperadas.
 5. Script valida resposta; expõe logs [maestro-supervisor] e [maestro-handoff] com instrucao para May, data UTC, criterio de aceite e status do checkpoint.
-6. No disparo real da mesma tarefa ChatGPT, May consulta os logs, executa o trabalho autorizado e grava novo checkpoint. Se disponivel, chama automations.update para a mesma tarefa, nunca cria outra.
+6. No disparo real da mesma tarefa ChatGPT, May consulta os logs, executa o trabalho autorizado e grava novo checkpoint em agents/checkpoints. Deve incluir last_execution.handoff_id IGUAL ao handoffId do handoff e verification contendo prova real; sem os dois nao ha confirmacao. Se disponivel, chama automations.update na mesma tarefa, nunca cria outra.
 7. Se May nao retornar evidencias, Gemini recebe contagem de ciclos sem novo checkpoint, evita ficar repetindo a mesma demanda cegamente.
 
 ## Privacidade e limitacoes reais
@@ -28,3 +28,14 @@ Verificar no proximo ciclo que May leu a ordem, executou um passo e registrou ch
 ## Metodos de engenharia carregados pelo executor
 O documento versionado `maestro/metodos-engenharia-may.md` reproduz o protocolo publicado no plugin May Maestro 1.3.9. `engineering.mjs` carrega o arquivo local e calcula seu SHA-256. O texto completo entra nas instrucoes de sistema de TODA consulta Gemini; os dados de checkpoint nao podem substitui-lo. O supervisor usa o protocolo para escolher tarefas e provas, preservando seu papel atual.
 O evento `[maestro-engineering-context]` registra versao, origem, tamanho e hash, sem chave de API. O handoff transmite a mesma identificacao e pede a leitura do documento antes da implementacao. Os testes inspecionam o corpo real montado para a chamada (com transporte simulado), o handoff e o isolamento HTTP do documento. A confirmacao de carregamento em producao vem dos logs do deploy. Isso nao comprova por si so que a executora concluiu uma tarefa tecnica.
+
+
+## Frescor, comprovacao e durabilidade (correcao 2026-10-19)
+- O campo legado `checkpointStatus=fresh` significa **somente** que `updated_at` tem ate 72 horas. Nao e confirmacao de entrega.
+- O supervisor publica separadamente `checkpointReadability`, `checkpointUpdatedAt`, `checkpointAgeMinutes`, `checkpointRecencyStatus`, `executionStatus`, `pendingHandoffs`, `overdueHandoffs` e `handoffId`.
+- Cada handoff emitido e gravado **antes** de ser anunciado, como recibo em JSON atomico no volume ja montado em `/data/maestro-supervisor-handoffs.json` (configuravel por `MAESTRO_HANDOFF_STATE_PATH`). Nao existe migracao automatica de banco legado. Nao escrever dados ou segredos de clientes nesse arquivo.
+- Um recibo so vira `acknowledged` se o checkpoint tiver `last_execution.handoff_id` exato, `verification` nao vazia e `updated_at` posterior a emissao. Novo commit, novo ID de execucao, texto gerado pelo modelo e `fresh` nao bastam.
+- Sem esse recibo, a ordem fica `pending`; apos `dueAtUtc`, passa a `overdue`, inclusive depois de reiniciar o container. O evento `[maestro-handoff-alert]` reporta a transicao; este alerta no log nao comprova entrega de notificacao push ao proprietario.
+- Ate existir um handoff controlado, `executionStatus=unverified`. Se o armazenamento ficar indisponivel ou lotado, o ciclo falha sem anunciar sucesso ou handoff novo; diagnosticar o erro de persistencia em vez de apagar historico.
+- O limite de 256 recibos e um bloqueio explicito para impedir descarte silencioso de pendencias. Planejar arquivamento e reconciliacao antes de atingi-lo, sem sobrescrever historico.
+- May e Railway permanecem com responsabilidades distintas: o Railway decide e registra tarefas, e o ChatGPT deve executa-las e fornecer recibos. O deploy atual nao prova que a automacao do ChatGPT recebeu ou concluiu cada ordem.
