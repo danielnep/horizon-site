@@ -1,0 +1,27 @@
+name: Horizon - teste de fallback do supervisor
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'maestro-worker.mjs'
+      - 'maestro/**'
+      - 'server.mjs'
+      - 'tests/**'
+      - 'package.json'
+      - '.github/workflows/maestro-fallback-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependências
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Testar todo supervisor e fallback em erro Gemini
+        run: npm test
