@@ -41,6 +41,13 @@ O evento `[maestro-engineering-context]` registra versao, origem, tamanho e hash
 - O limite de 256 recibos e um bloqueio explicito para impedir descarte silencioso de pendencias. Planejar arquivamento e reconciliacao antes de atingi-lo, sem sobrescrever historico.
 - May e Railway permanecem com responsabilidades distintas: o Railway decide e registra tarefas, e o ChatGPT deve executa-las e fornecer recibos. O deploy atual nao prova que a automacao do ChatGPT recebeu ou concluiu cada ordem.
 
+## Memoria operacional criptografada e checkpoint historico (20/10/2026)
+- A importacao `migration_verified` valida a copia SQLite na branch `agent-state/railway-staging` do repositorio `danielnep/May-Maestro-Executor`; nao escreve `agents/checkpoints/maestro/checkpoint.json` de `danielnep/horizon-site`. Sao dois registros distintos.
+- O supervisor continua lendo o JSON legado, preservando a data real da ultima entrega da May. Com `HORIZON_PY_AGENTS_ENABLED=1`, `maestro/operational-state.mjs` verifica o SHA do blob GitHub, o HMAC Fernet e a chave protegida Railway, e entrega um snapshot SQLite somente ao observador local Python. O Python consulta em modo imutavel, em `/tmp`, e devolve SOMENTE totais por status e datas de eventos. Nada e escrito no GitHub ou no JSON legado.
+- O resultado entra no campo `checkpointAudit.operational` do contexto Gemini e do registro `lastObservation.operational` dos handoffs. `status=verified` prova a leitura valida da memoria; `eventRecency=recent` prova evento recente no SQLite, NAO QA, deploy, publicacao ou resposta da May. O `checkpointRecencyStatus` legado pode continuar stale, corretamente.
+- Handoffs antigos permanecem vencidos ate o proprio JSON da May trazer `last_execution.handoff_id` igual ao recibo e verificacao real posterior. O observador jamais aceita ciclo Python `rc=0` ou memoria importada como conclusao de handoff.
+- Se o acesso criptografado, permissao de chave, SHA, descriptografia ou inspecao falhar, o estado operacional e `unavailable`, sem atualizar datas nem criar checkpoint falso. O observador permanece `disabled` quando os agentes Railway estao desligados.
+
 ## Fila de prioridades do proprietario (19/10/2026)
 Antes de chamar Gemini/DeepSeek, o supervisor le somente documentos publicos e validos de `danielnep/May-Maestro-Executor/tasks/chat/*.json` na branch `main`, reconciliando tarefas explicitamente P0/P1/P2/P3 com `tasks/results/<id>.json`. A missao P0 do Ronda Pro vem da tarefa `a-ronda-pro-auditoria-total-20261019`; o `tasks/inbox.json` vazio nao invalida as ordens em `tasks/chat`.
 
