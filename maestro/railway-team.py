@@ -194,6 +194,64 @@ def _memory_cap():
     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
 
+SAFE_TASK_ID = re.compile(r"^[a-zA-Z0-9_.:-]{1,160}$")
+SAFE_ERROR_KIND = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
+
+
+def report_cycle_telemetry(result):
+    """Allowlisted child metadata only. Never echo subprocess stdout/stderr.
+
+    Controller stdout may contain model text and private data. Even on failure,
+    publish only typed counters, safe task identifiers and exception *classes*.
+    """
+    output = getattr(result, "stdout", "") or ""
+    for line in output[-65536:].splitlines()[-100:]:
+        if len(line) > 4096:
+            continue
+        try:
+            packet = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(packet, dict):
+            continue
+        if (type(packet.get("processed")) is int and packet["processed"] >= 0 and
+                type(packet.get("rejected")) is int and packet["rejected"] >= 0):
+            event("cycle_summary", processed=packet["processed"],
+                  rejected=packet["rejected"],
+                  ready_for_continuation=(
+                      packet.get("ready_for_continuation") if
+                      type(packet.get("ready_for_continuation")) is int and
+                      0 <= packet["ready_for_continuation"] <= 10000 else None))
+        elif packet.get("event") == "may_delegation_released":
+            task_id = packet.get("task_id")
+            number = packet.get("delegated_count")
+            if (isinstance(task_id, str) and SAFE_TASK_ID.fullmatch(task_id)
+                    and type(number) is int and 1 <= number <= 17
+                    and packet.get("qa_verified") is False):
+                event("delegation_released", taskId=task_id,
+                      delegatedCount=number, qaVerified=False)
+        elif "review_delivery_error" in packet:
+            reason = packet.get("review_delivery_error")
+            if isinstance(reason, str) and SAFE_ERROR_KIND.fullmatch(reason):
+                event("delivery_error", kind=reason)
+        elif "attendance_error" in packet:
+            reason = packet.get("attendance_error")
+            if isinstance(reason, str) and SAFE_ERROR_KIND.fullmatch(reason):
+                event("attendance_error", kind=reason)
+    code = getattr(result, "returncode", None)
+    if type(code) is int and code != 0:
+        stderr = getattr(result, "stderr", "") or ""
+        error_class = "unclassified"
+        for line in reversed(stderr[-8192:].splitlines()):
+            match = re.match(
+                r"^\s*(?:[A-Za-z0-9_.]+\.)?([A-Za-z][A-Za-z0-9_]{0,60}(?:Error|Exception))(?::|$)",
+                line)
+            if match:
+                error_class = match.group(1)
+                break
+        event("cycle_failed", rc=code, errorClass=error_class)
+
+
 def run_cycle(root, env, *, run=subprocess.run):
     if shutil.disk_usage(root).free < MIN_SCRATCH_FREE_BYTES:
         raise RuntimeError("scratch_storage_low")
@@ -203,7 +261,8 @@ def run_cycle(root, env, *, run=subprocess.run):
     result = run(args, cwd=root, env=env, capture_output=True, text=True,
                  check=False, timeout=SESSION_SECONDS + 65,
                  preexec_fn=_memory_cap if sys.platform.startswith("linux") else None)
-    # Do NOT print arbitrary model output, task content or remote errors.
+    # Never print model output, task text, GitHub responses or raw errors.
+    report_cycle_telemetry(result)
     event("cycle", rc=result.returncode, seconds=SESSION_SECONDS)
     return result.returncode
 
