@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {consultGemini,runSupervisorCycle,startScheduledReviewer} from '../maestro-worker.mjs';
 import {ENGINEERING_METHODS,ENGINEERING_CONTEXT} from '../maestro/engineering.mjs';
 import {MAESTRO} from '../maestro/identity.mjs';
-import {loadCheckpoint} from '../maestro/checkpoint.mjs';
+import {CHECKPOINT_FRESH_MAX_AGE_MS,loadCheckpoint} from '../maestro/checkpoint.mjs';
 import {normalizeDecision,toMayHandoff} from '../maestro/protocol.mjs';
 import {startServer} from '../server.mjs';
 const good={protocol_version:2,next_call_minutes:90,priority:'high',focus:'app-hondas-maxvel',
@@ -47,6 +47,21 @@ test('le checkpoint e detecta dado velho',async()=>{
  assert.equal((await loadCheckpoint({fetcher,now:new Date('2026-10-17T14:05:00Z')})).status,'fresh');
  assert.equal((await loadCheckpoint({fetcher,now:new Date('2026-10-21T14:05:00Z')})).status,'stale');
 });
+test('limite de frescor: exatamente 6h fresh, apos 6h stale; caso real 18/10 nao pode ser fresh em 19/10',async()=>{
+ const original='2026-10-18T19:41:35.193Z';
+ const cp={...checkpoint,updated_at:original};
+ const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(cp)});
+ assert.equal(CHECKPOINT_FRESH_MAX_AGE_MS,6*3600000);
+ const updated=Date.parse(original);
+ const at=async ms=>loadCheckpoint({fetcher,now:new Date(updated+ms)});
+ assert.equal((await at(CHECKPOINT_FRESH_MAX_AGE_MS)).status,'fresh');
+ assert.equal((await at(CHECKPOINT_FRESH_MAX_AGE_MS+1000)).status,'stale');
+ const observed=await loadCheckpoint({fetcher,now:new Date('2026-10-20T01:55:38.610Z')});
+ assert.equal(observed.status,'stale');
+ assert.equal(observed.readable,true);
+ assert.equal(observed.ageMinutes,1814);
+});
+
 test('nao acessa checkpoint arbitrario',async()=>{
  const state=await loadCheckpoint({url:'https://evil.example/',fetcher:async()=>{throw Error('nao deveria chamar')}});
  assert.equal(state.status,'unavailable');
@@ -91,11 +106,11 @@ test('site e endpoints internos preservados',async()=>{
 });
 
 
-test('fresh de 26 horas indica legibilidade, nao execucao comprovada',async()=>{
+test('checkpoint legivel de 26 horas e stale, sem comprovacao de execucao',async()=>{
  const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
  const status=await loadCheckpoint({fetcher,now:new Date('2026-10-18T16:05:00Z')});
  assert.equal(status.readable,true);
- assert.equal(status.status,'fresh');
+ assert.equal(status.status,'stale');
  assert.equal(status.ageMinutes,1565);
  const audit=summarizeHandoffs({version:1,handoffs:[]},status);
  assert.equal(audit.executionStatus,'unverified');
