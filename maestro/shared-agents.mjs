@@ -38,7 +38,7 @@ export function startCheckpointImport({env=process.env,launch=spawn,
     env:{...env,PYTHONDONTWRITEBYTECODE:'1'},stdio:['ignore','pipe','pipe']
   });
   const emit=chunk=>{
-    for(const line of String(chunk).split('\\n')){
+    for(const line of String(chunk).split('\n')){
       if(line.startsWith('[team-railway] migration_') &&
          !/secret|password|token=|Bearer /i.test(line))
         log(line.slice(0,360));

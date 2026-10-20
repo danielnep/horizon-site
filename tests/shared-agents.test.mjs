@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {PassThrough} from 'node:stream';
-import {sharedAgentPreflight,startSharedAgents} from '../maestro/shared-agents.mjs';
+import {sharedAgentPreflight,startSharedAgents,startCheckpointImport} from '../maestro/shared-agents.mjs';
 
 const complete=Object.freeze({
   HORIZON_PY_AGENTS_ENABLED:'1',HORIZON_EXECUTOR_SHA:'a'.repeat(40),
@@ -71,4 +71,28 @@ test('unexpected exit retries only ONE child and stops on shutdown',()=>{
   timers[0].fn();
   assert.equal(instances.length,2);
   stop();
+});
+
+
+test('one-time memory import is inert without an artifact and starts once when armed',()=>{
+  let launches=0;const logs=[];
+  const idle=startCheckpointImport({env:{},launch:()=>{launches++;throw Error('unexpected')}});
+  assert.equal(launches,0);idle();
+  const env={HORIZON_MEMORY_BRIDGE_ENABLED:'1',HORIZON_MEMORY_ARTIFACT_ID:'12244142446',
+    HORIZON_PY_AGENTS_ENABLED:'0',GITHUB_TOKEN:'synthetic',
+    HORIZON_EXECUTOR_SHA:'a'.repeat(40)};
+  const process=new EventEmitter();
+  process.stdout=new PassThrough();process.stderr=new PassThrough();
+  process.kill=signal=>{process.closed=signal;};
+  const stop=startCheckpointImport({env,launch:(bin,args,opt)=>{
+    launches++;assert.equal(bin,'python3');
+    assert.ok(args.some(a=>a.endsWith('railway-checkpoint-import.py')));
+    assert.ok(!args.join(' ').includes('synthetic'));
+    return process;
+  },log:m=>logs.push(m)});
+  assert.equal(launches,1);
+  process.stdout.write('[team-railway] migration_blocked {"reason":"checkpoint_changed_since_export"}\\n');
+  assert.ok(logs.some(s=>s.includes('import_attempt_started')));
+  stop();
+  assert.equal(process.closed,'SIGTERM');
 });

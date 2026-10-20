@@ -3,7 +3,7 @@ import {handleHorizonMcp} from './maestro/mcp-server.mjs';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {startScheduledReviewer} from './maestro-worker.mjs';
-import {startSharedAgents} from './maestro/shared-agents.mjs';
+import {startSharedAgents,startCheckpointImport} from './maestro/shared-agents.mjs';
 import {migrationKey} from './maestro/checkpoint-migration-key.mjs';
 import {handleAgentState} from './maestro/embedded-postgres.mjs';
 import {inspectVolume} from './maestro/volume-inventory.mjs';
@@ -92,6 +92,7 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   // One opt-in Python specialist process; shares existing Railway service,
   // not its nearly full historical database volume.
   const stopTeam=background?startSharedAgents():()=>{};
+  const stopMigration=background?startCheckpointImport():()=>{};
   // The active worker uses encrypted SQLite checkpoints on GitHub.
   // Never eagerly open/VACUUM the full legacy PGlite volume on normal site startup.
   // Its authenticated GET endpoint may still recover a verified historical snapshot.
@@ -111,7 +112,7 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
       }catch(e){console.error('[horizon-volume-inventory-error] '+String(e?.code||e?.message||e).slice(0,120));}
     })();
   }
-  server.on('close',()=>{stop();stopTeam();});
+  server.on('close',()=>{stop();stopTeam();stopMigration();});
   server.listen(listenPort,'0.0.0.0');
   return server;
 }
