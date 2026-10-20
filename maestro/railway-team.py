@@ -7,6 +7,7 @@ snapshot remains canonical until a separately approved migration. Only one
 worker can own it, so GitHub Actions must be disabled first.
 """
 import hashlib
+import base64
 import io
 import json
 import os
@@ -71,17 +72,31 @@ def verify_exclusive(token, opener=urllib.request.urlopen):
 
 
 def verify_environment(env):
-    mandatory = ("GITHUB_TOKEN", "HORIZON_SQLITE_ENCRYPTION_KEY",
-                 "KERNEL_API_KEY", "HORIZON_EXECUTOR_SHA")
-    missing = [name for name in mandatory if not env.get(name)]
-    if missing:
+    # The new branch lives on GITHUB. No legacy Actions or Railway API tokens
+    # are required to read it; one private key owned by Railway derives the
+    # new stable Fernet password locally after a validated one-time rekey.
+    mandatory=("GITHUB_TOKEN","KERNEL_API_KEY","HORIZON_EXECUTOR_SHA",
+               "HORIZON_STATE_BRANCH")
+    if any(not env.get(name) for name in mandatory):
         raise RuntimeError("missing_protected_credentials")
     if not SHA.fullmatch(env["HORIZON_EXECUTOR_SHA"]):
         raise RuntimeError("executor_commit_not_pinned")
-    if env.get("HORIZON_AGENT_ACTIONS_DISABLED") != "1":
+    branch=env["HORIZON_STATE_BRANCH"]
+    if not re.fullmatch(r"agent-state/railway-[a-z0-9-]{2,36}",branch):
+        raise RuntimeError("railway_state_branch_invalid")
+    if env.get("HORIZON_AGENT_ACTIONS_DISABLED")!="1":
         raise RuntimeError("single_writer_not_armed")
     if not (env.get("GEMINI_API_KEY") or env.get("DEEPSEEK_API_KEY")):
         raise RuntimeError("no_reasoning_provider")
+    key_file=(Path(env.get("RAILWAY_VOLUME_MOUNT_PATH","/data"))
+              /"horizon-checkpoint-migration-private.pem")
+    if not key_file.is_file() or (key_file.stat().st_mode&0o077):
+        raise RuntimeError("railway_state_private_key_missing_or_unsafe")
+    material=base64.urlsafe_b64encode(hashlib.sha256(
+        b"horizon-railway-key-v1:"+key_file.read_bytes()).digest()).decode()
+    # This material never enters logs/GitHub/MCP/browser; only the trusted
+    # child Python worker reads it as its environment variable.
+    env["HORIZON_SQLITE_ENCRYPTION_KEY"]=material
     return env["HORIZON_EXECUTOR_SHA"]
 
 

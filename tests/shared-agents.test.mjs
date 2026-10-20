@@ -6,8 +6,8 @@ import {sharedAgentPreflight,startSharedAgents} from '../maestro/shared-agents.m
 
 const complete=Object.freeze({
   HORIZON_PY_AGENTS_ENABLED:'1',HORIZON_EXECUTOR_SHA:'a'.repeat(40),
-  HORIZON_AGENT_ACTIONS_DISABLED:'1',
-  GITHUB_TOKEN:'fake',HORIZON_SQLITE_ENCRYPTION_KEY:'fake',
+  HORIZON_AGENT_ACTIONS_DISABLED:'1',HORIZON_STATE_BRANCH:'agent-state/railway-staging',
+  GITHUB_TOKEN:'fake',
   KERNEL_API_KEY:'fake',GEMINI_API_KEY:'fake'
 });
 

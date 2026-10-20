@@ -38,13 +38,22 @@ class RailwayTeamTests(unittest.TestCase):
     def test_credentials_and_pinned_sha_fail_closed(self):
         with self.assertRaisesRegex(RuntimeError, "missing_protected_credentials"):
             team.verify_environment({})
-        env = {k:"synthetic" for k in (
-            "GITHUB_TOKEN", "HORIZON_SQLITE_ENCRYPTION_KEY", "KERNEL_API_KEY")}
-        env.update(HORIZON_EXECUTOR_SHA="b"*40,
-                   HORIZON_AGENT_ACTIONS_DISABLED="1", GEMINI_API_KEY="fake")
-        self.assertEqual(team.verify_environment(env), "b"*40)
-        with self.assertRaisesRegex(RuntimeError, "single_writer_not_armed"):
-            team.verify_environment(dict(env,HORIZON_AGENT_ACTIONS_DISABLED="0"))
+        with tempfile.TemporaryDirectory() as temp:
+            key = Path(temp) / "horizon-checkpoint-migration-private.pem"
+            key.write_text("synthetic private key bytes for derivation")
+            key.chmod(0o600)
+            env = {k:"synthetic" for k in (
+                "GITHUB_TOKEN", "KERNEL_API_KEY")}
+            env.update(HORIZON_EXECUTOR_SHA="b"*40,
+                       HORIZON_STATE_BRANCH="agent-state/railway-staging",
+                       RAILWAY_VOLUME_MOUNT_PATH=temp,
+                       HORIZON_AGENT_ACTIONS_DISABLED="1", GEMINI_API_KEY="fake")
+            self.assertEqual(team.verify_environment(env), "b"*40)
+            self.assertTrue(len(env.get("HORIZON_SQLITE_ENCRYPTION_KEY",""))>=24)
+            with self.assertRaisesRegex(RuntimeError, "single_writer_not_armed"):
+                team.verify_environment(dict(env,HORIZON_AGENT_ACTIONS_DISABLED="0"))
+            with self.assertRaisesRegex(RuntimeError, "railway_state_branch_invalid"):
+                team.verify_environment(dict(env,HORIZON_STATE_BRANCH="agent-state/runtime"))
 
     def test_archive_is_bound_and_cannot_write_outside_temp(self):
         sha = "f"*40
