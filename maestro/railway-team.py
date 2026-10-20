@@ -244,7 +244,7 @@ def report_cycle_telemetry(result):
         error_class = "unclassified"
         for line in reversed(stderr[-8192:].splitlines()):
             match = re.match(
-                r"^\\s*(?:[A-Za-z0-9_.]+\\.)?([A-Za-z][A-Za-z0-9_]{0,60}(?:Error|Exception))(?::|$)",
+                r"^\s*(?:[A-Za-z0-9_.]+\.)?([A-Za-z][A-Za-z0-9_]{0,60}(?:Error|Exception))(?::|$)",
                 line)
             if match:
                 error_class = match.group(1)
