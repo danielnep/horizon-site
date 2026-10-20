@@ -6,6 +6,7 @@ import {loadPriorityQueue,enforceQueuePriority} from './maestro/priority-queue.m
 import {randomUUID} from 'node:crypto';
 import {createFileHandoffStore,emptyHandoffState,reconcileHandoffs,observeCheckpoint,registerHandoff,summarizeHandoffs} from './maestro/handoff-store.mjs';
 import {normalizeDecision,toMayHandoff} from './maestro/protocol.mjs';
+import {requestMayBrowserDecision} from './maestro/may-browser-fallback.mjs';
 export const IDENTITY=MAESTRO,PLUGINS=MAESTRO.plugins;
 export async function consultGemini({apiKey=process.env.GEMINI_API_KEY,model=process.env.GEMINI_MODEL||'gemini-3.8-flash',
  fetcher=fetch,now=new Date(),checkpoint=null,checkpointStatus='unavailable',checkpointAudit=null,priorityQueue=null,previous=null,staleCount=0}={}){
@@ -57,6 +58,24 @@ let deepSeekPaymentHoldUntil=0;
 export function paymentCircuitStatus(now=Date.now()){
  return {blocked:now<deepSeekPaymentHoldUntil,retryAfterMs:Math.max(0,deepSeekPaymentHoldUntil-now)};
 }
+async function consultMayThirdRoute(options,original){
+ const transport=options.mayTransport||requestMayBrowserDecision;
+ let outcome;
+ try{
+  outcome=await transport({
+   env:options.env||process.env,priorityQueue:options.priorityQueue,
+   checkpoint:options.checkpoint,checkpointStatus:options.checkpointStatus,
+   store:options.handoffStore,now:options.now instanceof Date?options.now:new Date(),
+   log:options.log||console.log
+  });
+ }catch{
+  outcome={status:'transport_unavailable'};
+ }
+ (options.log||console.log)('[maestro-may-fallback] '+JSON.stringify({
+  status:outcome?.status||'unknown',source:'kernel_authenticated_browser'}));
+ if(outcome?.status==='answered'&&outcome.decision)return outcome.decision;
+ throw original;
+}
 export async function consultWithFallback(options={}){
  try{return await consultGemini(options);}
  catch(geminiError){
@@ -67,7 +86,7 @@ export async function consultWithFallback(options={}){
    log('[maestro-provider-fallback] '+JSON.stringify({from:'gemini',to:'deepseek',
      reason:safeFailure(geminiError),fallback:'DeepSeek HTTP 402',
      result:'skipped_payment_circuit',retryAfterSeconds:Math.ceil((deepSeekPaymentHoldUntil-nowMs)/1000)}));
-   throw Error('Supervisor indisponivel: Gemini '+safeFailure(geminiError)+'; DeepSeek payment_circuit_open');
+   return consultMayThirdRoute(options,Error('Supervisor indisponivel: Gemini '+safeFailure(geminiError)+'; DeepSeek payment_circuit_open'));
   }
   try{
    const decision=await consultDeepSeek(options);
@@ -81,7 +100,7 @@ export async function consultWithFallback(options={}){
    log('[maestro-provider-fallback] '+JSON.stringify({from:'gemini',to:'deepseek',
      reason:safeFailure(geminiError),fallback:failure,result:'failed',
      paymentCircuitSeconds:failure==='DeepSeek HTTP 402'?3600:0}));
-   throw Error('Supervisor indisponivel: Gemini '+safeFailure(geminiError)+'; DeepSeek '+failure);
+   return consultMayThirdRoute(options,Error('Supervisor indisponivel: Gemini '+safeFailure(geminiError)+'; DeepSeek '+failure));
   }
  }
 }
@@ -123,7 +142,7 @@ export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallba
   checkedAt:priorityQueue.checkedAt,source:priorityQueue.highest.source
  }));
  const rawDecision=await gemini({fetcher,checkpoint:state.checkpoint,checkpointStatus:state.status,
- checkpointAudit:audit,priorityQueue,previous,staleCount:unacknowledged,now,log});
+ checkpointAudit:audit,priorityQueue,previous,staleCount:unacknowledged,now,log,handoffStore});
  const prioritized=enforceQueuePriority(rawDecision,priorityQueue);
  if(prioritized.selectionPolicy==='mandatory-priority-override')
   log('[maestro-priority-enforcement] '+JSON.stringify({previousFocus:rawDecision.focus,
@@ -133,7 +152,7 @@ export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallba
   persistenceStatus:handoffStore?'persisted':'unavailable'};
  // Persist BEFORE publishing the handoff. On storage failure, the cycle fails
  // visibly and the scheduler retries instead of advertising an untracked job.
- if(handoffStore)await handoffStore.write(registerHandoff(durableState,decision,{id:decision.handoffId}));
+ if(handoffStore)await handoffStore.write(registerHandoff(await handoffStore.read(),decision,{id:decision.handoffId}));
  const handoff=toMayHandoff(decision);
  log('[maestro-supervisor] '+JSON.stringify(decision));
  log('[maestro-handoff] '+JSON.stringify(handoff));
