@@ -88,7 +88,7 @@ def verify_environment(env):
         raise RuntimeError("railway_state_branch_invalid")
     if env.get("HORIZON_AGENT_ACTIONS_DISABLED")!="1":
         raise RuntimeError("single_writer_not_armed")
-    if not (env.get("GEMINI_API_KEY") or env.get("DEEPSEEK_API_KEY")):
+    if not (env.get("GROQ_API_KEY") or env.get("API_IA_GROQ") or env.get("GEMINI_API_KEY")):
         raise RuntimeError("no_reasoning_provider")
     key_file=(Path(env.get("RAILWAY_VOLUME_MOUNT_PATH","/data"))
               /"horizon-checkpoint-migration-private.pem")
@@ -168,6 +168,7 @@ def fetch_source(sha, target, *, opener=urllib.request.urlopen):
 def _dependency_ready():
     try:
         from cryptography.fernet import Fernet  # noqa: F401
+        import pypdf  # noqa: F401
         return True
     except ImportError:
         return False
@@ -181,7 +182,7 @@ def install_dependency(env, *, run=subprocess.run, target=None):
     # Reuse the exact dependency version tested by the current Actions workflow.
     result = run([sys.executable, "-m", "pip", "install",
                   "--disable-pip-version-check", "--no-input", "--quiet",
-                  "--target", str(target), "cryptography==46.0.3"],
+                  "--target", str(target), "cryptography==46.0.3", "pypdf==6.10.0"],
                  timeout=90, capture_output=True, text=True, check=False, env=env)
     if result.returncode:
         raise RuntimeError("python_dependency_unavailable")
