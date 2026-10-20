@@ -35,3 +35,5 @@ jobs:
           node --check maestro/embedded-postgres.mjs
       - name: Run application and supervisor regression tests
         run: npm test
+      - name: Verify read-only SQLite observer
+        run: python3 -m unittest discover -s tests -p test_operational_state.py
