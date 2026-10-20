@@ -31,7 +31,7 @@ O evento `[maestro-engineering-context]` registra versao, origem, tamanho e hash
 
 
 ## Frescor, comprovacao e durabilidade (correcao 2026-10-19)
-- O campo legado `checkpointStatus=fresh` significa **somente** que `updated_at` tem ate 72 horas. Nao e confirmacao de entrega.
+- `checkpointStatus=fresh` significa **somente** que `updated_at` tem no maximo 6 horas; acima disso o status e `stale`, mesmo com leitura do arquivo funcionando. A idade e registrada separadamente em `checkpointAgeMinutes`. Nem `fresh` nem `stale` demonstram que a tarefa foi executada: a confirmacao exige recibo de handoff verificavel.
 - O supervisor publica separadamente `checkpointReadability`, `checkpointUpdatedAt`, `checkpointAgeMinutes`, `checkpointRecencyStatus`, `executionStatus`, `pendingHandoffs`, `overdueHandoffs` e `handoffId`.
 - Cada handoff emitido e gravado **antes** de ser anunciado, como recibo em JSON atomico no volume ja montado em `/data/maestro-supervisor-handoffs.json` (configuravel por `MAESTRO_HANDOFF_STATE_PATH`). Nao existe migracao automatica de banco legado. Nao escrever dados ou segredos de clientes nesse arquivo.
 - Em **toda consulta**, antes de acessar Gemini/DeepSeek, o supervisor registra `lastObservation` no mesmo arquivo e emite `[maestro-checkpoint-audit]`. Assim, mesmo que ambos os provedores falhem com 429/503/402, a idade, a legibilidade e tarefas pendentes/vencidas ficam comprováveis. Essa observacao nao cria handoff nem comprova trabalho executado.
