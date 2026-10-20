@@ -2,15 +2,16 @@ import {MAESTRO} from './maestro/identity.mjs';
 import {ENGINEERING_CONTEXT} from './maestro/engineering.mjs';
 import {SUPERVISOR_INSTRUCTION,buildPrompt} from './maestro/prompt.mjs';
 import {loadCheckpoint} from './maestro/checkpoint.mjs';
+import {loadPriorityQueue,enforceQueuePriority} from './maestro/priority-queue.mjs';
 import {randomUUID} from 'node:crypto';
 import {createFileHandoffStore,emptyHandoffState,reconcileHandoffs,observeCheckpoint,registerHandoff,summarizeHandoffs} from './maestro/handoff-store.mjs';
 import {normalizeDecision,toMayHandoff} from './maestro/protocol.mjs';
 export const IDENTITY=MAESTRO,PLUGINS=MAESTRO.plugins;
 export async function consultGemini({apiKey=process.env.GEMINI_API_KEY,model=process.env.GEMINI_MODEL||'gemini-3.8-flash',
- fetcher=fetch,now=new Date(),checkpoint=null,checkpointStatus='unavailable',checkpointAudit=null,previous=null,staleCount=0}={}){
+ fetcher=fetch,now=new Date(),checkpoint=null,checkpointStatus='unavailable',checkpointAudit=null,priorityQueue=null,previous=null,staleCount=0}={}){
  if(!apiKey)throw Error('GEMINI_API_KEY ausente');
  if(!/^[a-zA-Z0-9_.-]{3,80}$/.test(model))throw Error('Modelo invalido');
- const userContext=buildPrompt({checkpoint,checkpointStatus,checkpointAudit,previous,staleCount,now});
+ const userContext=buildPrompt({checkpoint,checkpointStatus,checkpointAudit,priorityQueue,previous,staleCount,now});
  const payload={systemInstruction:{parts:[{text:SUPERVISOR_INSTRUCTION}]},
  contents:[{role:'user',parts:[{text:userContext}]}],
  generationConfig:{temperature:0.15,responseMimeType:'application/json',maxOutputTokens:2300}};
@@ -27,10 +28,10 @@ export async function consultGemini({apiKey=process.env.GEMINI_API_KEY,model=pro
 }
 export async function consultDeepSeek({deepSeekKey=process.env.DEEPSEEK_API_KEY,
  deepSeekModel=process.env.DEEPSEEK_MODEL||'deepseek-chat',fetcher=fetch,now=new Date(),
- checkpoint=null,checkpointStatus='unavailable',checkpointAudit=null,previous=null,staleCount=0}={}){
+ checkpoint=null,checkpointStatus='unavailable',checkpointAudit=null,priorityQueue=null,previous=null,staleCount=0}={}){
  if(!deepSeekKey)throw Error('DEEPSEEK_API_KEY ausente no supervisor');
  if(!/^[a-zA-Z0-9_.-]{3,80}$/.test(deepSeekModel))throw Error('Modelo DeepSeek invalido');
- const userContext=buildPrompt({checkpoint,checkpointStatus,checkpointAudit,previous,staleCount,now});
+ const userContext=buildPrompt({checkpoint,checkpointStatus,checkpointAudit,priorityQueue,previous,staleCount,now});
  const payload={model:deepSeekModel,
    messages:[{role:'system',content:SUPERVISOR_INSTRUCTION},{role:'user',content:userContext}],
    response_format:{type:'json_object'},temperature:0.15,max_tokens:2300};
@@ -86,7 +87,8 @@ export async function consultWithFallback(options={}){
 }
 export const review=consultWithFallback;
 export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallback,clock=()=>new Date(),
- checkpointUrl=process.env.MAESTRO_CHECKPOINT_URL,previous=null,staleCount=0,log=console.log,handoffStore=null}={}){
+ checkpointUrl=process.env.MAESTRO_CHECKPOINT_URL,previous=null,staleCount=0,log=console.log,handoffStore=null,
+ priorityQueueLoader=loadPriorityQueue}={}){
  const now=clock();
  log('[maestro-engineering-context] '+JSON.stringify(ENGINEERING_CONTEXT));
  const state=await loadCheckpoint({fetcher,...(checkpointUrl?{url:checkpointUrl}:{}),now});
@@ -111,9 +113,23 @@ export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallba
  const oldId=previous?.checkpointExecutionId||null;
  const unacknowledged=handoffStore?audit.pendingHandoffs+audit.overdueHandoffs:
    oldId!==null&&oldId===currentId?staleCount+1:0;
+ // The explicit task queue has precedence over historical checkpoints and model preference.
+ // If the queue cannot be verified, fail closed: no new handoff with guessed priorities.
+ const priorityQueue=await priorityQueueLoader({fetcher,now});
+ if(priorityQueue?.status!=='verified')throw Error('Prioridade nao verificavel: inventario de tarefas indisponivel');
+ if(priorityQueue.highest)log('[maestro-priority-inventory] '+JSON.stringify({
+  taskId:priorityQueue.highest.id,priority:priorityQueue.highest.priority,
+  repo:priorityQueue.highest.repo,status:priorityQueue.highest.status,
+  checkedAt:priorityQueue.checkedAt,source:priorityQueue.highest.source
+ }));
  const rawDecision=await gemini({fetcher,checkpoint:state.checkpoint,checkpointStatus:state.status,
- checkpointAudit:audit,previous,staleCount:unacknowledged,now,log});
- const decision={...rawDecision,...audit,handoffId:randomUUID(),
+ checkpointAudit:audit,priorityQueue,previous,staleCount:unacknowledged,now,log});
+ const prioritized=enforceQueuePriority(rawDecision,priorityQueue);
+ if(prioritized.selectionPolicy==='mandatory-priority-override')
+  log('[maestro-priority-enforcement] '+JSON.stringify({previousFocus:rawDecision.focus,
+   enforcedFocus:prioritized.focus,taskId:prioritized.queueTaskId,
+   priority:prioritized.queuePriority,reason:'explicit_owner_priority'}));
+ const decision={...prioritized,...audit,handoffId:randomUUID(),
   persistenceStatus:handoffStore?'persisted':'unavailable'};
  // Persist BEFORE publishing the handoff. On storage failure, the cycle fails
  // visibly and the scheduler retries instead of advertising an untracked job.

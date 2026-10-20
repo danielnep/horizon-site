@@ -53,7 +53,7 @@ test('nao acessa checkpoint arbitrario',async()=>{
 });
 test('traduz decisao em ordem para May nos logs',async()=>{
  const lines=[];
- const state=await runSupervisorCycle({fetcher:async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)}),
+ const state=await runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher:async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)}),
  gemini:async opts=>normalizeDecision(good,{now:opts.now,checkpoint:opts.checkpoint,checkpointStatus:opts.checkpointStatus}),
  clock:()=>new Date('2026-10-17T14:05:00Z'),log:s=>lines.push(s)});
  assert.equal(state.checkpointStatus,'fresh');
@@ -64,7 +64,7 @@ test('traduz decisao em ordem para May nos logs',async()=>{
  assert.equal(state.handoff.engineeringMethods.sha256,ENGINEERING_CONTEXT.sha256);
 });
 test('indica ao Gemini falta de retorno da May',async()=>{
- const out=await runSupervisorCycle({fetcher:async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)}),
+ const out=await runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher:async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)}),
  previous:{checkpointExecutionId:'cycle-17'},staleCount:2,
  gemini:async opts=>{assert.equal(opts.staleCount,3);return normalizeDecision(good,{now:opts.now});},log:()=>{}});
  assert.equal(out.staleCount,3);
@@ -154,12 +154,12 @@ test('supervisor publica recibo somente apos escrita duravel e sinaliza atraso',
   const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
   const gemini=async ({now,checkpoint:cp,checkpointStatus})=>normalizeDecision(good,{now,checkpoint:cp,checkpointStatus});
   const logs=[];
-  const first=await runSupervisorCycle({fetcher,gemini,clock:()=>now1,handoffStore:store,log:x=>logs.push(x)});
+  const first=await runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher,gemini,clock:()=>now1,handoffStore:store,log:x=>logs.push(x)});
   assert.equal(first.decision.persistenceStatus,'persisted');
   assert.equal(first.decision.executionStatus,'unverified');
   assert.equal((await store.read()).handoffs.length,1);
   assert.equal(first.handoff.handoffId,first.decision.handoffId);
-  const second=await runSupervisorCycle({fetcher,gemini,clock:()=>new Date('2026-10-19T10:31:00Z'),
+  const second=await runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher,gemini,clock:()=>new Date('2026-10-19T10:31:00Z'),
    handoffStore:store,log:x=>logs.push(x)});
   assert.equal(second.decision.executionStatus,'overdue');
   assert.equal(second.decision.overdueHandoffs,1);
@@ -176,7 +176,7 @@ test('falha de persistencia impede publicar handoff ou marcar sucesso',async()=>
  const store={read:async()=>({version:1,handoffs:[]}),write:async()=>{throw Error('ENOSPC');}};
  const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
  const gemini=async ({now,checkpoint:cp,checkpointStatus})=>normalizeDecision(good,{now,checkpoint:cp,checkpointStatus});
- await assert.rejects(()=>runSupervisorCycle({fetcher,gemini,clock:()=>new Date('2026-10-19T09:00:00Z'),
+ await assert.rejects(()=>runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher,gemini,clock:()=>new Date('2026-10-19T09:00:00Z'),
    handoffStore:store,log:x=>logs.push(x)}),/ENOSPC/);
  assert.equal(logs.some(x=>x.startsWith('[maestro-handoff] ')),false);
 });
@@ -191,7 +191,7 @@ test('persiste auditoria antes de Gemini 429 e DeepSeek 402, sem declarar handof
   const now=new Date('2026-10-18T16:05:00Z');
   const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
   const gemini=async()=>{throw Error('Supervisor indisponivel: Gemini HTTP 429; DeepSeek HTTP 402');};
-  await assert.rejects(()=>runSupervisorCycle({fetcher,gemini,clock:()=>now,
+  await assert.rejects(()=>runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher,gemini,clock:()=>now,
     handoffStore:store,log:x=>logs.push(x)}),/Gemini HTTP 429/);
   const restored=await createFileHandoffStore({file}).read();
   assert.equal(restored.lastObservation.checkedAt,now.toISOString());
@@ -209,11 +209,11 @@ test('auditoria preserva observacao e handoffs existentes entre ciclos',async()=
   const store=createFileHandoffStore({file:join(dir,'state.json')});
   const fetcher=async()=>({ok:true,text:async()=>JSON.stringify(checkpoint)});
   const gemini=async({now,checkpoint:cp,checkpointStatus})=>normalizeDecision(good,{now,checkpoint:cp,checkpointStatus});
-  await runSupervisorCycle({fetcher,gemini,clock:()=>new Date('2026-10-18T16:05:00Z'),handoffStore:store,log:()=>{}});
+  await runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher,gemini,clock:()=>new Date('2026-10-18T16:05:00Z'),handoffStore:store,log:()=>{}});
   let state=await store.read();
   assert.equal(state.handoffs.length,1);
   assert.equal(state.lastObservation.executionStatus,'unverified');
-  await assert.rejects(()=>runSupervisorCycle({fetcher,gemini:async()=>{throw Error('quota');},
+  await assert.rejects(()=>runSupervisorCycle({priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),fetcher,gemini:async()=>{throw Error('quota');},
    clock:()=>new Date('2026-10-18T17:40:00Z'),handoffStore:store,log:()=>{}}),/quota/);
   state=await createFileHandoffStore({file:store.file}).read();
   assert.equal(state.handoffs.length,1);
