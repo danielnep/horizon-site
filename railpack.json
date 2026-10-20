@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "packages": {
+    "node": "22",
+    "python": "3.12"
+  },
+  "deploy": {
+    "aptPackages": ["...", "git"]
+  }
+}
