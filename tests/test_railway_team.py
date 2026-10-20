@@ -87,7 +87,7 @@ class RailwayTeamTests(unittest.TestCase):
     def test_cycle_logs_only_allowlisted_diagnostics_without_customer_payload(self):
         fake=types.SimpleNamespace(
             returncode=1,
-            stdout='\\n'.join([
+            stdout='\n'.join([
                 json.dumps({'event': 'may_delegation_released',
                             'task_id':'chat-a-ronda-pro-mobile-field-20261019',
                             'delegated_count':5,'qa_verified':False,
@@ -100,7 +100,7 @@ class RailwayTeamTests(unittest.TestCase):
                 json.dumps({'request_id':'test',
                             'raw_payload':'PRIVATE_CLIENT'}),
             ]),
-            stderr='Traceback (most recent call last):\\nRuntimeError: PRIVATE_CLIENT TOKEN=VERY_PRIVATE')
+            stderr='Traceback (most recent call last):\nRuntimeError: PRIVATE_CLIENT TOKEN=VERY_PRIVATE')
         observed=[]
         with patch.object(team,'event',side_effect=lambda kind,**kw:observed.append((kind,kw))):
             team.report_cycle_telemetry(fake)
