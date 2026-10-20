@@ -56,6 +56,15 @@ class CheckpointImportTests(unittest.TestCase):
         with zipfile.ZipFile(contents,"w") as z:z.writestr("state.envelope.json",json.dumps(envelope))
         self.envelope=envelope;self.zip=contents.getvalue()
 
+    def test_logical_digest_survives_sqlite_backup_repacking(self):
+        raw=Path(self.temp.name)/"synthetic.sqlite3"
+        backup=Path(self.temp.name)/"repacked.sqlite3"
+        with sqlite3.connect(raw) as origin:
+            with sqlite3.connect(backup) as copy:
+                origin.backup(copy)
+        self.assertEqual(migration.logical_digest(raw),migration.logical_digest(backup))
+        self.assertEqual(migration.validate_sqlite(backup,2),2)
+
     def test_decrypts_valid_checkpoint_to_unmodified_bytes(self):
         env=migration.read_envelope(self.zip)
         plaintext=migration.decrypt_envelope(env,self.keyfile.read_bytes())
