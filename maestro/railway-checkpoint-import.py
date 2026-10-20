@@ -141,6 +141,20 @@ def validate_sqlite(path, expected_records):
         raise RuntimeError("sqlite_record_mismatch")
     return records
 
+def logical_digest(path):
+    """Compare complete SQLite schema and stored rows, not page-layout bytes.
+
+    sqlite3.backup normalizes internal page headers and can give a different
+    file hash for the exact same logical tables, indexes and checkpoint data.
+    """
+    with sqlite3.connect(path.as_uri()+"?mode=ro",uri=True) as cx:
+        hash_obj=hashlib.sha256()
+        for statement in cx.iterdump():
+            hash_obj.update(statement.encode("utf-8"))
+            hash_obj.update(b"\\n")
+        return hash_obj.digest()
+
+
 def import_snapshot(env, *, artifact=None, api_sha=None, project_source=None):
     """Import to new encrypted GitHub branch; refuse to overwrite old or staged."""
     token=env.get("GITHUB_TOKEN")
@@ -163,7 +177,6 @@ def import_snapshot(env, *, artifact=None, api_sha=None, project_source=None):
         path.write_bytes(plaintext)
         records=validate_sqlite(path,envelope["records"])
         material=fernet_passphrase(private)
-        old_env_key=os.environ.get("GITHUB_TOKEN")
         if project_source is not None:
             sys.path.insert(0,str(project_source))
         from horizon_core.github_state import GitHubState
@@ -171,11 +184,16 @@ def import_snapshot(env, *, artifact=None, api_sha=None, project_source=None):
           ("horizon-github-sqlite-v1:"+material).encode()).digest())
         remote=GitHubState(REPOSITORY,branch=target,token=token,
                            compressed=True,encryption_key=enc_key)
-        # No changes may be made to an existing target unless an operator chooses
-        # a fresh branch. The original encrypted snapshot is never overwritten.
-        if remote._content() is not None:
-            raise RuntimeError("migration_target_already_exists")
-        sha=remote.push(path)
+        # If an earlier interrupted transfer already populated this branch,
+        # verify its full logical database content and resume idempotently.
+        # NEVER overwrite a mismatching target, or the original branch.
+        existing=remote._content()
+        if existing is None:
+            sha=remote.push(path)
+        else:
+            sha=existing.get("sha")
+            if not isinstance(sha,str) or len(sha)!=40:
+                raise RuntimeError("migration_target_metadata_invalid")
         verify=GitHubState(REPOSITORY,branch=target,token=token,
                            compressed=True,encryption_key=enc_key)
         with tempfile.TemporaryDirectory(prefix="horizon-import-verify-") as check_dir:
@@ -183,7 +201,7 @@ def import_snapshot(env, *, artifact=None, api_sha=None, project_source=None):
             if not verify.pull(readback):
                 raise RuntimeError("migration_readback_missing")
             validate_sqlite(readback,records)
-            if hashlib.sha256(readback.read_bytes()).digest()!=hashlib.sha256(plaintext).digest():
+            if logical_digest(readback)!=logical_digest(path):
                 raise RuntimeError("migration_readback_mismatch")
     announce("verified",source_sha=expected_source_sha[:12],branch=target,
              count=records,checkpoint_sha=sha[:12])
