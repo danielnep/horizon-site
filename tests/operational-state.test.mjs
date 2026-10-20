@@ -74,8 +74,8 @@ test('reads verified operational snapshot on independent Railway state branch',a
   assert.equal(state.taskCount,11);
   assert.equal(state.taskCounts.succeeded,2);
   assert.equal(state.lastEventAt,'2026-10-20T06:25:00.000Z');
-  assert.equal(state.snapshotSha,snapshotResponse(encrypted).json?(
-   createHash('sha1').update(Buffer.from('blob '+encrypted.length+'\0')).update(encrypted).digest('hex')):null);
+  assert.equal(state.snapshotSha,createHash('sha1')
+   .update(Buffer.from('blob '+encrypted.length+'\0')).update(encrypted).digest('hex'));
   assert.equal(JSON.stringify(state).includes('synthetic-secret'),false);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
