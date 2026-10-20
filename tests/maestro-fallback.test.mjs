@@ -82,6 +82,7 @@ test('supervisor completo publica decisão do DeepSeek quando Gemini 429',async(
  };
  // Dependency injection exposes provider options for no-credential tests.
  const status=await runSupervisorCycle({fetcher,
+  priorityQueueLoader:async()=>({status:'verified',tasks:[],highest:null}),
   gemini:options=>consultWithFallback({...options,apiKey:'test',deepSeekKey:'test'}),
   checkpointUrl:'',clock:()=>now,log:x=>logs.push(x)});
  assert.equal(providerCalls,2);assert.equal(status.decision.focus,'danielnep/michelle-preview');
