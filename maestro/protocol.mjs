@@ -11,7 +11,7 @@ export function normalizeDecision(raw,{now=new Date(),checkpoint=null,checkpoint
   fields[key]=raw[key].trim().slice(0,500);
  }
  if(!Array.isArray(raw.checkpoint_needed))throw Error('checkpoint_needed precisa ser array');
- return {protocolVersion:2,source:provider==='deepseek'?'deepseek-supervisor':'gemini-supervisor',decisionAt:now.toISOString(),
+ return {protocolVersion:2,source:provider==='may'?'may-browser-supervisor':provider==='deepseek'?'deepseek-supervisor':'gemini-supervisor',decisionAt:now.toISOString(),
  nextCallAt:new Date(now.getTime()+n*60000).toISOString(),nextCallMinutes:n,
  priority:raw.priority,focus:fields.focus,nextMayTask:fields.next_may_task,
  acceptanceCriteria:fields.acceptance_criteria,whyThisTime:fields.why_this_time,

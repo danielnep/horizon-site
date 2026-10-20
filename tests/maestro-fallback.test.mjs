@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {consultWithFallback,consultDeepSeek,runSupervisorCycle} from '../maestro-worker.mjs';
+import {requestMayBrowserDecision,consultationTicket,publicConsultation} from '../maestro/may-browser-fallback.mjs';
 
 const decision={protocol_version:2,next_call_minutes:60,priority:'high',
  focus:'danielnep/michelle-preview',next_may_task:'Retomar a entrega do Painel Michelle',
@@ -88,4 +89,92 @@ test('supervisor completo publica decisão do DeepSeek quando Gemini 429',async(
  assert.equal(providerCalls,2);assert.equal(status.decision.focus,'danielnep/michelle-preview');
  assert.equal(status.decision.source,'deepseek-supervisor');
  assert.ok(logs.some(x=>x.startsWith('[maestro-handoff]')));
+});
+
+test('Gemini e DeepSeek falham: supervisor chama transporte May, aceita apenas decisão validada',async()=>{
+ const called=[],logs=[];
+ const now=new Date('2026-10-20T08:00:00Z');
+ const chosen={protocolVersion:2,source:'may-browser-supervisor',
+  nextCallMinutes:60,nextCallAt:'2026-10-20T09:00:00.000Z',
+  priority:'critical',focus:'danielnep/app-hondas-maxvel',
+  nextMayTask:'Priorizar Ronda Pro P0'};
+ const out=await consultWithFallback({...args(async(url)=>{
+  called.push(url);
+  return {ok:false,status:url.includes('generativelanguage')?429:402,json:async()=>({error:{}})};
+ }),now,env:{KERNEL_API_KEY:'synthetic-key'},
+ priorityQueue:{status:'verified',highest:{id:'p0-ronda',priority:'P0',repo:'danielnep/app-hondas-maxvel'}},
+ mayTransport:async request=>{called.push('may-browser');assert.equal(request.priorityQueue.highest.id,'p0-ronda');return {status:'answered',decision:chosen};},
+ log:x=>logs.push(x)});
+ assert.equal(out.source,'may-browser-supervisor');
+ assert.equal(called.at(-1),'may-browser');
+ assert.ok(logs.some(x=>x.includes('[maestro-may-fallback]')&&x.includes('"status":"answered"')));
+});
+test('Fallback de May indisponível não vira sucesso nem finge envio',async()=>{
+ let tries=0;
+ await assert.rejects(()=>consultWithFallback({
+  ...args(async url=>({ok:false,status:url.includes('generativelanguage')?429:402,json:async()=>({error:{}})})),
+  mayTransport:async()=>{tries++;return {status:'draft_preserved'};},
+  log:()=>{} }),/Supervisor indisponivel/);
+ assert.equal(tries,1);
+});
+test('Ticket estável e pergunta pública exclui payload privado',()=>{
+ const q={highest:{id:'a-ronda-pro-auditoria-total-20261019',priority:'P0',
+  repo:'danielnep/app-hondas-maxvel'}};
+ const a=consultationTicket({priorityQueue:q,checkpoint:{last_execution:{id:'same'}}});
+ const b=consultationTicket({priorityQueue:q,checkpoint:{last_execution:{id:'same'}}});
+ assert.equal(a,b);assert.match(a,/^[a-f0-9]{20}$/);
+ const p=publicConsultation({ticket:a,priorityQueue:q,checkpointStatus:'stale'});
+ assert.match(p,/AGENTE: may-maestro/);assert.match(p,/TIPO: providers_unavailable/);
+ assert.match(p,/Ronda Pro|ronda-pro/);
+ assert.doesNotMatch(p,/senha|api.key/i);
+});
+function storeMock(initial={}){
+ let state={version:1,handoffs:[],lastObservation:null,...initial};
+ return {read:async()=>structuredClone(state),write:async v=>{state=structuredClone(v);},
+  snapshot:()=>structuredClone(state)};
+}
+test('Rascunhos em abas preservados; nenhum comando de mouse ou teclado',async()=>{
+ const store=storeMock(),calls=[];
+ const out=await requestMayBrowserDecision({
+  env:{KERNEL_API_KEY:'synthetic'},store,
+  priorityQueue:{highest:{id:'ronda',priority:'P0',repo:'danielnep/app-hondas-maxvel'}},
+  checkpointStatus:'stale',
+  post:async(url)=>{calls.push(url);return calls.length===1?{status:'not_found'}:{status:'composer_busy'};}
+ });
+ assert.equal(out.status,'draft_preserved');
+ assert.equal(calls.length,2);
+ assert.ok(calls.every(x=>x.endsWith('/playwright/execute')));
+ assert.equal(store.snapshot().mayBrowserFallback,undefined);
+});
+test('Antes de tocar a interface, salva ticket; não repete envio duvidoso',async()=>{
+ const store=storeMock(),calls=[];
+ const phases=[{status:'not_found'},{status:'ready',box:{x:140,y:650}},
+  null,null,{status:'draft_ready'},null,{status:'sent'}];
+ const post=async(url,body)=>{calls.push({url,body});return phases.shift();};
+ const opts={env:{KERNEL_API_KEY:'synthetic'},store,post,
+  priorityQueue:{highest:{id:'ronda',priority:'P0',repo:'danielnep/app-hondas-maxvel'}},
+  checkpointStatus:'stale'};
+ const out=await requestMayBrowserDecision(opts);
+ assert.equal(out.status,'sent_waiting_for_reply');
+ assert.ok(store.snapshot().mayBrowserFallback.ticket);
+ assert.deepEqual(calls.map(x=>x.url.split('/').at(-1)),
+   ['execute','execute','click_mouse','type_text','execute','press_key','execute']);
+ calls.length=0;
+ const second=await requestMayBrowserDecision({...opts,post:async(url)=>{calls.push({url});return {status:'not_found'};}});
+ assert.equal(second.status,'delivery_unconfirmed_no_resend');
+ assert.equal(calls.length,1);
+});
+test('Resposta já existente é lida sem reenviar, validada e marcada como May',async()=>{
+ const store=storeMock();
+ const q={highest:{id:'ronda',priority:'P0',repo:'danielnep/app-hondas-maxvel'}};
+ const payload={...decision,priority:'critical',focus:'danielnep/app-hondas-maxvel',
+   next_may_task:'Retomar tarefa P0 ronda'};
+ const result=await requestMayBrowserDecision({
+  env:{KERNEL_API_KEY:'synthetic'},store,priorityQueue:q,checkpointStatus:'stale',
+  now:new Date('2026-10-20T08:00:00Z'),
+  post:async(url)=>{assert.ok(url.endsWith('/playwright/execute'));return {status:'answered',answer:JSON.stringify(payload)};}
+ });
+ assert.equal(result.status,'answered');
+ assert.equal(result.decision.source,'may-browser-supervisor');
+ assert.equal(store.snapshot().mayBrowserFallback.status,'answered');
 });
