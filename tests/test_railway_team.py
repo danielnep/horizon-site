@@ -1,5 +1,6 @@
 import importlib.util
-from io import BytesIO
+from io import BytesIO, StringIO
+from contextlib import redirect_stdout
 import json
 from pathlib import Path
 import shutil
@@ -113,6 +114,18 @@ class RailwayTeamTests(unittest.TestCase):
         self.assertEqual(observed[-1][1]['errorClass'],'RuntimeError')
         self.assertNotIn('PRIVATE_CLIENT',json.dumps(observed))
         self.assertNotIn('VERY_PRIVATE',json.dumps(observed))
+        # Crucial: exercise the REAL event allowlist, not a mocked logger.
+        text_sink=StringIO()
+        with redirect_stdout(text_sink):
+            team.report_cycle_telemetry(fake)
+        delivered=text_sink.getvalue()
+        self.assertIn('"processed": 8',delivered)
+        self.assertIn('"rejected": 1',delivered)
+        self.assertIn('"delegatedCount": 5',delivered)
+        self.assertIn('"errorClass": "RuntimeError"',delivered)
+        self.assertIn('"errorKind": "GitHubStateError"',delivered)
+        self.assertNotIn('PRIVATE_CLIENT',delivered)
+        self.assertNotIn('VERY_PRIVATE',delivered)
 
     def test_worker_session_is_bounded_and_no_secrets_in_arguments(self):
         with tempfile.TemporaryDirectory() as tmp:
