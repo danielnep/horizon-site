@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile,readFile} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createCipheriv,createHash,createHmac,randomBytes} from 'node:crypto';
@@ -77,6 +78,34 @@ test('reads verified operational snapshot on independent Railway state branch',a
   assert.equal(state.snapshotSha,createHash('sha1')
    .update(Buffer.from('blob '+encrypted.length+'\0')).update(encrypted).digest('hex'));
   assert.equal(JSON.stringify(state).includes('synthetic-secret'),false);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('end-to-end decrypts and inspects a real synthetic SQLite via Python',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'horizon-observe-real-'));
+ try{
+  const db=join(dir,'synthetic.sqlite3');
+  const key=join(dir,'horizon-checkpoint-migration-private.pem');
+  const py=spawnSync('python3',['-c',
+   'import sqlite3,sys,time\n'+
+   'db=sqlite3.connect(sys.argv[1])\n'+
+   'db.execute("CREATE TABLE tasks(status TEXT, secret TEXT)")\n'+
+   'db.execute("CREATE TABLE events(kind TEXT, created_at REAL)")\n'+
+   'db.execute("INSERT INTO tasks VALUES(?,?)",("succeeded","hidden-client-secret"))\n'+
+   'db.execute("INSERT INTO events VALUES(?,?)",("succeeded",1792477500))\n'+
+   'db.commit();db.close()\n',db],{encoding:'utf8',timeout:10000});
+  assert.equal(py.status,0,py.stderr);
+  await writeFile(key,SECRET,{mode:0o600});
+  const encrypted=encryptLikePythonFernet(await readFile(db));
+  const state=await loadOperationalState({
+   env:{HORIZON_PY_AGENTS_ENABLED:'1',HORIZON_STATE_BRANCH:BRANCH,
+    GITHUB_TOKEN:'mock',RAILWAY_VOLUME_MOUNT_PATH:dir},
+   fetcher:async()=>snapshotResponse(encrypted),now:NOW
+  });
+  assert.equal(state.status,'verified');
+  assert.equal(state.taskCount,1);
+  assert.equal(state.taskCounts.succeeded,1);
+  assert.equal(JSON.stringify(state).includes('hidden-client-secret'),false);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
