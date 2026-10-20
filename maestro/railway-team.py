@@ -36,7 +36,9 @@ stop = False
 
 def event(kind, **safe):
     """Log only declared machine metadata. No exception text or task payload."""
-    allowed = {"count", "rc", "seconds", "sha", "reason", "required", "state"}
+    allowed = {"count", "rc", "seconds", "sha", "reason", "required", "state",
+               "processed", "rejected", "ready_for_continuation", "taskId",
+               "delegatedCount", "qaVerified", "errorClass", "errorKind"}
     packet = {k: v for k, v in safe.items() if k in allowed}
     print("[team-railway] " + kind + " " + json.dumps(packet, sort_keys=True), flush=True)
 
@@ -233,11 +235,11 @@ def report_cycle_telemetry(result):
         elif "review_delivery_error" in packet:
             reason = packet.get("review_delivery_error")
             if isinstance(reason, str) and SAFE_ERROR_KIND.fullmatch(reason):
-                event("delivery_error", kind=reason)
+                event("delivery_error", errorKind=reason)
         elif "attendance_error" in packet:
             reason = packet.get("attendance_error")
             if isinstance(reason, str) and SAFE_ERROR_KIND.fullmatch(reason):
-                event("attendance_error", kind=reason)
+                event("attendance_error", errorKind=reason)
     code = getattr(result, "returncode", None)
     if type(code) is int and code != 0:
         stderr = getattr(result, "stderr", "") or ""
