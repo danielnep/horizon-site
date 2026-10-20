@@ -1,3 +1,6 @@
+// A checkpoint is operationally recent for 6h (two 3h supervisor cycles).
+// Readability and verified execution are independent of recency.
+export const CHECKPOINT_FRESH_MAX_AGE_MS=6*60*60*1000;
 const MAX_BYTES=18000,DEFAULT_URL='https://raw.githubusercontent.com/danielnep/horizon-site/agents/checkpoints/maestro/checkpoint.json';
 const ACCEPT=/^https:\/\/raw\.githubusercontent\.com\/danielnep\/horizon-site\/agents\/checkpoints\/maestro\/checkpoint\.json$/;
 export function sanitizeCheckpoint(input){
@@ -22,7 +25,7 @@ export async function loadCheckpoint({fetcher=fetch,url=DEFAULT_URL,now=new Date
   const checkpoint=sanitizeCheckpoint(JSON.parse(str));
   if(!checkpoint.updated_at)return {status:'awaiting-first-checkpoint',readable:true,checkpoint,ageMinutes:null};
   const age=now.getTime()-new Date(checkpoint.updated_at).getTime();if(age < -300000)throw Error('Checkpoint no futuro');
-  // Fresh describes a 72h recency window ONLY; execution is verified by an explicit handoff receipt.
-  return {status:age>72*3600000?'stale':'fresh',readable:true,checkpoint,ageMinutes:Math.floor(Math.max(age,0)/60000)};
+  // A readable but old checkpoint is STALE; proof of execution still requires a matching handoff receipt.
+  return {status:age>CHECKPOINT_FRESH_MAX_AGE_MS?'stale':'fresh',readable:true,checkpoint,ageMinutes:Math.floor(Math.max(age,0)/60000)};
  }catch(e){return {status:'unavailable',readable:false,checkpoint:null,ageMinutes:null,reason:String(e?.message||e).slice(0,150)};}
 }
