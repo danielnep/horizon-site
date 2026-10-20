@@ -149,3 +149,26 @@ class RailwayTeamTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+
+class ReferenceDependencyTests(unittest.TestCase):
+    def test_missing_pdf_dependency_is_installed_in_scratch(self):
+        calls=[]
+        def run(args, **kwargs):
+            calls.append((args, kwargs))
+            return types.SimpleNamespace(returncode=0)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(team,'_dependency_ready',return_value=False):
+            target=Path(tmp)/'deps'
+            self.assertEqual(team.install_dependency({},run=run,target=target),str(target))
+        self.assertIn('pypdf==6.10.0',calls[0][0])
+        self.assertIn('cryptography==46.0.3',calls[0][0])
+        self.assertEqual(calls[0][1]['env'],{})
+
+    def test_groq_alone_is_an_authorized_reasoning_provider(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            key=Path(tmp)/'horizon-checkpoint-migration-private.pem'
+            key.write_bytes(b'fixture');key.chmod(0o600)
+            env=dict(GITHUB_TOKEN='fixture',KERNEL_API_KEY='fixture',
+                HORIZON_EXECUTOR_SHA='b'*40,HORIZON_STATE_BRANCH='agent-state/railway-staging',
+                HORIZON_AGENT_ACTIONS_DISABLED='1',RAILWAY_VOLUME_MOUNT_PATH=tmp,GROQ_API_KEY='fixture')
+            self.assertEqual(team.verify_environment(env),'b'*40)
