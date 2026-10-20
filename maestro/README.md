@@ -40,3 +40,12 @@ O evento `[maestro-engineering-context]` registra versao, origem, tamanho e hash
 - Ate existir um handoff controlado, `executionStatus=unverified`. Se o armazenamento ficar indisponivel ou lotado, o ciclo falha sem anunciar sucesso ou handoff novo; diagnosticar o erro de persistencia em vez de apagar historico.
 - O limite de 256 recibos e um bloqueio explicito para impedir descarte silencioso de pendencias. Planejar arquivamento e reconciliacao antes de atingi-lo, sem sobrescrever historico.
 - May e Railway permanecem com responsabilidades distintas: o Railway decide e registra tarefas, e o ChatGPT deve executa-las e fornecer recibos. O deploy atual nao prova que a automacao do ChatGPT recebeu ou concluiu cada ordem.
+
+## Fila de prioridades do proprietario (19/10/2026)
+Antes de chamar Gemini/DeepSeek, o supervisor le somente documentos publicos e validos de `danielnep/May-Maestro-Executor/tasks/chat/*.json` na branch `main`, reconciliando tarefas explicitamente P0/P1/P2/P3 com `tasks/results/<id>.json`. A missao P0 do Ronda Pro vem da tarefa `a-ronda-pro-auditoria-total-20261019`; o `tasks/inbox.json` vazio nao invalida as ordens em `tasks/chat`.
+
+- Prioridade expressa pelo proprietario na fila ativa prevalece sobre `last_execution`, `previousGeminiDecision` e qualquer preferencia do modelo. Em prioridades iguais, a escolha por ID e deterministica. Ordens antigas continuam no checkpoint como historico, nao instrucoes vigentes.
+- Tarefa so deixa de bloquear uma prioridade quando o resultado informa explicitamente estado final, QA aprovado **e** publicacao verificada. Resultado ausente, falha de teste, `pending`, `awaiting_host_publication` ou execucao apenas alegada nao significam conclusao.
+- O supervisor transmite o inventario ao modelo e aplica a mesma regra em codigo ao retorno. Se a resposta contrariar a tarefa prioritaria, publica o handoff reorientado e o evento `[maestro-priority-enforcement]`, distinguindo escolha do modelo de override deterministico.
+- Se a consulta a fila falhar, o ciclo falha **sem criar novo handoff** e o agendador tenta novamente em dez minutos; nao ha fallback silencioso para checkpoint historico. A auditoria de checkpoint ja persistida e mantida.
+- A regra resolve o controle de prioridades do supervisor, mas nao inicia nem interrompe os workers do executor; fila de execucao e emissao de handoff continuam mecanismos independentes.
