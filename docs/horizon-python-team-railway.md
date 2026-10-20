@@ -22,9 +22,16 @@ de poderem ser reportados como concluídos.
 
 - maestro/shared-agents.mjs: inicia e encerra um único processo Python
   opcional, inerte por padrão. Faz preflight sem expor segredos.
-- maestro/railway-team.py: baixa fonte do May-Maestro-Executor de SHA
-  imutável, verifica tamanho e caminhos, armazena somente em /tmp,
-  reutiliza checkpoint GitHub SQLite criptografado, roda ciclos curtos.
+- maestro/railway-team.py: baixa o executor Python por SHA imutável,
+  verifica tamanho/caminhos, usa /tmp e acessa checkpoints CIFRADOS no
+  GitHub, agora por uma branch separada após importação comprovada.
+- maestro/checkpoint-migration-key.mjs: gera uma chave RSA somente no
+  volume existente do Railway e publica APENAS sua chave pública.
+- maestro/railway-checkpoint-import.py: importa o backup AES-GCM recebido
+  como artefato GitHub Actions, valida SHA e SQLite, grava nova branch
+  GitHub com chave Fernet exclusiva Railway, verifica leitura de volta.
+- A memória PERMANECE no GitHub, não é movida para Heroku/Railway.
+
 - railpack.json: Node 22, Python 3.12 e Git no runtime do site.
 - A consulta ChatGPT usa o KERNEL remoto: não instalar Chrome no Railway.
 
@@ -33,8 +40,14 @@ de poderem ser reportados como concluídos.
 - GITHUB_TOKEN: token PERSISTENTE GitHub com Contents read/write na fila,
   Issues quando usar contingência e Actions read para checar workflows.
   O token efêmero do Actions não funciona em Railway.
-- HORIZON_SQLITE_ENCRYPTION_KEY: exatamente o material usado pelo
-  checkpoint existente na branch agent-state/runtime. Não gerar outra!
+- HORIZON_STATE_BRANCH: branch cifrada separada que o Railway deve ler,
+  por exemplo agent-state/railway-staging.
+- O segredo original da memória NÃO será movido, copiado ou exibido:
+  o GitHub Actions faz uma exportação CIFRADA uma única vez para a chave
+  pública gerada DENTRO do serviço Railway. Um importador verifica o
+  mesmo SHA do checkpoint de origem antes de gravar a nova branch.
+  A chave nova de leitura é derivada da chave privada persistente no
+  Railway e nunca publicada. O antigo checkpoint fica preservado.
 - KERNEL_API_KEY: acesso autorizado ao navegador do projeto KERNEL.
 - HORIZON_EXECUTOR_SHA: SHA de 40 caracteres da revisão Python aprovada.
 - HORIZON_PY_AGENTS_ENABLED=1 e HORIZON_AGENT_ACTIONS_DISABLED=1:
@@ -47,11 +60,14 @@ prompts, stdout ou arquivo de diagnóstico.
 ## Troca de executor sem perda de estado
 
 1. Publicar o novo código inicialmente DESLIGADO. Confirmar saúde do site.
-2. Instalar segredos no Railway e validar recuperação do checkpoint
-   criptografado e acesso ao KERNEL, sem imprimir segredo ou mensagem privada.
+2. Ativar só HORIZON_MEMORY_BRIDGE_ENABLED=1, não ativar os agentes.
+   GitHub Actions exporta estado com cifragem para a chave pública do Railway.
+   Confirmar o mesmo SHA da origem, 56+ registros, importação e leitura da
+   nova branch GitHub agent-state/railway-* sem tocar na antiga.
 3. Desativar no GitHub os workflows chat-requests.yml e
    agent-executors.yml (ou outras rotas que gravem na mesma fila).
-4. Ligar as flags no Railway. O Python também consulta o estado real
+4. Ligar as flags no Railway após prova de memória e exclusividade.
+   O Python também consulta o estado real
    dos workflows e RECUSA iniciar se algum ainda estiver ativo.
 5. Verificar um só worker, logs de execução, retomada das tarefas
    antigas, prova de consulta e ponto na Central dos Agentes.

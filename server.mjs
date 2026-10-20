@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {startScheduledReviewer} from './maestro-worker.mjs';
 import {startSharedAgents} from './maestro/shared-agents.mjs';
+import {migrationKey} from './maestro/checkpoint-migration-key.mjs';
 import {handleAgentState} from './maestro/embedded-postgres.mjs';
 import {inspectVolume} from './maestro/volume-inventory.mjs';
 import {retirementConfirmed,retireLegacyVolume} from './maestro/retire-legacy-volume.mjs';
@@ -26,6 +27,8 @@ export const TOOL_ASSETS=Object.freeze({
 });
 
 export function startServer({listenPort=Number(process.env.PORT||3000),reader=readFile,background=true}={}) {
+  // Generating or loading this key only happens under the explicit opt-in.
+  const checkpointRecipient=background?migrationKey():null;
   const server=http.createServer(async(req,res)=>{
     const path=(req.url||'/').split('?')[0];
     if(path==='/mcp'){await handleHorizonMcp(req,res);return;}
@@ -36,6 +39,17 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
         return;
       }
       await handleAgentState(req,res);return;
+    }
+    if(path==='/api/internal/horizon-checkpoint-public-key'){
+      if(!checkpointRecipient || req.method!=='GET'){
+        res.writeHead(404,{'content-type':'application/json','cache-control':'no-store'});
+        res.end(JSON.stringify({error:'not_configured'}));return;
+      }
+      res.writeHead(200,{'content-type':'application/json','cache-control':'no-store',
+        'x-content-type-options':'nosniff'});
+      res.end(JSON.stringify({schema:'horizon.checkpoint.public-key.v1',
+        public_key_pem:checkpointRecipient.publicKey,
+        fingerprint:checkpointRecipient.fingerprint}));return;
     }
     if(path==='/health'){res.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify({status:'ok'}));return;}
     if(path==='/ferramentas'){
