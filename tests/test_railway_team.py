@@ -127,6 +127,26 @@ class RailwayTeamTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_CLIENT',delivered)
         self.assertNotIn('VERY_PRIVATE',delivered)
 
+    def test_supervisor_telemetry_is_typed_and_hides_private_data(self):
+        fake=types.SimpleNamespace(returncode=0,stderr='',stdout='\n'.join([
+            json.dumps({'supervisor_recovery':2,'payload':'PRIVATE_CLIENT'}),
+            json.dumps({'supervisor_rejection':'reservas-proof-v1',
+                        'errorKind':'ValueError','details':'PRIVATE_CLIENT'}),
+            json.dumps({'supervisor_rejection':'../../secret',
+                        'errorKind':'ValueError'}),
+            json.dumps({'processed':0,'rejected':0,'deferred':9,
+                        'ready_for_continuation':0})
+        ]))
+        buffer=StringIO()
+        with redirect_stdout(buffer):
+            team.report_cycle_telemetry(fake)
+        result=buffer.getvalue()
+        self.assertIn('supervisor_recovery',result)
+        self.assertIn('supervisor_rejection',result)
+        self.assertIn('"deferred": 9',result)
+        self.assertNotIn('PRIVATE_CLIENT',result)
+        self.assertNotIn('../../secret',result)
+
     def test_worker_session_is_bounded_and_no_secrets_in_arguments(self):
         with tempfile.TemporaryDirectory() as tmp:
             invoked=[]
