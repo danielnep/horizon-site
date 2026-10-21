@@ -18,6 +18,7 @@ const events=[];
 let sequence=0, lastCycle=null, workerState='não verificado';
 let monitorTimer=null,monitorDigest=null,monitorPending=false;
 let githubCache={expires:0,value:null,promise:null};
+const taskDocumentCache=new Map();
 let aiBudget=new Map();
 function send(res,status,value,headers={}){
   res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store',
@@ -80,10 +81,18 @@ async function github(path,{method='GET',value}={}){
  return response.json();
 }
 async function list(path){const value=await github('contents/'+path+'?ref=main');return Array.isArray(value)?value.filter(x=>x.type==='file'&&x.name.endsWith('.json')).slice(0,60):[];}
-async function file(path){
+async function file(path,knownSha=null){
+ if(knownSha&&taskDocumentCache.get(path)?.sha===knownSha)return taskDocumentCache.get(path).value;
  const item=await github('contents/'+path+'?ref=main');
  if(!item?.content)return null;
- try{return JSON.parse(Buffer.from(item.content.replace(/\s/g,''),'base64').toString('utf8'));}catch{return null;}
+ try{
+  const value=JSON.parse(Buffer.from(item.content.replace(/\s/g,''),'base64').toString('utf8'));
+  if(knownSha){
+   taskDocumentCache.set(path,{sha:knownSha,value});
+   if(taskDocumentCache.size>160)taskDocumentCache.delete(taskDocumentCache.keys().next().value);
+  }
+  return value;
+ }catch{return null;}
 }
 function statusLabel(obj){
  const state=String(obj?.status||obj?.state||'').toLowerCase();
@@ -103,11 +112,11 @@ async function loadOverview(){
    list('tasks/chat'),list('tasks/results'),file('tasks/attendance/equipe.json')]);
   const q=queued.status==='fulfilled'?queued.value:[];
   const r=resultFiles.status==='fulfilled'?resultFiles.value:[];
-  const index=new Set(r.map(x=>x.name));
+  const index=new Map(r.map(x=>[x.name,x.sha]));
   const queueResults=await Promise.all(q.slice(0,45).map(async item=>{
-   const task=await file('tasks/chat/'+item.name).catch(()=>null);
+   const task=await file('tasks/chat/'+item.name,item.sha).catch(()=>null);
    const id=item.name.slice(0,-5);
-   const result=index.has(item.name)?await file('tasks/results/'+item.name).catch(()=>null):null;
+   const result=index.has(item.name)?await file('tasks/results/'+item.name,index.get(item.name)).catch(()=>null):null;
    if(!task)return null;
    return {id,project:String(task.project||'não informado').slice(0,80),repository:String(task.repository||'').slice(0,110),
    title:String(task.objective||'Sem descrição').slice(0,180),agent:SPECIALISTS.includes(task.agent)?task.agent:null,
