@@ -110,7 +110,7 @@ export async function directTasks(){
     /fail|error|block|reject/.test(rawStatus)?'bloqueada':
     /running|in_progress/.test(rawStatus)?'em execução':'na fila';
   tasks.push({id:task.task_id,project:task.project,repository:task.repository,
-   agent:task.agent,title:String(task.objective).slice(0,180),inQueue:group.state==='requests',
+   agent:task.agent,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
    status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':status,
    rawStatus,hasResult:!!outcome,
    stages:stages.map(x=>({agent:x.agent,state:x.status,summary:x.summary||null,
@@ -119,7 +119,7 @@ export async function directTasks(){
    published:outcome?.publication?.published===true,
    updatedAt:outcome?.updated_at||null,
    progress:stages.length?{total:stages.length,done:stages.filter(x=>
-     ['succeeded','completed','failed','blocked'].includes(x.status)).length,
+     ['succeeded','completed'].includes(x.status)).length,
      verified:stages.filter(x=>x.quality?.approved===true).length}:null});
  }
  }

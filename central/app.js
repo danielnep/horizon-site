@@ -1,3 +1,4 @@
+import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
 const $=id=>document.getElementById(id);
 const PAGES_MODE=location.hostname.endsWith('.github.io');
 
@@ -37,13 +38,37 @@ let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos
 let noticeTimeout;
 let adminAuthorized=false;
 let pendingCommand=null;
+let actionTimer=null;
+const helpHistory=[];
 function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function time(x){if(!x)return 'Não informado';const d=new Date(x);return Number.isNaN(d.getTime())?'Não informado':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);}
 function label(id){return AGENT_NAMES[id]||id||'Não atribuído';}
+const STATUS_PT={
+ pending:'Pendente',queued:'Na fila',running:'Trabalhando',active:'Ativo',idle:'Disponível',paused:'Pausado',
+ cancelled:'Cancelado',canceled:'Cancelado',blocked:'Bloqueado',failed:'Falhou',error:'Erro',
+ succeeded:'Concluído',completed:'Concluído',reported:'Resultado registrado',accepted:'Recebida',
+ waiting:'Aguardando',deferred:'Aguardando nova tentativa',stopped:'Parado',working:'Trabalhando',
+ ready:'Disponível',unclassified:'Ainda não identificado',not_found:'Não encontrada'};
+function emPortugues(value){
+ if(!value)return 'Não informado';
+ const text=String(value);
+ if(STATUS_PT[text.toLowerCase()])return STATUS_PT[text.toLowerCase()];
+ return text.split(/([ -])/).map(v=>STATUS_PT[v.toLowerCase()]||v.replaceAll('_',' ')).join('');
+}
+function acaoEmPortugues(action,path){
+ const places=path?' em '+path:'';
+ return ({
+ started:'Iniciou a tarefa',thinking:'Está analisando o próximo passo',read_file:'Está lendo um arquivo'+places,
+ list_files:'Está identificando os arquivos do projeto',write_file:'Está modificando o código'+places,
+ run_check:'Está executando testes',remember:'Está registrando uma decisão',
+ finish:'Está finalizando a execução',delegate:'Está distribuindo trabalhos para especialistas',
+ search_web:'Está pesquisando informações',fetch_public:'Está consultando uma referência',
+ inspect_image:'Está verificando uma imagem'})[action]||'Atividade recente identificada';
+}
 function chip(s){
  const v=String(s||'não verificado');
  const cls=/bloque|falha|rejeit|erro/i.test(v)?'bad':/execu|conclu|ativo|iniciado/i.test(v)?'good':/aguard|fila/i.test(v)?'warn':'';
- return '<span class="chip '+cls+'">'+escapeHTML(v)+'</span>';
+ return '<span class="chip '+cls+'">'+escapeHTML(emPortugues(v))+'</span>';
 }
 function note(txt,isError=false){
  const el=$('notice');clearTimeout(noticeTimeout);el.textContent=txt;el.hidden=false;el.style.borderColor=isError?'#ff867c':'#536273';noticeTimeout=setTimeout(()=>el.hidden=true,7500);
@@ -72,25 +97,50 @@ function counts(){
 }
 function summary(){const c=counts();return '<div class="summary" aria-label="Situação geral"><span class="working"><b>'+c.active+'</b> trabalhando</span><span><b>'+c.queue+'</b> na fila</span><span><b>'+c.offQueue+'</b> pendências fora da fila</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas na fila</span><span><b>17</b> agentes</span></div>';}
 function taskRow(t){
- const progress=t.progress||null;
- const progressLine=progress?'<div class="task-progress"><div class="row-between"><span>Etapas relatadas: '+progress.done+' de '+progress.total+'</span><span>'+progress.verified+' com evidências registradas</span></div><div class="progress-track"><div style="width:'+Math.min(100,progress.done/Math.max(1,progress.total)*100)+'%"></div></div></div>':'';
+ const latest=t.lastActivity||null,stamp=latest&&Date.parse(latest.at),fresh=Number.isFinite(stamp)&&Date.now()-stamp<120000;
+ const active=fresh&&t.inQueue&&!/pausada|cancelada|concluída/.test(t.status);
+ const progress=t.progress;
+ const validProgress=progress&&Number.isInteger(progress.done)&&Number.isInteger(progress.total)&&progress.total>0&&progress.done<=progress.total;
+ const value=validProgress?Math.round(100*progress.done/progress.total):null;
+ const track=validProgress?'<div class="task-progress-display"><div style="width:'+value+'%"></div></div><span class="smallprint">'+
+  progress.done+' de '+progress.total+' etapas com resultado registrado</span>':
+  active?'<div class="task-progress-display indefinite"><div></div></div><span class="smallprint">Trabalhando. Sem previsão confiável de conclusão.</span>':'';
+ const activity=latest?acaoEmPortugues(latest.action,latest.path):t.inQueue?'Aguardando o próximo registro do executor':'Não há atividade recente registrada.';
+ const subtitle=latest?'Especialista: '+label(latest.agent)+' • Último sinal: '+time(latest.at):'Especialista: '+label(t.agent);
+ const live='<div class="live-operation"><div class="live-operation-title">'+(active?'<i class="pulse" aria-hidden="true"></i>':'')+
+  escapeHTML(active?'Atividade atual':'Última atividade conhecida')+'</div><p class="live-operation-message">'+escapeHTML(activity)+'</p>'+
+  '<span class="live-operation-time">'+escapeHTML(subtitle)+'</span>'+track+'</div>';
+ const planItems=splitTaskPlan(t.description||t.title);
+ const statuses=taskPlanStatus(planItems,t.stages||[]);
+ const checklist=statuses.length>1?'<section class="task-plan"><h3>Etapas previstas</h3><ol>'+
+  statuses.map((item,i)=>'<li class="'+(item.verified?'task-step-done':'task-step-pending')+'"><span class="task-step-marker">'+
+  (item.verified?'✓':i+1)+'</span><div><span>'+escapeHTML(item.text)+'</span><small>'+
+  (item.verified?'Concluída com registro':item.grounded?emPortugues(item.state):'Aguardando confirmação individual')+
+  (item.agent?' · '+escapeHTML(label(item.agent)):'')+'</small></div></li>').join('')+'</ol></section>':'';
  const steps=Array.isArray(t.stages)&&t.stages.length?
-  '<div class="task-stages">'+t.stages.map((stage,i)=>'<div class="stage-line"><span class="stage-icon">'+(stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent||'Especialista'))+'</b> '+chip(stage.state)+
-  (stage.summary?'<p>'+escapeHTML(stage.summary)+'</p>':'')+(stage.blocker?'<p class="error">Bloqueio: '+escapeHTML(stage.blocker)+'</p>':'')+'</div></div>').join('')+'</div>':'<p class="smallprint">Sem etapas individuais registradas.</p>';
- const taskActions=PAGES_MODE?'':(t.inQueue?'<div class="task-controls"><button class="secondary" data-task-action="pause" data-task-id="'+escapeHTML(t.id)+'">Pausar tarefa</button><button class="secondary" data-task-action="cancel" data-task-id="'+escapeHTML(t.id)+'">Cancelar tarefa</button></div>':(/pausada|cancelada/.test(t.status)?'<div class="task-controls"><button class="secondary" data-task-action="resume" data-task-id="'+escapeHTML(t.id)+'">Voltar para a fila</button></div>':''));
- const detail='<div class="task-detail">'+
- '<p class="smallprint">'+(t.inQueue?'Solicitação presente na fila atual.':'Fora da fila atual. O resultado histórico continua preservado; isso NÃO significa conclusão.')+'</p>'+
- progressLine+steps+taskActions+
- '<div class="detail-grid"><div><small>Responsável principal</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
- '<div><small>Estado do registro</small><b>'+escapeHTML(t.rawStatus||'indisponível')+'</b></div>'+
- '<div><small>QA</small><b>'+(t.approved?'Aprovado':'Não comprovado')+'</b></div>'+
- '<div><small>Publicação</small><b>'+(t.published?'Confirmada':'Não confirmada')+'</b></div></div>'+
- (t.blocker?'<p class="error">'+escapeHTML(t.blocker)+'</p>':'')+
- (t.evidenceUrl&&/^https:\/\/github\.com\/danielnep\//.test(t.evidenceUrl)?'<a class="linkrow" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(t.evidenceUrl)+'">Ver resultado preservado ↗</a>':'')+
- '<p class="smallprint">ID: '+escapeHTML(t.id)+'</p></div>';
+  '<div class="task-stages">'+t.stages.map(stage=>'<div class="stage-line"><span class="stage-icon">'+
+  (stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent))+'</b> '+
+  chip(stage.state)+(stage.summary?'<p>'+escapeHTML(stage.summary)+'</p>':'')+
+  (stage.blocker?'<p class="error">Problema: '+escapeHTML(stage.blocker)+'</p>':'')+'</div></div>').join('')+'</div>':
+  '<p class="smallprint">Não há detalhes de etapas anteriores registrados.</p>';
+ const controls=PAGES_MODE?'':t.inQueue?
+ '<div class="task-controls"><button class="secondary" data-task-action="pause" data-task-id="'+escapeHTML(t.id)+'">Pausar</button>'+
+ '<button class="secondary" data-task-action="cancel" data-task-id="'+escapeHTML(t.id)+'">Cancelar tarefa</button></div>':
+ /pausada|cancelada/.test(t.status)?'<div class="task-controls"><button class="secondary" data-task-action="resume" data-task-id="'+escapeHTML(t.id)+'">Devolver para a fila</button></div>':'';
+ const detail='<div class="task-detail">'+live+controls+
+ '<p class="smallprint">'+(t.inQueue?'Esta tarefa está na fila do servidor.':
+ 'Esta tarefa não está na fila atual. O registro anterior pode ser consultado no histórico.')+'</p>'+
+ (t.blocker?'<p class="error">Problema: '+escapeHTML(t.blocker)+'</p>':'')+
+ checklist+'<details><summary class="history-toggle">Ver histórico e comprovantes</summary>'+steps+
+ '<div class="detail-grid"><div><small>Responsável</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
+ '<div><small>Situação</small><b>'+escapeHTML(emPortugues(t.rawStatus))+'</b></div>'+
+ '<div><small>Testes</small><b>'+(t.approved?'Aprovados':'Sem aprovação comprovada')+'</b></div>'+
+ '<div><small>Publicação</small><b>'+(t.published?'Confirmada':'Não confirmada')+'</b></div></div></details>'+
+ '<a class="linkrow" href="#historico">Abrir histórico completo →</a></div>';
  return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
- (t.progress?'<div class="tiny-progress">'+t.progress.done+'/'+t.progress.total+' etapas registradas</div>':'')+'</div>'+chip(t.status)+
- '<button class="linkrow" data-detail="'+escapeHTML(t.id)+'" aria-expanded="false">Detalhes ▾</button>'+
+ (latest?'<div class="recent-action">'+escapeHTML(acaoEmPortugues(latest.action,latest.path))+'</div>':'')+
+ (validProgress?'<div class="tiny-progress">'+progress.done+'/'+progress.total+' etapas com resultado</div>':'')+'</div>'+
+ chip(t.status)+'<button class="linkrow" data-detail="'+escapeHTML(t.id)+'" aria-expanded="false">Acompanhar ▾</button>'+
  '<div class="inline-detail" id="detail-'+escapeHTML(t.id)+'" hidden>'+detail+'</div></div>';
 }
 function listTasks(tasks,limit=0){
@@ -193,13 +243,24 @@ function pageHistorico(){
  '<p class="smallprint">Reiniciar o servidor limpa apenas este painel de eventos recentes, não os registros permanentes do executor.</p>';
 }
 function pageConsumo(){
- const u=snapshot?.usage||{};
- return heading('Consumo de tokens','Acompanhamento sem novas consultas à inteligência artificial.')+
- '<div class="stat-strip"><div><small>Tokens de entrada</small><strong>'+((u.input??null)===null?'—':u.input.toLocaleString('pt-BR'))+'</strong></div>'+
- '<div><small>Tokens de saída</small><strong>'+((u.output??null)===null?'—':u.output.toLocaleString('pt-BR'))+'</strong></div>'+
- '<div><small>Total identificado</small><strong>'+((u.total??null)===null?'—':u.total.toLocaleString('pt-BR'))+'</strong></div></div>'+
- '<p class="warning">O executor ainda não fornece contabilidade individual de tokens para esta central.</p>'+
- '<p class="smallprint">A Central não inventa consumo nem estima custo sem a resposta da API. A análise opcional com IA informa o consumo daquela solicitação quando o provedor o disponibilizar.</p>';
+ const u=snapshot?.usage||{},fmt=x=>Number.isFinite(x)?x.toLocaleString('pt-BR'):'—';
+ const providers=Object.entries(u.byProvider||{}).sort((a,b)=>b[1].total-a[1].total);
+ const agents=Object.entries(u.byAgent||{}).sort((a,b)=>b[1].total-a[1].total);
+ return heading('Consumo de inteligência artificial','Quantidade recebida diretamente do Gemini e da Groq, sem estimativas inventadas.')+
+ '<div class="stat-strip"><div><small>Tokens enviados</small><strong>'+fmt(u.available?u.input:null)+'</strong></div>'+
+ '<div><small>Tokens recebidos</small><strong>'+fmt(u.available?u.output:null)+'</strong></div>'+
+ '<div><small>Consumo total</small><strong>'+fmt(u.available?u.total:null)+'</strong></div></div>'+
+ '<p class="smallprint">'+(u.available?u.calls+' respostas contabilizadas nos últimos '+u.days+' dias.':
+ 'Nenhuma resposta com consumo identificado desde o início do registro.')+
+ (u.partial?' Parte dos registros não pôde ser consultada.':'')+'</p>'+
+ '<div class="section-heading"><h2>Por serviço de IA</h2></div>'+
+ (providers.length?'<div class="list">'+providers.map(([name,d])=>'<div class="agent-row"><div><div class="name">'+escapeHTML(name==='central-groq'?'Ajuda da Central (Groq)':name==='groq'?'Groq':'Gemini')+
+ '</div><div class="details">'+d.calls+' chamadas</div></div><strong>'+fmt(d.total)+' tokens</strong></div>').join('')+'</div>':
+ '<div class="empty">Nenhum consumo dos provedores foi recebido ainda.</div>')+
+ '<div class="section-heading"><h2>Por especialista</h2></div>'+
+ (agents.length?'<div class="list">'+agents.map(([id,d])=>'<div class="agent-row"><div><div class="name">'+escapeHTML(label(id))+
+ '</div><div class="details">'+d.calls+' chamadas</div></div><strong>'+fmt(d.total)+' tokens</strong></div>').join('')+'</div>':
+ '<div class="empty">Aguardando os primeiros registros individuais.</div>');
 }
 function simpleDiagnosis(e){
  const code=String(e?.rc||e?.code||'');
@@ -231,8 +292,36 @@ function render(){
  bind();updateConn();
 }
 
+
+function janelaDeAcao(title,explanation){
+ return new Promise(resolve=>{
+  const modal=$('action-gate'),continueButton=$('action-continue'),back=$('action-back');
+  $('action-title').textContent=title;
+  $('action-explanation').textContent=explanation;
+  modal.hidden=false;continueButton.disabled=true;
+  let seconds=3;
+  $('action-countdown').textContent='Leia o aviso: '+seconds+' segundos';
+  function close(ok){
+   clearInterval(actionTimer);
+   modal.hidden=true;continueButton.onclick=null;back.onclick=null;
+   resolve(ok);
+  }
+  continueButton.onclick=()=>close(true);
+  back.onclick=()=>close(false);
+  back.focus();
+  actionTimer=setInterval(()=>{
+   seconds--;
+   if(seconds<=0){
+    clearInterval(actionTimer);
+    $('action-countdown').textContent='Você pode continuar ou voltar.';
+    continueButton.disabled=false;
+   }else $('action-countdown').textContent='Leia o aviso: '+seconds+' segundos';
+  },1000);
+ });
+}
+
 async function executeAgentAction(id,action,skipConfirm=false){
- if(!skipConfirm&&!confirm(action==='pause'?'Pausar novas tarefas deste agente? Um trabalho já iniciado pode continuar.':'Liberar novas tarefas deste agente?'))return;
+ if(!skipConfirm&&!await janelaDeAcao(action==='pause'?'Pausar este agente?':'Liberar este agente?',action==='pause'?'O agente não receberá novas tarefas. Se já estiver trabalhando, poderá terminar a etapa atual. Você pode liberá-lo depois.':'As tarefas suspensas voltarão para a fila. Nenhuma tarefa cancelada será reiniciada sem sua decisão.'))return;
  try{
   const result=await api('agents/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
   note(result.note||'Estado do agente atualizado.');
@@ -243,7 +332,7 @@ async function executeAgentAction(id,action,skipConfirm=false){
  }
 }
 async function executeTaskAction(id,action,skipConfirm=false){
- if(!skipConfirm&&!confirm(action==='cancel'?'Cancelar esta tarefa na fila do Railway?':'Aplicar '+(action==='pause'?'pausa': 'retomada')+' à tarefa?'))return;
+ if(!skipConfirm&&!await janelaDeAcao(action==='cancel'?'Cancelar esta tarefa?':action==='pause'?'Pausar esta tarefa?':'Devolver para a fila?',action==='cancel'?'Ela sairá da fila de execução, mas seu histórico será guardado. Se um agente já tiver iniciado a etapa, a conclusão dessa execução não poderá ser interrompida por este comando.':action==='pause'?'A tarefa ficará suspensa e poderá ser retomada depois. Se o trabalho já começou, a etapa atual pode continuar.':'A tarefa voltará para a fila. Ela será assumida pelo executor conforme a disponibilidade, sem garantia de início imediato.'))return;
  try{
   const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
   note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
@@ -344,6 +433,39 @@ async function boot(){
  connectEvents();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));
+
+function mensagemAjuda(role,text){
+ const element=document.createElement('p');
+ element.className='help-bubble '+(role==='user'?'from-me':'from-ai');
+ element.textContent=String(text);
+ $('help-messages').append(element);
+ $('help-messages').scrollTop=$('help-messages').scrollHeight;
+ return element;
+}
+$('help-open').addEventListener('click',()=>{
+ const panel=$('help-panel');panel.hidden=!panel.hidden;
+ $('help-open').setAttribute('aria-expanded',String(!panel.hidden));
+ if(!panel.hidden)$('help-input').focus();
+});
+$('help-close').addEventListener('click',()=>{
+ $('help-panel').hidden=true;$('help-open').setAttribute('aria-expanded','false');
+});
+$('help-form').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const input=$('help-input'),question=input.value.trim();if(question.length<3)return;
+ input.value='';mensagemAjuda('user',question);
+ const waiting=mensagemAjuda('assistant','Consultando as informações disponíveis...');
+ const send=$('help-send');send.disabled=true;
+ try{
+  const output=await api('ai/chat',{method:'POST',body:JSON.stringify({message:question})});
+  waiting.textContent=output.response||'Não encontrei informações suficientes para responder.';
+  helpHistory.push({question,response:waiting.textContent});if(helpHistory.length>5)helpHistory.shift();
+ }catch(err){
+  waiting.textContent=err.message.includes('limite')?'O limite de consultas foi atingido. Tente novamente mais tarde.':
+   'Não consegui consultar a ajuda agora. Os dados da Central continuam disponíveis nas outras telas.';
+ }finally{send.disabled=false;$('help-input').focus();}
+});
+
 $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
