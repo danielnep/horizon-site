@@ -46,7 +46,7 @@ class RailwayTeamTests(unittest.TestCase):
             key.write_text("synthetic private key bytes for derivation")
             key.chmod(0o600)
             env = {k:"synthetic" for k in (
-                "GITHUB_TOKEN", "KERNEL_API_KEY")}
+                "GITHUB_TOKEN",)}
             env.update(HORIZON_EXECUTOR_SHA="b"*40,
                        HORIZON_STATE_BRANCH="agent-state/railway-staging",
                        RAILWAY_VOLUME_MOUNT_PATH=temp,

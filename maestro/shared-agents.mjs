@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 
 const SCRIPT=fileURLToPath(new URL('./railway-team.py',import.meta.url));
 const REQUIRED=Object.freeze([
-  'GITHUB_TOKEN','KERNEL_API_KEY','HORIZON_STATE_BRANCH'
+  'GITHUB_TOKEN','HORIZON_STATE_BRANCH'
 ]);
 
 export function sharedAgentPreflight(env=process.env) {

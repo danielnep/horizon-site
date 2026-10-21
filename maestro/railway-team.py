@@ -77,7 +77,7 @@ def verify_environment(env):
     # The new branch lives on GITHUB. No legacy Actions or Railway API tokens
     # are required to read it; one private key owned by Railway derives the
     # new stable Fernet password locally after a validated one-time rekey.
-    mandatory=("GITHUB_TOKEN","KERNEL_API_KEY","HORIZON_EXECUTOR_SHA",
+    mandatory=("GITHUB_TOKEN","HORIZON_EXECUTOR_SHA",
                "HORIZON_STATE_BRANCH")
     if any(not env.get(name) for name in mandatory):
         raise RuntimeError("missing_protected_credentials")

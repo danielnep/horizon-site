@@ -17,13 +17,13 @@ test('default inactive: no Python process and no new Railway service',()=>{
   const stop=startSharedAgents({env:{},launch:()=>{launches++;throw Error('not allowed');}});
   assert.equal(launches,0); stop();
 });
-test('missing key, pinned SHA or exclusive writer refuses start',()=>{
+test('missing writer safeguard refuses start, with browser key optional',()=>{
   const config={...complete};
   delete config.KERNEL_API_KEY;
   delete config.HORIZON_AGENT_ACTIONS_DISABLED;
   const p=sharedAgentPreflight(config);
   assert.equal(p.ready,false);
-  assert.ok(p.missing.includes('KERNEL_API_KEY'));
+  assert.ok(!p.missing.includes('KERNEL_API_KEY'));
   assert.ok(p.missing.includes('HORIZON_AGENT_ACTIONS_DISABLED'));
   let launches=0,lines=[];
   startSharedAgents({env:config,launch:()=>{launches++;},log:x=>lines.push(x)});
@@ -31,6 +31,11 @@ test('missing key, pinned SHA or exclusive writer refuses start',()=>{
   assert.match(lines[0],/configuration_missing/);
   assert.ok(!lines[0].includes('fake'));
 });
+test('browser key is optional: agents still start with Gemini and GitHub',()=>{
+  const cfg={...complete};delete cfg.KERNEL_API_KEY;
+  assert.equal(sharedAgentPreflight(cfg).ready,true);
+});
+
 test('a single bounded Python child receives secrets only in environment',()=>{
   const p=new EventEmitter();
   p.stdout=new PassThrough();
