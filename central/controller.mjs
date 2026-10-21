@@ -1,7 +1,7 @@
 import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {submitDirectTask,directTasks} from '../maestro/direct-queue.mjs';
+import {submitDirectTask,directTasks,cancelPendingRequest,restorePendingRequest} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
@@ -165,6 +165,17 @@ async function resolveTaskDefaults(value){
  return {...value,project:valueProject,repository:repo,allowed_paths:resolved};
 }
 
+export function explainOperation(task){
+ if(!task||typeof task!=='object')return 'Não há dados suficientes para explicar esta tarefa.';
+ if(task.status==='retirada da fila'||task.inQueue===false)
+  return 'O pedido foi retirado da fila de entrada. Isso não comprova conclusão. É possível recolocá-lo se ainda não houver execução registrada.';
+ if(task.published===true&&task.approved===true)return 'A entrega tem aprovação de qualidade e publicação confirmadas nos registros.';
+ if(task.status==='bloqueada')return 'A execução foi bloqueada. Abra as etapas ou peça uma investigação para identificar a causa registrada.';
+ if(task.status==='em execução')return 'O executor registrou uma execução em andamento. Os detalhes aparecem quando o especialista os publicar.';
+ if(task.hasResult&&task.approved!==true)return 'Existe um resultado, mas a qualidade ainda não foi aprovada. A tarefa não deve ser considerada concluída.';
+ if(task.status==='na fila')return 'O pedido está aguardando o Maestro. Nenhuma execução individual foi comprovada.';
+ return 'O estado técnico é conhecido, mas ainda faltam registros para explicar a causa com segurança.';
+}
 async function loadOverview(){
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
@@ -186,7 +197,7 @@ async function loadOverview(){
   if(queued.status==='rejected')issues.push('Fila Railway temporariamente indisponível');
   if(attendance.status==='rejected')issues.push('Presença individual indisponível');
   return {at:new Date().toISOString(),source:'Fila direta Railway e telemetria deste processo',
-   tasks:queueResults.filter(Boolean),agents,worker:{status:workerState,lastCycle},issues,
+   tasks:queueResults.filter(Boolean).map(t=>({...t,explanation:explainOperation(t)})),agents,worker:{status:workerState,lastCycle},issues,
    available:{queue:queued.status==='fulfilled',results:queued.status==='fulfilled',attendance:attendance.status==='fulfilled'},
    usage:{status:'sem dados de tokens por chamada',input:null,output:null,total:null}};
  })().then(v=>{githubCache.value=v;githubCache.expires=Date.now()+16000;return v}).finally(()=>{githubCache.promise=null});
@@ -327,6 +338,36 @@ export async function handleCentral(req,res,{reader=readFile}={}){
     {...overview,events:events.slice(-25)};
    send(res,200,answer);
   }catch{send(res,503,{error:'dados_temporariamente_indisponiveis'});}return true;
+ }
+
+ const taskAction=raw.match(/^\/central\/api\/tasks\/([a-z0-9-]{3,70})\/(cancel|restore)$/);
+ if(req.method==='POST'&&taskAction){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const operation=taskAction[2]==='cancel'?cancelPendingRequest:restorePendingRequest;
+   const result=await operation(taskAction[1]);
+   githubCache.expires=0;
+   notify('task',{event:taskAction[2],taskId:taskAction[1]});
+   send(res,200,result);
+  }catch(e){send(res,409,{error:String(e?.message||'operacao_nao_permitida').slice(0,150)});}
+  return true;
+ }
+ if(req.method==='POST'&&raw==='/central/api/ai/diagnose'){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const input=await body(req,1000);
+   const overview=await loadOverview();
+   const task=overview.tasks.find(t=>t.id===String(input.taskId||''))||null;
+   const last=overview.worker.lastCycle;
+   const info=task?{id:task.id,project:task.project,status:task.status,rawStatus:task.rawStatus,
+     explanation:explainOperation(task),stages:(task.stages||[]).slice(0,8).map(x=>({
+      specialist:x.agent,state:x.state,blocker:x.blocker||null}))}:
+     {worker:overview.worker.status,lastCycle:last&&{kind:last.kind,code:last.code,rc:last.rc,errorClass:last.errorClass}};
+   const message='Investigue estes registros REAIS da Central Horizon. Responda em português simples, em três trechos curtos: O que aconteceu; Motivo comprovado ou hipótese; Solução prática. Não invente causa, testes ou sucesso. Quando não puder resolver com segurança, diga que precisa de autorização do proprietário. Dados: '+JSON.stringify(info);
+   const output=await interpret({message});
+   send(res,output.status,{response:output.response||null,error:output.error||null,usage:output.usage||null});
+  }catch{send(res,502,{error:'nao_foi_possivel_investigar'});}
+  return true;
  }
  if(req.method==='POST'&&raw==='/central/api/tasks'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
