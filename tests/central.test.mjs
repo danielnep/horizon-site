@@ -24,7 +24,7 @@ test('PWA loads on existing Horizon server without changing the institutional ho
   const [site,central,manifest,script,health]=await Promise.all(['/','/central/','/central/manifest.webmanifest','/central/app.js','/health'].map(p=>fetch(url+p)));
   assert.equal(site.status,200);assert.match(await site.text(),/Horizon/i);
   assert.equal(central.status,200);assert.match(await central.text(),/Central de Agentes/);
-  assert.equal(manifest.status,200);assert.equal(JSON.parse(await manifest.text()).scope,'/central/');
+  assert.equal(manifest.status,200);assert.equal(new URL(JSON.parse(await manifest.text()).scope,url+'/central/').pathname,'/central/');
   assert.equal(script.status,200);assert.match(await script.text(),/EventSource/);
   assert.equal(health.status,200);
  });
