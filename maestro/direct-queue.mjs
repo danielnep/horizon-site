@@ -53,7 +53,7 @@ function validated(v){
 }
 async function ensure(){
  const root=directRoot();
- for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled')]){
+ for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'agent-holds')]){
   await mkdir(p,{recursive:true,mode:0o700});
   const st=await lstat(p);if(!st.isDirectory()||st.isSymbolicLink())throw Error('diretorio_unsafe');
  }
@@ -62,6 +62,8 @@ async function ensure(){
 export async function submitDirectTask(value){
  const request=validated(value);
  const root=await ensure(),id=request.task_id;
+ try{await lstat(join(root,'agent-holds',request.agent+'.json'));throw Error('agente_tem_novas_tarefas_pausadas');}
+ catch(e){if(e.code!=='ENOENT')throw e;}
  const target=join(root,'requests',id+'.json');
  const bytes=JSON.stringify(request,null,2)+'\n';
  if(Buffer.byteLength(bytes)>65536)throw Error('tarefa_grande_demais');
@@ -149,6 +151,37 @@ export async function directTaskAction(taskId,action){
   note:'Comando aplicado à fila local; não interrompe processos já carregados pelo executor.'})+'\n',{mode:0o600});
  return {id:taskId,status:target==='requests'?'na fila':target==='paused'?'pausada':'cancelada',
   note:'Aplicado na fila do Railway. Se o agente já estava executando, essa etapa pode continuar até encerrar.'};
+}
+
+
+export async function agentHolds(){
+ const root=await ensure(),names=await readdir(join(root,'agent-holds'));
+ return names.filter(name=>name.endsWith('.json')&&AGENTS.has(name.slice(0,-5))).map(name=>name.slice(0,-5));
+}
+export async function directAgentAction(agent,action){
+ if(!AGENTS.has(agent)||!['pause','resume'].includes(action))throw Error('comando_invalido');
+ const root=await ensure();
+ const file=join(root,'agent-holds',agent+'.json');
+ if(action==='pause'){
+  try{
+   const fd=await open(file,'wx',0o600);
+   try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString()})+'\n');await fd.sync();}
+   finally{await fd.close();}
+  }catch(e){if(e.code!=='EEXIST')throw e;}
+ }else{
+  await unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});
+ }
+ const tasks=await directTasks();
+ let moved=0;
+ for(const t of tasks){
+  if(t.agent!==agent)continue;
+  if(action==='pause'&&!t.inQueue)continue;
+  if(action==='resume'&&t.status!=='pausada')continue;
+  try{await directTaskAction(t.id,action==='pause'?'pause':'resume');moved++;}
+  catch(e){if(!/ja_esta|nao_estava|so_pode/.test(e.message))throw e;}
+ }
+ return {agent,status:action==='pause'?'novas tarefas suspensas':'novas tarefas liberadas',
+  affected:moved,note:'Este comando controla novas tarefas no Railway. Um processamento já iniciado pode continuar até terminar.'};
 }
 
 export async function directStatus(taskId){
