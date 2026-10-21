@@ -205,8 +205,8 @@ function render(){
  bind();updateConn();
 }
 
-async function executeTaskAction(id,action){
- if(!confirm(action==='cancel'?'Cancelar esta tarefa na fila do Railway?':'Aplicar '+(action==='pause'?'pausa': 'retomada')+' à tarefa?'))return;
+async function executeTaskAction(id,action,skipConfirm=false){
+ if(!skipConfirm&&!confirm(action==='cancel'?'Cancelar esta tarefa na fila do Railway?':'Aplicar '+(action==='pause'?'pausa': 'retomada')+' à tarefa?'))return;
  try{
   const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
   note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
@@ -304,6 +304,7 @@ $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
  $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada.');await refresh(true);
+ if(pendingCommand){const command=pendingCommand;pendingCommand=null;await executeTaskAction(command.id,command.action,true);}
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
