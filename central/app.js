@@ -36,6 +36,7 @@ let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digita
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
 let adminAuthorized=false;
+let pendingCommand=null;
 function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function time(x){if(!x)return 'Não informado';const d=new Date(x);return Number.isNaN(d.getTime())?'Não informado':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);}
 function label(id){return AGENT_NAMES[id]||id||'Não atribuído';}
@@ -76,9 +77,10 @@ function taskRow(t){
  const steps=Array.isArray(t.stages)&&t.stages.length?
   '<div class="task-stages">'+t.stages.map((stage,i)=>'<div class="stage-line"><span class="stage-icon">'+(stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent||'Especialista'))+'</b> '+chip(stage.state)+
   (stage.summary?'<p>'+escapeHTML(stage.summary)+'</p>':'')+(stage.blocker?'<p class="error">Bloqueio: '+escapeHTML(stage.blocker)+'</p>':'')+'</div></div>').join('')+'</div>':'<p class="smallprint">Sem etapas individuais registradas.</p>';
+ const taskActions=PAGES_MODE?'':(t.inQueue?'<div class="task-controls"><button class="secondary" data-task-action="pause" data-task-id="'+escapeHTML(t.id)+'">Pausar tarefa</button><button class="secondary" data-task-action="cancel" data-task-id="'+escapeHTML(t.id)+'">Cancelar tarefa</button></div>':(/pausada|cancelada/.test(t.status)?'<div class="task-controls"><button class="secondary" data-task-action="resume" data-task-id="'+escapeHTML(t.id)+'">Voltar para a fila</button></div>':''));
  const detail='<div class="task-detail">'+
  '<p class="smallprint">'+(t.inQueue?'Solicitação presente na fila atual.':'Fora da fila atual. O resultado histórico continua preservado; isso NÃO significa conclusão.')+'</p>'+
- progressLine+steps+
+ progressLine+steps+taskActions+
  '<div class="detail-grid"><div><small>Responsável principal</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
  '<div><small>Estado do registro</small><b>'+escapeHTML(t.rawStatus||'indisponível')+'</b></div>'+
  '<div><small>QA</small><b>'+(t.approved?'Aprovado':'Não comprovado')+'</b></div>'+
@@ -154,7 +156,7 @@ function pageTarefas(){
 function agentRow(a){
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
  chip(a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Ver agente →</button>'+
- (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'</div>':'')+'</div>';
+ (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa a este agente</button></div></div>':'')+'</div>';
 }
 function pageAgentes(){
  const a=snapshot?.agents||[];
@@ -202,6 +204,24 @@ function render(){
  const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
  bind();updateConn();
 }
+
+async function executeTaskAction(id,action){
+ if(!confirm(action==='cancel'?'Cancelar esta tarefa na fila do Railway?':'Aplicar '+(action==='pause'?'pausa': 'retomada')+' à tarefa?'))return;
+ try{
+  const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
+  note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
+  await refresh(true);
+ }catch(e){
+  if(e.message.includes('autorização')||e.message.includes('autorizacao')){
+   pendingCommand={id,action};
+   note('Para controlar execuções, autorize o dispositivo uma vez.',true);
+  }else note(e.message,true);
+ }
+}
+function bindTaskActions(root=document){
+ root.querySelectorAll('[data-task-action]').forEach(btn=>btn.addEventListener('click',()=>executeTaskAction(btn.dataset.taskId,btn.dataset.taskAction)));
+}
+
 function bind(){
  document.querySelectorAll('[data-detail]').forEach(el=>el.addEventListener('click',()=>{
  const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
@@ -211,6 +231,8 @@ function bind(){
  const search=$('search');if(search)search.addEventListener('input',()=>{term=search.value;render();$('search')?.focus();$('search')?.setSelectionRange(term.length,term.length)});
  const dropdown=$('filter');if(dropdown){dropdown.value=filter;dropdown.addEventListener('change',()=>{filter=dropdown.value;render()});}
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
+ document.querySelectorAll('[data-assign-agent]').forEach(btn=>btn.addEventListener('click',()=>{selectedAgentId=btn.dataset.assignAgent;location.hash='#inicio';render();$('objective')?.focus();}));
+ bindTaskActions(document);
  const form=$('task-form');
  if(form){
  const project=$('project');
@@ -255,6 +277,7 @@ async function refresh(force=false){
       const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
       target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
     }));
+    bindTaskActions($('live-overview'));
     updateConn();
    }else render();
   }catch(e){online=false;updateConn();if(!snapshot)$('content').innerHTML='<div class="empty">Sem dados ao vivo: '+escapeHTML(e.message)+'. Verifique a sessão e tente novamente.</div>';}
@@ -280,7 +303,7 @@ $('close-gate').addEventListener('click',()=>showLogin(false));
 $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
- $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada. Agora pode enviar a solicitação.');await refresh(true);
+ $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada.');await refresh(true);
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
