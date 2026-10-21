@@ -171,6 +171,59 @@ function stopLiveMonitorIfUnused(){
  monitorDigest=null;
 }
 
+
+let repoCatalog={until:0,items:[],promise:null};
+const unsafeNames=new Set(['agents','horizon_core','sandbox','android_tools','maestro_exec','executors','supervisor.py','GEMINI.md','AGENTS.md','tasks','runtime','node_modules']);
+function approvedScope(name,folder=false){
+ if(typeof name!=='string'||!/^[a-zA-Z0-9_.-]{1,90}$/.test(name))return false;
+ if(name.startsWith('.')||unsafeNames.has(name)||/^(secrets?|credentials?|tokens?|passwords?|private.?key|__pycache__)$/i.test(name)||/\.(?:key|pem|env|sqlite3?|db|jks)$/i.test(name))return false;
+ return true;
+}
+async function githubAccount(url){
+ const headers={'accept':'application/vnd.github+json','user-agent':'Horizon-Central/1','x-github-api-version':'2022-11-28'};
+ if(process.env.GITHUB_TOKEN)headers.authorization='Bearer '+process.env.GITHUB_TOKEN;
+ const response=await fetch(url,{headers,signal:AbortSignal.timeout(12500)});
+ if(!response.ok)throw Error('github_repositories_http_'+response.status);
+ return response.json();
+}
+async function repositoriesCatalog(){
+ if(repoCatalog.until>Date.now())return repoCatalog.items;
+ if(repoCatalog.promise)return repoCatalog.promise;
+ repoCatalog.promise=(async()=>{
+  let collection=[];
+  for(let page=1;page<=3;page++){
+   let items;
+   try{items=await githubAccount('https://api.github.com/user/repos?affiliation=owner&per_page=100&page='+page);}
+   catch(error){
+    if(page!==1)throw error;
+    items=await githubAccount('https://api.github.com/users/danielnep/repos?type=owner&per_page=100&page=1');
+   }
+   if(!Array.isArray(items))throw Error('catalogo_invalido');
+   collection.push(...items);
+   if(items.length<100)break;
+  }
+  const repos=collection.filter(item=>
+   item?.owner?.login?.toLowerCase()==='danielnep'&&!item.archived&&
+   /^[a-z0-9._-]+$/i.test(item.name||''))
+   .map(item=>({name:item.name,fullName:'danielnep/'+item.name,
+     private:item.private===true,description:String(item.description||'').slice(0,110)}));
+  repos.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  repoCatalog={until:Date.now()+120000,items:repos,promise:null};
+  return repos;
+ })().finally(()=>{repoCatalog.promise=null});
+ return repoCatalog.promise;
+}
+async function repositoryScopes(fullName){
+ if(!/^danielnep\/[a-z0-9._-]{2,90}$/i.test(fullName))throw Error('repositorio_invalido');
+ const list=await repositoriesCatalog();
+ if(!list.some(x=>x.fullName.toLowerCase()===fullName.toLowerCase()))throw Error('repositorio_nao_encontrado');
+ const items=await githubAccount('https://api.github.com/repos/'+fullName+'/contents');
+ if(!Array.isArray(items))throw Error('nao_foi_possivel_conferir_os_arquivos');
+ const result=items.filter(x=>approvedScope(x.name,x.type==='dir')).map(x=>
+  x.type==='dir'?x.name+'/**':x.type==='file'?x.name:null).filter(Boolean);
+ return result.slice(0,25);
+}
+
 const authAttempts=new Map();
 function limit(key,cap=6,window=900000){
  const now=Date.now();let entry=authAttempts.get(key);
@@ -237,9 +290,28 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  }
  const publicRead=req.method==='GET'&&[
  '/central/api/overview','/central/api/agents','/central/api/tasks',
- '/central/api/usage','/central/api/history','/central/api/events'
+ '/central/api/usage','/central/api/history','/central/api/events',
+ '/central/api/repositories','/central/api/repository-scopes'
  ].includes(raw);
  if(!publicRead&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
+
+ if(raw==='/central/api/repositories'&&req.method==='GET'){
+  try{const repos=await repositoriesCatalog();
+   send(res,200,{repositories:repos.filter(x=>!x.private||authenticated(req)).map(x=>({
+    name:x.name,fullName:x.fullName,description:x.description
+   }))});
+  }catch{send(res,503,{error:'nao_foi_possivel_listar_repositorios'});}
+  return true;
+ }
+ if(raw==='/central/api/repository-scopes'&&req.method==='GET'){
+  try{
+   const repo=new URL(req.url,'https://central.local').searchParams.get('repository')||'';
+   const known=(await repositoriesCatalog()).find(x=>x.fullName===repo);
+   if(!known||known.private&&!authenticated(req)){send(res,404,{error:'repositorio_indisponivel'});return true;}
+   send(res,200,{repository:repo,paths:await repositoryScopes(repo)});
+  }catch{send(res,503,{error:'nao_foi_possivel_conferir_arquivos_do_projeto'});}
+  return true;
+ }
  if(raw==='/central/api/logout'&&req.method==='POST'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   send(res,200,{ok:true},{'set-cookie':'horizon_session=; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=0'});return true;
