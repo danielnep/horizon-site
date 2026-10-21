@@ -284,8 +284,36 @@ function render(){
  bind();updateConn();
 }
 
+
+function janelaDeAcao(title,explanation){
+ return new Promise(resolve=>{
+  const modal=$('action-gate'),continueButton=$('action-continue'),back=$('action-back');
+  $('action-title').textContent=title;
+  $('action-explanation').textContent=explanation;
+  modal.hidden=false;continueButton.disabled=true;
+  let seconds=3;
+  $('action-countdown').textContent='Leia o aviso: '+seconds+' segundos';
+  function close(ok){
+   clearInterval(actionTimer);
+   modal.hidden=true;continueButton.onclick=null;back.onclick=null;
+   resolve(ok);
+  }
+  continueButton.onclick=()=>close(true);
+  back.onclick=()=>close(false);
+  back.focus();
+  actionTimer=setInterval(()=>{
+   seconds--;
+   if(seconds<=0){
+    clearInterval(actionTimer);
+    $('action-countdown').textContent='Você pode continuar ou voltar.';
+    continueButton.disabled=false;
+   }else $('action-countdown').textContent='Leia o aviso: '+seconds+' segundos';
+  },1000);
+ });
+}
+
 async function executeAgentAction(id,action,skipConfirm=false){
- if(!skipConfirm&&!confirm(action==='pause'?'Pausar novas tarefas deste agente? Um trabalho já iniciado pode continuar.':'Liberar novas tarefas deste agente?'))return;
+ if(!skipConfirm&&!await janelaDeAcao(action==='pause'?'Pausar este agente?':'Liberar este agente?',action==='pause'?'O agente não receberá novas tarefas. Se já estiver trabalhando, poderá terminar a etapa atual. Você pode liberá-lo depois.':'As tarefas suspensas voltarão para a fila. Nenhuma tarefa cancelada será reiniciada sem sua decisão.'))return;
  try{
   const result=await api('agents/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
   note(result.note||'Estado do agente atualizado.');
@@ -296,7 +324,7 @@ async function executeAgentAction(id,action,skipConfirm=false){
  }
 }
 async function executeTaskAction(id,action,skipConfirm=false){
- if(!skipConfirm&&!confirm(action==='cancel'?'Cancelar esta tarefa na fila do Railway?':'Aplicar '+(action==='pause'?'pausa': 'retomada')+' à tarefa?'))return;
+ if(!skipConfirm&&!await janelaDeAcao(action==='cancel'?'Cancelar esta tarefa?':action==='pause'?'Pausar esta tarefa?':'Devolver para a fila?',action==='cancel'?'Ela sairá da fila de execução, mas seu histórico será guardado. Se um agente já tiver iniciado a etapa, a conclusão dessa execução não poderá ser interrompida por este comando.':action==='pause'?'A tarefa ficará suspensa e poderá ser retomada depois. Se o trabalho já começou, a etapa atual pode continuar.':'A tarefa voltará para a fila. Ela será assumida pelo executor conforme a disponibilidade, sem garantia de início imediato.'))return;
  try{
   const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
   note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
@@ -397,6 +425,39 @@ async function boot(){
  connectEvents();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));
+
+function mensagemAjuda(role,text){
+ const element=document.createElement('p');
+ element.className='help-bubble '+(role==='user'?'from-me':'from-ai');
+ element.textContent=String(text);
+ $('help-messages').append(element);
+ $('help-messages').scrollTop=$('help-messages').scrollHeight;
+ return element;
+}
+$('help-open').addEventListener('click',()=>{
+ const panel=$('help-panel');panel.hidden=!panel.hidden;
+ $('help-open').setAttribute('aria-expanded',String(!panel.hidden));
+ if(!panel.hidden)$('help-input').focus();
+});
+$('help-close').addEventListener('click',()=>{
+ $('help-panel').hidden=true;$('help-open').setAttribute('aria-expanded','false');
+});
+$('help-form').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const input=$('help-input'),question=input.value.trim();if(question.length<3)return;
+ input.value='';mensagemAjuda('user',question);
+ const waiting=mensagemAjuda('assistant','Consultando as informações disponíveis...');
+ const send=$('help-send');send.disabled=true;
+ try{
+  const output=await api('ai/chat',{method:'POST',body:JSON.stringify({message:question})});
+  waiting.textContent=output.response||'Não encontrei informações suficientes para responder.';
+  helpHistory.push({question,response:waiting.textContent});if(helpHistory.length>5)helpHistory.shift();
+ }catch(err){
+  waiting.textContent=err.message.includes('limite')?'O limite de consultas foi atingido. Tente novamente mais tarde.':
+   'Não consegui consultar a ajuda agora. Os dados da Central continuam disponíveis nas outras telas.';
+ }finally{send.disabled=false;$('help-input').focus();}
+});
+
 $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
