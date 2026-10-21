@@ -44,3 +44,15 @@
 .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
 @media(max-width:650px){.help-fab{right:14px;bottom:calc(74px + env(safe-area-inset-bottom));padding:11px 13px}.help-panel{right:7px;bottom:calc(120px + env(safe-area-inset-bottom));width:calc(100vw - 14px);height:min(510px,calc(100dvh - 152px))}.action-dialog{padding:20px}}
 @media(prefers-reduced-motion:reduce){.live-operation-title .pulse,.task-progress-display.indefinite>div{animation:none}}
+
+.task-plan{background:#1e2c38;border:1px solid #415264;padding:13px 15px;border-radius:8px}
+.task-plan h3{font-size:13px;margin:0 0 12px;color:#f3f8fd}
+.task-plan ol{margin:0;padding:0;display:grid;gap:0;list-style:none}
+.task-plan li{display:grid;grid-template-columns:27px minmax(0,1fr);gap:10px;padding:11px 0;border-bottom:1px solid #344454;line-height:1.5}
+.task-plan li:last-child{border:0}
+.task-step-marker{display:grid;place-items:center;width:23px;height:23px;border:1px solid #62758a;border-radius:50%;font-size:11px;font-weight:700;color:#c7d6e6}
+.task-step-done .task-step-marker{background:#144934;border-color:#54bc90;color:#9ae5c0}
+.task-plan li>div{display:grid;gap:4px;min-width:0}
+.task-plan li>div>span{font-size:12px;color:#edf3f9;overflow-wrap:anywhere;white-space:normal}
+.task-plan li small{font-size:10px;color:#aebdca}
+.task-step-done li small{color:#99d8b2}
