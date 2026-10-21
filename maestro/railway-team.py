@@ -308,7 +308,7 @@ def probe_providers(root, env, *, run=subprocess.run):
 # Requests are DATA from current main; Python code remains pinned by SHA.
 # Without this reader, Railway would never notice tasks submitted after its
 # executor snapshot was deployed.
-REQUEST_FILE = re.compile(r"^[a-z0-9][a-z0-9-]{0,69}\\.json$")
+REQUEST_FILE = re.compile(r"^[a-z0-9][a-z0-9-]{0,69}\.json$")
 MAX_REQUEST_FILES = 100
 MAX_REQUEST_BYTES = 128000
 
@@ -344,13 +344,13 @@ def refresh_requests(root, token, *, opener=urllib.request.urlopen):
                 or not isinstance(file_info.get("content"), str)):
             raise RuntimeError("request_content_invalid")
         try:
-            data = base64.b64decode(file_info["content"].replace("\\n", ""), validate=True)
+            data = base64.b64decode(file_info["content"].replace("\n", ""), validate=True)
             json.loads(data.decode("utf-8"))
         except (ValueError, UnicodeError, TypeError):
             raise RuntimeError("request_content_invalid") from None
         if len(data) > MAX_REQUEST_BYTES:
             raise RuntimeError("request_content_oversized")
-        blob = b"blob " + str(len(data)).encode() + b"\\0" + data
+        blob = b"blob " + str(len(data)).encode() + b"\0" + data
         if hashlib.sha1(blob).hexdigest() != file_info.get("sha"):
             raise RuntimeError("request_content_integrity_failed")
         incoming[name] = data
