@@ -1,5 +1,5 @@
 // Railway-local durable owner inbox. GitHub is never the task transport.
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {mkdir,open,link,unlink,readFile,readdir,lstat} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 
@@ -99,12 +99,24 @@ export async function directTasks(){
   ]);
   const task=JSON.parse(raw);
   const outcome=result?JSON.parse(result):null;
+  const stages=Array.isArray(outcome?.tasks)?outcome.tasks:[];
+  const rawStatus=outcome?.status||'pending';
+  const finished=['completed','done','succeeded','reported_complete'].includes(rawStatus);
+  const status=finished?(outcome?.quality?.approved===true&&outcome?.publication?.published===true?
+    'concluída':'aguardando validação'):
+    /fail|error|block|reject/.test(rawStatus)?'bloqueada':
+    /running|in_progress/.test(rawStatus)?'em execução':'na fila';
   tasks.push({id:task.task_id,project:task.project,repository:task.repository,
-   agent:task.agent,title:String(task.objective).slice(0,180),
-   status:outcome?.status||'na fila',rawStatus:outcome?.status||'pending',
+   agent:task.agent,title:String(task.objective).slice(0,180),inQueue:true,
+   status,rawStatus,hasResult:!!outcome,
+   stages:stages.map(x=>({agent:x.agent,state:x.status,summary:x.summary||null,
+    blocker:x.blocker||null})),
    approved:outcome?.quality?.approved===true,
    published:outcome?.publication?.published===true,
-   updatedAt:outcome?.updated_at||null,progress:null});
+   updatedAt:outcome?.updated_at||null,
+   progress:stages.length?{total:stages.length,done:stages.filter(x=>
+     ['succeeded','completed','failed','blocked'].includes(x.status)).length,
+     verified:stages.filter(x=>x.quality?.approved===true).length}:null});
  }
  return tasks;
 }
