@@ -164,6 +164,23 @@ function pageAgentes(){
  '<div class="summary"><span><b>17</b> cadastrados</span><span>Atualização individual conforme registros disponíveis</span></div>'+
  '<div class="list">'+a.map(agentRow).join('')+'</div>';
 }
+
+function explainEvent(e){
+ const event=String(e?.event||'');
+ const reason=String(e?.reason||'');
+ if(event==='cycle_failed')return 'O executor encontrou um problema e não terminou essa tentativa. A causa exata precisa ser investigada.';
+ if(event==='cycle'&&String(e.rc)==='0')return 'O ciclo técnico terminou sem erro. Isso não significa que as tarefas foram concluídas.';
+ if(event==='cycle'&&String(e.rc)==='1')return 'O ciclo falhou. É necessário consultar o erro de origem para corrigir.';
+ if(event==='provider_probe_failure'&&reason==='quota')return 'Gemini atingiu o limite de consultas. O sistema deve tentar o modelo alternativo.';
+ if(event==='provider_probe_failure'&&reason==='server')return 'Gemini teve uma falha temporária no serviço. O sistema deve recorrer ao modelo alternativo.';
+ if(event==='provider_probe')return 'Um dos modelos de IA respondeu ao teste de conexão.';
+ if(event==='requests_refreshed')return 'O executor atualizou a lista de tarefas.';
+ if(event==='snapshot_changed')return 'Mudança identificada nas tarefas ou nos agentes.';
+ if(event==='submitted')return 'Uma nova solicitação foi recebida.';
+ if(event==='control')return 'Comando aplicado à fila. Consulte o estado atualizado da tarefa.';
+ return 'Houve uma atualização técnica no servidor.';
+}
+
 function pageHistorico(){
  const events=snapshot?.events||[];
  return heading('Histórico','Resultados operacionais no Railway e eventos recentes da equipe.')+
@@ -171,8 +188,8 @@ function pageHistorico(){
  '<div class="section-heading"><h2>Atividade recente do servidor</h2></div>'+
  (!events.length?'<div class="empty">Ainda não há eventos recentes da equipe nesta instância.</div>':
  '<div class="list">'+[...events].reverse().map(e=>
- '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(e.kind==='worker'?'Worker: '+e.event:'Tarefa: '+e.event)+'</strong>'+
- '<p>'+escapeHTML(Object.entries(e).filter(([k])=>!['id','at','kind','event'].includes(k)).map(([k,v])=>k+': '+v).join(' • ')||'Evento recebido')+'</p></div></div>').join('')+'</div>')+
+ '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(e.kind==='worker'?'Execução':'Atividade da Central')+'</strong>'+
+ '<p>'+escapeHTML(explainEvent(e))+'</p><details><summary class="smallprint">Ver dados técnicos</summary><p>'+escapeHTML(Object.entries(e).filter(([k])=>!['id','at','kind','event'].includes(k)).map(([k,v])=>k+': '+v).join(' • ')||'Sem detalhes adicionais')+'</p></details></div></div>').join('')+'</div>')+
  '<p class="smallprint">Reiniciar o servidor limpa apenas este painel de eventos recentes, não os registros permanentes do executor.</p>';
 }
 function pageConsumo(){
