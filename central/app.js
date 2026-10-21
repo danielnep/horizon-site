@@ -32,14 +32,9 @@ const AGENT_NAMES={
 'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
 'corregedoria-may':'Corregedoria','may-persona':'May Persona'};
 const LABELS={inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'17 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
-const PROJECTS={
-'ronda-pro':{name:'Ronda Pro',repository:'danielnep/app-hondas-maxvel'},
-'michelle-preview':{name:'Painel Michelle',repository:'danielnep/michelle-preview'},
-'horizon-site':{name:'Horizon Site',repository:'danielnep/horizon-site'},
-'novo-projeto':{name:'Outro projeto',repository:'danielnep/'}};
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
-let repositoryList=[],scopeByRepo=new Map(),repositoryProblem=null;
+let repositoryList=[],scopeByRepo=new Map(),repositoryProblem=null,selectedRepository='',selectedPriority='P2',selectedAgent='may-maestro',selectedDelivery='existing_product';
 let adminAuthorized=false;
 function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function time(x){if(!x)return 'Não informado';const d=new Date(x);return Number.isNaN(d.getTime())?'Não informado':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);}
@@ -123,6 +118,7 @@ async function loadRepositories(){
   const response=await api('repositories');
   repositoryList=Array.isArray(response.repositories)?response.repositories.filter(x=>/^danielnep\/[a-zA-Z0-9._-]+$/.test(x.fullName)):[];
   repositoryProblem=repositoryList.length?null:'Nenhum projeto foi encontrado no GitHub.';
+  if(!repositoryList.some(x=>x.fullName===selectedRepository))selectedRepository=repositoryList[0]?.fullName||'';
  }catch(error){repositoryProblem='Não foi possível consultar seus projetos: '+error.message;}
  if(active()==='inicio')render();
 }
@@ -226,15 +222,22 @@ function bind(){
   }catch(error){scopeMessage.textContent=error.message;note('Falha ao consultar os arquivos de '+repo+'.',true);}
   finally{scopePending=false;}
  }
- project.addEventListener('change',()=>void inspectSelected());
+ project.addEventListener('change',()=>{selectedRepository=project.value;void inspectSelected();});
  repoSearch.addEventListener('input',()=>{
   const selected=project.value;
   const term=repoSearch.value.trim().toLocaleLowerCase('pt-BR');
   const filtered=repositoryList.filter(r=>r.name.toLocaleLowerCase('pt-BR').includes(term));
   project.innerHTML=filtered.length?filtered.map(r=>'<option value="'+escapeHTML(r.fullName)+'">'+escapeHTML(r.name)+'</option>').join(''):'<option value="">Nenhum projeto com esse nome</option>';
   if(filtered.some(r=>r.fullName===selected))project.value=selected;
+  selectedRepository=project.value;
   void inspectSelected();
  });
+ project.value=repositoryList.some(r=>r.fullName===selectedRepository)?selectedRepository:(project.options[0]?.value||'');
+ selectedRepository=project.value;
+ project.addEventListener('change',()=>{selectedRepository=project.value;});
+ $('priority').value=selectedPriority;$('priority').addEventListener('change',e=>selectedPriority=e.target.value);
+ $('agent').value=selectedAgent;$('agent').addEventListener('change',e=>selectedAgent=e.target.value);
+ delivery.value=selectedDelivery;delivery.addEventListener('change',e=>selectedDelivery=e.target.value);
  void inspectSelected();
  toggle.addEventListener('click',()=>{advanced.hidden=!advanced.hidden;toggle.setAttribute('aria-expanded',String(!advanced.hidden));toggle.textContent=advanced.hidden?'Detalhes da solicitação ▾':'Ocultar detalhes ▴';});
  $('ai-action').addEventListener('click',async()=>{const message=objective.value.trim();if(message.length<12){note('Descreva a solicitação antes de analisar.',true);return;}
