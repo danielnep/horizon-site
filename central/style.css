@@ -56,3 +56,12 @@
 .task-plan li>div>span{font-size:12px;color:#edf3f9;overflow-wrap:anywhere;white-space:normal}
 .task-plan li small{font-size:10px;color:#aebdca}
 .task-step-done li small{color:#99d8b2}
+
+/* Real supervisor diagnosis is visible without decorative cards or overlays. */
+.pending-reason{margin-top:8px;padding-left:8px;border-left:2px solid var(--warn);color:#f0ca86;font-size:11px;line-height:1.55;overflow-wrap:anywhere}
+.wait-diagnosis{margin:10px 0;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.wait-diagnosis>b{font-size:12px;color:var(--white);font-weight:700}
+.wait-diagnosis p{margin:4px 0 6px;color:#f0ca86;font-size:12px}
+.wait-diagnosis small{color:var(--muted);font-size:10px;overflow-wrap:anywhere}
+.stages-heading{font-size:12px;margin:17px 0 6px;color:var(--white)}
+.stage-reason{color:#f0ca86;font-size:11px;line-height:1.55;margin:5px 0}
