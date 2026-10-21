@@ -330,8 +330,15 @@ def refresh_requests(root, token, *, opener=urllib.request.urlopen):
             raise RuntimeError("request_manifest_invalid") from None
 
     listing = fetch(endpoint + "?ref=main", 150000)
-    if not isinstance(listing, list) or len(listing) > MAX_REQUEST_FILES:
+    if not isinstance(listing, list) or len(listing) > MAX_REQUEST_FILES + 1:
         raise RuntimeError("request_listing_invalid")
+    # Git does not track empty directories. Permit only a single inert marker,
+    # not arbitrary files, so an empty owner queue is a valid stable state.
+    marker = [row for row in listing if isinstance(row, dict)
+              and row.get("name") == ".gitkeep" and row.get("type") == "file"]
+    if len(marker) > 1:
+        raise RuntimeError("request_listing_invalid")
+    listing = [row for row in listing if row not in marker]
     incoming = {}
     for row in listing:
         name = row.get("name") if isinstance(row, dict) else None

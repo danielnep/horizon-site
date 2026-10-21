@@ -149,6 +149,31 @@ class RailwayTeamTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_CLIENT',result)
         self.assertNotIn('../../secret',result)
 
+    def test_empty_owner_queue_is_valid_and_clears_stale_local_requests(self):
+        def opener(req, timeout=None):
+            self.assertTrue(req.full_url.endswith('tasks/chat?ref=main'))
+            return Response(json.dumps([{'name':'.gitkeep','type':'file'}]).encode())
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            local=root/'tasks'/'chat'
+            local.mkdir(parents=True)
+            (local/'old.json').write_text('{}')
+            count,_=team.refresh_requests(root,'synthetic',opener=opener)
+            self.assertEqual(count,0)
+            self.assertEqual(list(local.iterdir()),[])
+
+    def test_unknown_owner_queue_file_is_rejected_without_mutation(self):
+        def opener(req, timeout=None):
+            return Response(json.dumps([{'name':'unexpected.txt','type':'file'}]).encode())
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            local=root/'tasks'/'chat'
+            local.mkdir(parents=True)
+            (local/'old.json').write_text('{}')
+            with self.assertRaisesRegex(RuntimeError,'request_listing_invalid'):
+                team.refresh_requests(root,'synthetic',opener=opener)
+            self.assertTrue((local/'old.json').exists())
+
     def test_live_requests_replace_pinned_snapshot_without_loading_code(self):
         request = json.dumps({'owner':'danielnep','task_id':'new-task'}).encode()
         sha = hashlib.sha1(b'blob ' + str(len(request)).encode() + b'\0' + request).hexdigest()
