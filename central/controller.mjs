@@ -10,7 +10,7 @@ const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
 '':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
-const MIME={html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
+const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
 const REPO=/^danielnep\/[a-z0-9._-]{2,90}$/i;
 const PATH=/^(?!\/)(?!.*(?:^|\/)\.)(?!.*\.\.)(?!.*[\\])[a-zA-Z0-9_./*-]{1,120}$/;
