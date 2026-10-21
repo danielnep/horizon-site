@@ -38,7 +38,7 @@ def event(kind, **safe):
     """Log only declared machine metadata. No exception text or task payload."""
     allowed = {"count", "rc", "seconds", "sha", "reason", "required", "state",
                "processed", "rejected", "ready_for_continuation", "taskId",
-               "delegatedCount", "qaVerified", "errorClass", "errorKind"}
+               "delegatedCount", "qaVerified", "errorClass", "errorKind", "deferred"}
     packet = {k: v for k, v in safe.items() if k in allowed}
     print("[team-railway] " + kind + " " + json.dumps(packet, sort_keys=True), flush=True)
 
@@ -216,10 +216,20 @@ def report_cycle_telemetry(result):
             continue
         if not isinstance(packet, dict):
             continue
-        if (type(packet.get("processed")) is int and packet["processed"] >= 0 and
+        if (type(packet.get("supervisor_recovery")) is int and
+                0 < packet["supervisor_recovery"] <= 10000):
+            event("supervisor_recovery", count=packet["supervisor_recovery"])
+        elif (isinstance(packet.get("supervisor_rejection"), str) and
+                SAFE_TASK_ID.fullmatch(packet["supervisor_rejection"]) and
+                isinstance(packet.get("errorKind"), str) and
+                SAFE_ERROR_KIND.fullmatch(packet["errorKind"])):
+            event("supervisor_rejection", taskId=packet["supervisor_rejection"],
+                  errorKind=packet["errorKind"])
+        elif (type(packet.get("processed")) is int and packet["processed"] >= 0 and
                 type(packet.get("rejected")) is int and packet["rejected"] >= 0):
             event("cycle_summary", processed=packet["processed"],
                   rejected=packet["rejected"],
+                  deferred=packet.get("deferred") if type(packet.get("deferred")) is int else None,
                   ready_for_continuation=(
                       packet.get("ready_for_continuation") if
                       type(packet.get("ready_for_continuation")) is int and
