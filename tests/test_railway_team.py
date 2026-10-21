@@ -234,6 +234,32 @@ class RailwayTeamTests(unittest.TestCase):
             self.assertTrue((directory/'old-task.json').exists())
             self.assertFalse((directory/'new-task.json').exists())
 
+    def test_railway_inbox_fingerprint_detects_new_owner_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(team.direct_inventory(tmp)[0], 0)
+            inbox=Path(tmp)/'requests'
+            (inbox/'romaneio-visual.json').write_text(
+                json.dumps({'task_id':'romaneio-visual'}))
+            count, first=team.direct_inventory(tmp)
+            self.assertEqual(count, 1)
+            self.assertNotEqual(first,team.direct_inventory(
+                Path(tmp)/'unused')[1])
+            (inbox/'new-task.json').write_text('{}')
+            self.assertEqual(team.direct_inventory(tmp)[0], 2)
+
+    def test_railway_inbox_refuses_symlinks_and_invalid_filenames(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inbox=Path(tmp)/'requests'
+            inbox.mkdir()
+            (inbox/'../../no').exists()
+            (inbox/'badfile.txt').write_text('inert')
+            with self.assertRaisesRegex(RuntimeError,'filename_invalid'):
+                team.direct_inventory(tmp)
+            (inbox/'badfile.txt').unlink()
+            (inbox/'good-id.json').symlink_to(Path(tmp)/'missing')
+            with self.assertRaisesRegex(RuntimeError,'file_invalid'):
+                team.direct_inventory(tmp)
+
     def test_worker_session_is_bounded_and_no_secrets_in_arguments(self):
         with tempfile.TemporaryDirectory() as tmp:
             invoked=[]
@@ -246,6 +272,8 @@ class RailwayTeamTests(unittest.TestCase):
             self.assertEqual(result,0)
             args,options=invoked[0]
             self.assertNotIn("test-secret"," ".join(args))
+            self.assertIn("--direct-inbox",args)
+            self.assertNotIn("refresh_requests", " ".join(args))
             self.assertEqual(options["timeout"], team.SESSION_SECONDS+65)
             self.assertEqual(options["env"]["GITHUB_TOKEN"],"test-secret")
             assert options["preexec_fn"] is not None
