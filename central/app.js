@@ -147,7 +147,7 @@ function bind(){
  const form=$('task-form');
  if(form){
  const project=$('project'),repo=$('repo'),delivery=$('delivery'),advanced=$('task-advanced'),toggle=$('advanced-toggle');
- const presets={'ronda-pro':'src/**','michelle-preview':'src/**','horizon-site':'index.html'};
+ const presets={'ronda-pro':'src/**','michelle-preview':'index.html','horizon-site':'index.html'};
  function applyProject(){
   if(project.value==='novo-projeto'){repo.value='danielnep/';delivery.value='new_product';$('paths').value='';advanced.hidden=false;toggle.setAttribute('aria-expanded','true');}
   else{repo.value=PROJECTS[project.value].repository;delivery.value='existing_product';$('paths').value=presets[project.value]||'';}}
