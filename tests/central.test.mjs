@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {startServer} from '../server.mjs';
 import {SPECIALISTS,operationalDigest,teamLog,deriveCodePaths} from '../central/controller.mjs';
-import {submitDirectTask,directTasks,directTaskAction} from '../maestro/direct-queue.mjs';
+import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds} from '../maestro/direct-queue.mjs';
 
 async function withServer(fn){
  const old=process.env.HORIZON_MCP_TOKEN;
@@ -215,4 +215,26 @@ test('task control endpoint requires a session and cannot be triggered by strang
    headers:{'content-type':'application/json'},body:JSON.stringify({action:'cancel'})});
   assert.equal(unauthorized.status,401);
  });
+});
+
+test('holding one agent pauses its pending work and rejects new work until resumed',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'horizon-approval-agent-'));
+ const old=process.env.HORIZON_DIRECT_INBOX_DIR;
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+  const input={project:'romaneio-digital',repository:'danielnep/romaneio-digital',
+   objective:'Revisar o código sem alterar o fluxo atual',agent:'qa-engineer',
+   priority:'P2',delivery_type:'existing_product',allowed_paths:['js/**'],public_data_confirmed:true};
+  const task=await submitDirectTask(input);
+  const paused=await directAgentAction('qa-engineer','pause');
+  assert.equal(paused.affected,1);
+  assert.ok((await agentHolds()).includes('qa-engineer'));
+  assert.equal((await directTasks()).find(t=>t.id===task.id).status,'pausada');
+  await assert.rejects(()=>submitDirectTask(input),/agente_tem_novas_tarefas_pausadas/);
+  await directAgentAction('qa-engineer','resume');
+  assert.equal((await directTasks()).find(t=>t.id===task.id).inQueue,true);
+ }finally{
+  if(old===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=old;
+  await rm(root,{recursive:true,force:true});
+ }
 });
