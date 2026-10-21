@@ -1,7 +1,7 @@
 import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {submitDirectTask,directTasks,directTaskAction} from '../maestro/direct-queue.mjs';
+import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
@@ -169,22 +169,24 @@ async function loadOverview(){
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
  githubCache.promise=(async()=>{
-  const [queued,attendance]=await Promise.allSettled([
-   directTasks(),file('tasks/attendance/equipe.json')]);
+  const [queued,attendance,holds]=await Promise.allSettled([
+   directTasks(),file('tasks/attendance/equipe.json'),agentHolds()]);
   const q=queued.status==='fulfilled'?queued.value:[];
   const queueResults=q;
   const members=attendance.status==='fulfilled'&&attendance.value&&typeof attendance.value==='object'?attendance.value:null;
+  const heldSet=new Set(holds.status==='fulfilled'?holds.value:[]);
   const agents=SPECIALISTS.map(id=>{
    let rec=null;
    if(Array.isArray(members?.agents))rec=members.agents.find(x=>x.id===id||x.agent===id);
    else if(members?.agents&&typeof members.agents==='object')rec=members.agents[id]||null;
-   return {id,status:typeof rec?.status==='string'?rec.status:'sem telemetria individual',
+   return {id,status:typeof rec?.status==='string'?rec.status:'sem telemetria individual',held:heldSet.has(id),
    currentTask:typeof rec?.current_task==='string'?rec.current_task:(typeof rec?.task_ref==='string'?rec.task_ref:null),
    updatedAt:typeof rec?.updated_at==='string'?rec.updated_at:null};
   });
   const issues=[];
   if(queued.status==='rejected')issues.push('Fila Railway temporariamente indisponível');
   if(attendance.status==='rejected')issues.push('Presença individual indisponível');
+  if(holds.status==='rejected')issues.push('Estado de pausa dos agentes indisponível');
   return {at:new Date().toISOString(),source:'Fila direta Railway e telemetria deste processo',
    tasks:queueResults.filter(Boolean),agents,worker:{status:workerState,lastCycle},issues,
    available:{queue:queued.status==='fulfilled',results:queued.status==='fulfilled',attendance:attendance.status==='fulfilled'},
@@ -331,6 +333,20 @@ export async function handleCentral(req,res,{reader=readFile}={}){
     {...overview,events:events.slice(-25)};
    send(res,200,answer);
   }catch{send(res,503,{error:'dados_temporariamente_indisponiveis'});}return true;
+ }
+
+
+ const agentAction=raw.match(/^\/central\/api\/agents\/([a-z0-9-]{3,70})\/action$/);
+ if(req.method==='POST'&&agentAction){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const data=await body(req,600);
+   const result=await directAgentAction(agentAction[1],data.action);
+   githubCache.expires=0;
+   notify('agent',{event:'control',agent:result.agent,action:data.action});
+   send(res,200,result);
+  }catch(e){send(res,409,{error:String(e?.message||'acao_indisponivel').slice(0,100)});}
+  return true;
  }
 
  const actionPath=raw.match(/^\/central\/api\/tasks\/([a-z0-9-]{3,70})\/action$/);
