@@ -5,7 +5,7 @@ import {mkdtemp,readFile,rm,mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {startServer} from '../server.mjs';
-import {SPECIALISTS,operationalDigest,teamLog,deriveCodePaths,quickAnswer,conciseProjectFacts} from '../central/controller.mjs';
+import {SPECIALISTS,operationalDigest,teamLog,deriveCodePaths,quickAnswer,conciseProjectFacts,safePublishedUrl} from '../central/controller.mjs';
 import {operationalTelemetry} from '../central/telemetry.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds} from '../maestro/direct-queue.mjs';
 
@@ -346,5 +346,40 @@ test('help chat uses simple Portuguese and is available without secret access',a
   assert.doesNotMatch(script,/&&confirm\(/);
   assert.match(script,/function janelaDeAcao/);
   assert.match(script,/function acaoEmPortugues/);
+ });
+});
+
+
+test('studio assets, responsive controls and safe embedded-preview policy are shipped',async()=>{
+ await withServer(async({url})=>{
+  const [html,js,css,main]=await Promise.all([
+   fetch(url+'/central/').then(r=>r.text()),
+   fetch(url+'/central/studio.mjs').then(r=>r.text()),
+   fetch(url+'/central/studio.css').then(r=>r.text()),
+   fetch(url+'/central/app.js').then(r=>r.text())
+  ]);
+  assert.match(html,/data-page="estudio"/);
+  assert.match(html,/studio\.css/);
+  assert.match(js,/mobile.*tablet.*desktop/);
+  assert.match(js,/setInterval\(\(\)=>void probe\(\),20000\)/);
+  assert.match(js,/iframe id="studio-frame"/);
+  assert.match(css,/\.studio-layout/);
+  assert.match(css,/\.studio-expanded/);
+  assert.match(main,/mountStudio/);
+  const headers=await fetch(url+'/central/');
+  assert.match(headers.headers.get('content-security-policy'),/frame-src https:/);
+ });
+});
+test('preview endpoint protects repository scope and blocks network access to private hosts',async()=>{
+ await withServer(async({url})=>{
+  for(const repository of ['evil.example/repo','danielnep/../../private','']){
+   const res=await fetch(url+'/central/api/preview?repository='+encodeURIComponent(repository));
+   assert.equal(res.status,400);
+  }
+  assert.equal(safePublishedUrl('http://danielnep.github.io/demo'),null);
+  assert.equal(safePublishedUrl('https://127.0.0.1/private'),null);
+  assert.equal(safePublishedUrl('https://example.com/private'),null);
+  assert.equal(safePublishedUrl('https://danielnep.github.io/app-hondas-maxvel/'),'https://danielnep.github.io/app-hondas-maxvel/');
+  assert.equal(safePublishedUrl('https://web-demo.up.railway.app/'),'https://web-demo.up.railway.app/');
  });
 });
