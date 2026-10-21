@@ -18,6 +18,7 @@ const origins=new Map();
 const live=new Set();
 const events=[];
 let sequence=0, lastCycle=null, workerState='não verificado';
+let lastCycleSummary=null;
 let monitorTimer=null,monitorDigest=null,monitorPending=false;
 let githubCache={expires:0,value:null,promise:null};
 const taskDocumentCache=new Map();
@@ -63,12 +64,20 @@ function parseAgentLog(line){
  let metadata={};try{metadata=match[2]?JSON.parse(match[2]):{};}catch{}
  const kind=match[1];
  const selected={};
- for(const k of ['rc','code','signal','reason','errorClass','processed','rejected','ready_for_continuation','count','agents','workers','retrySeconds','taskId','state','retryReason','nextRetryAt','agent']){
+ for(const k of ['rc','code','signal','reason','errorClass','processed','rejected','ready_for_continuation','count','agents','workers','retrySeconds','taskId','state','retryReason','nextRetryAt','agent','deferred']){
    if(typeof metadata[k]==='number'||typeof metadata[k]==='boolean'||typeof metadata[k]==='string')selected[k]=String(metadata[k]).slice(0,100);
  }
  if(kind==='started')workerState='iniciado';
  if(kind==='exited'||kind==='cycle_failed'||kind==='stopped')workerState='falha registrada';
- if(kind==='cycle'&&Number(metadata.rc)===0)workerState='ciclo concluído';
+ if(kind==='cycle_summary'){
+  lastCycleSummary={processed:Number(metadata.processed||0),
+    deferred:Number(metadata.deferred||0)};
+ }
+ if(kind==='cycle'&&Number(metadata.rc)===0){
+  workerState=lastCycleSummary?.processed===0&&lastCycleSummary?.deferred>0
+    ?'aguardando tarefas adiadas':'ciclo concluído';
+  lastCycleSummary=null;
+ }
  if(kind==='cycle'||kind==='cycle_failed'||kind==='exited')lastCycle={kind,at:new Date().toISOString(),...selected};
  // New durable reports must invalidate the previous task snapshot immediately.
  if(['supervisor_wait','cycle_summary','delegation_released','supervisor_rejection'].includes(kind))

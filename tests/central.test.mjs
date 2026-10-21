@@ -129,6 +129,7 @@ test('SSE immediately streams actual worker state, never needs an AI call',async
   assert.equal(response.status,200);
   const reader=response.body.getReader();
   const first=await reader.read();assert.match(new TextDecoder().decode(first.value),/retry: 5000/);
+  teamLog('[horizon-team] cycle_summary {"processed":0,"rejected":0,"deferred":1}');
   teamLog('[horizon-team] cycle {"rc":0,"seconds":90}');
   let found='',tries=0;
   while(!found.includes('"kind":"worker"')&&tries++<3){
@@ -136,6 +137,8 @@ test('SSE immediately streams actual worker state, never needs an AI call',async
   }
   assert.match(found,/"event":"cycle"/);
   assert.match(found,/"rc":"0"/);
+  const overview=await (await fetch(url+'/central/api/overview')).json();
+  assert.equal(overview.worker.status,'aguardando tarefas adiadas');
   abort.abort();
   await reader.cancel().catch(()=>{});
  });
