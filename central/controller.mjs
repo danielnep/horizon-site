@@ -112,17 +112,44 @@ async function loadOverview(){
    list('tasks/chat'),list('tasks/results'),file('tasks/attendance/equipe.json')]);
   const q=queued.status==='fulfilled'?queued.value:[];
   const r=resultFiles.status==='fulfilled'?resultFiles.value:[];
-  const index=new Map(r.map(x=>[x.name,x.sha]));
-  const queueResults=await Promise.all(q.slice(0,45).map(async item=>{
-   const task=await file('tasks/chat/'+item.name,item.sha).catch(()=>null);
-   const id=item.name.slice(0,-5);
-   const result=index.has(item.name)?await file('tasks/results/'+item.name,index.get(item.name)).catch(()=>null):null;
-   if(!task)return null;
-   return {id,project:String(task.project||'não informado').slice(0,80),repository:String(task.repository||'').slice(0,110),
-   title:String(task.objective||'Sem descrição').slice(0,180),agent:SPECIALISTS.includes(task.agent)?task.agent:null,
-   priority:/^P[0-3]$/.test(task.priority)?task.priority:null,status:statusLabel(result),rawStatus:String(result?.status||'').slice(0,55),
-   approved:result?.quality?.approved===true,published:result?.publication?.published===true,
-   progress:null, updatedAt:result?.updated_at||null};
+  const activeByName=new Map(q.map(x=>[x.name,x]));
+  const resultsByName=new Map(r.map(x=>[x.name,x]));
+  // A removal from tasks/chat is NOT proof of completion. Results must remain
+  // visible with an explicit label distinguishing history from live queue.
+  const union=[...new Set([...activeByName.keys(),...resultsByName.keys()])].slice(0,60);
+  const queueResults=await Promise.all(union.map(async name=>{
+   const request=activeByName.get(name),receipt=resultsByName.get(name);
+   const task=request?await file('tasks/chat/'+name,request.sha).catch(()=>null):null;
+   const result=receipt?await file('tasks/results/'+name,receipt.sha).catch(()=>null):null;
+   if(!task&&!result)return null;
+   const id=name.slice(0,-5);
+   const stages=Array.isArray(result?.tasks)?result.tasks.slice(0,20).map(stage=>({
+      agent:SPECIALISTS.includes(stage.agent)?stage.agent:null,
+      state:String(stage.status||'sem registro').slice(0,50),
+      summary:String(stage.summary||'').slice(0,220),
+      blocker:stage.blocker?String(stage.blocker).slice(0,180):null,
+      checks:Array.isArray(stage.verification)?stage.verification.length:0,
+      attempts:Number.isFinite(stage.attempts)?stage.attempts:null,
+   })):[];
+   const completedStages=stages.filter(x=>x.state==='succeeded'||x.state==='completed').length;
+   const rawStatus=String(result?.status||'sem resultado').slice(0,55);
+   const active=Boolean(request);
+   const finished=result?.quality?.approved===true&&result?.publication?.published===true&&['completed','done','succeeded'].includes(rawStatus);
+   return {
+    id,project:String(task?.project||result?.request_id?.split('-').slice(0,2).join('-')||'Projeto não informado').slice(0,80),
+    repository:String(task?.repository||result?.may_review?.repository||'').slice(0,110),
+    title:task?String(task.objective||'Sem descrição').slice(0,180):
+      'Registro preservado: '+id.replace(/-/g,' ').slice(0,120),
+    agent:SPECIALISTS.includes(task?.agent)?task.agent:(stages[0]?.agent||null),
+    priority:/^P[0-3]$/.test(task?.priority)?task.priority:null,
+    status:!active?(finished?'concluída • histórica':'fora da fila • '+(rawStatus==='pending'?'pendente':rawStatus)):
+      statusLabel(result), rawStatus, inQueue:active,hasResult:Boolean(result),
+    approved:result?.quality?.approved===true,published:result?.publication?.published===true,
+    progress:stages.length?{done:completedStages,total:stages.length,verified:stages.filter(x=>x.checks>0).length}:null,
+    stages,blocker:result?.quality?.qa_missing_evidence?.length?'Verificação de qualidade pendente':null,
+    updatedAt:result?.updated_at||null,
+    evidenceUrl:result?.may_review?.result_url||null
+   };
   }));
   const members=attendance.status==='fulfilled'&&attendance.value&&typeof attendance.value==='object'?attendance.value:null;
   const agents=SPECIALISTS.map(id=>{
@@ -263,7 +290,11 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    send(res,200,{ok:true},{'set-cookie':'horizon_session='+session+'; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=43200'});
   }catch{send(res,400,{error:'solicitacao_invalida'});}return true;
  }
- if(!authenticated(req)){send(res,401,{error:'login_necessario'});return true;}
+ const publicRead=req.method==='GET'&&[
+ '/central/api/overview','/central/api/agents','/central/api/tasks',
+ '/central/api/usage','/central/api/history','/central/api/events'
+ ].includes(raw);
+ if(!publicRead&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
  if(raw==='/central/api/logout'&&req.method==='POST'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   send(res,200,{ok:true},{'set-cookie':'horizon_session=; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=0'});return true;
