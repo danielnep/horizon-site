@@ -129,6 +129,27 @@ class RailwayTeamTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_CLIENT',delivered)
         self.assertNotIn('VERY_PRIVATE',delivered)
 
+    def test_cycle_diagnostics_report_only_known_codes_and_reset_receipt(self):
+        fake = types.SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps({'queue_reset': {'applied': True, 'removed': 12,
+                                                'secret': 'PRIVATE_TOKEN'}}),
+            stderr='Traceback (most recent call last):\\nRuntimeError: Queue not empty after owner reset')
+        buffer = StringIO()
+        with redirect_stdout(buffer):
+            team.report_cycle_telemetry(fake)
+        result = buffer.getvalue()
+        self.assertIn('"applied": true', result)
+        self.assertIn('"removed": 12', result)
+        self.assertIn('"errorKind": "QueueResetAssertion"', result)
+        self.assertNotIn('PRIVATE_TOKEN', result)
+        unknown = types.SimpleNamespace(returncode=1, stdout='', stderr='RuntimeError: SECRET_TOKEN')
+        buffer = StringIO()
+        with redirect_stdout(buffer):
+            team.report_cycle_telemetry(unknown)
+        self.assertIn('"errorKind": "UnclassifiedFailure"', buffer.getvalue())
+        self.assertNotIn('SECRET_TOKEN', buffer.getvalue())
+
     def test_supervisor_telemetry_is_typed_and_hides_private_data(self):
         fake=types.SimpleNamespace(returncode=0,stderr='',stdout='\n'.join([
             json.dumps({'supervisor_recovery':2,'payload':'PRIVATE_CLIENT'}),
