@@ -2,6 +2,7 @@ import {MAESTRO} from './maestro/identity.mjs';
 import {ENGINEERING_CONTEXT} from './maestro/engineering.mjs';
 import {SUPERVISOR_INSTRUCTION,buildPrompt} from './maestro/prompt.mjs';
 import {loadCheckpoint} from './maestro/checkpoint.mjs';
+import {loadOperationalState} from './maestro/operational-state.mjs';
 import {loadPriorityQueue,enforceQueuePriority} from './maestro/priority-queue.mjs';
 import {randomUUID} from 'node:crypto';
 import {createFileHandoffStore,emptyHandoffState,reconcileHandoffs,observeCheckpoint,registerHandoff,summarizeHandoffs} from './maestro/handoff-store.mjs';
@@ -107,14 +108,19 @@ export async function consultWithFallback(options={}){
 export const review=consultWithFallback;
 export async function runSupervisorCycle({fetcher=fetch,gemini=consultWithFallback,clock=()=>new Date(),
  checkpointUrl=process.env.MAESTRO_CHECKPOINT_URL,previous=null,staleCount=0,log=console.log,handoffStore=null,
- priorityQueueLoader=loadPriorityQueue}={}){
+ priorityQueueLoader=loadPriorityQueue,operationalReader=loadOperationalState}={}){
  const now=clock();
  log('[maestro-engineering-context] '+JSON.stringify(ENGINEERING_CONTEXT));
  const state=await loadCheckpoint({fetcher,...(checkpointUrl?{url:checkpointUrl}:{}),now});
  // Durable handoff receipts are separate from the public May-owned checkpoint.
  const stored=handoffStore?await handoffStore.read():emptyHandoffState();
  const reconciled=reconcileHandoffs(stored,state.checkpoint,now);
- const audit=summarizeHandoffs(reconciled.state,state);
+ // The encrypted SQLite records operational events, not May's handoff receipts.
+ // Keep both timelines separate: a successful worker cycle never acknowledges a handoff.
+ let operational;
+ try{operational=await operationalReader({now});}
+ catch{operational={status:'unavailable',reason:'observer_read_failed'};}
+ const audit={...summarizeHandoffs(reconciled.state,state),operational};
  if(!handoffStore)audit.executionStatus='unverified';
  // Always write the checkpoint observation before contacting AI. A 429/402/503
  // cannot suppress evidence of an unchanged, unreadable or overdue checkpoint.

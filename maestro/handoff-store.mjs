@@ -21,6 +21,24 @@ function assertState(state){
       throw Error('Observacao de checkpoint invalida');
     }
   }
+  // Operational SQLite telemetry is not a handoff receipt. Persist it separately.
+  if(o?.operational!==undefined){
+    const op=o.operational;
+    if(!op||!['verified','unavailable','disabled'].includes(op.status))
+      throw Error('Observacao operacional invalida');
+    if(op.status==='verified'&&(
+      !/^agent-state\/railway-[a-z0-9-]{2,36}$/.test(op.branch||'')||
+      !/^[a-f0-9]{40}$/.test(op.snapshotSha||'')||
+      !Number.isSafeInteger(op.taskCount)||op.taskCount<0||
+      !['recent','stale','unknown','invalid_future'].includes(op.eventRecency)||
+      !(op.lastEventAt===null||Number.isFinite(Date.parse(op.lastEventAt)))||
+      !(op.lastSuccessEventAt===null||Number.isFinite(Date.parse(op.lastSuccessEventAt)))||
+      !Number.isSafeInteger(op.eventAgeMinutes??0)||
+      !op.taskCounts||['queued','running','succeeded','failed','blocked'].some(k=>
+        !Number.isSafeInteger(op.taskCounts[k])||op.taskCounts[k]<0)||
+      ['queued','running','succeeded','failed','blocked'].reduce((n,k)=>n+op.taskCounts[k],0)!==op.taskCount
+    ))throw Error('Dados operacionais invalidos');
+  }
   const seen=new Set();
   for(const h of state.handoffs){
     if(!h||typeof h.id!=='string'||!ID.test(h.id)||seen.has(h.id)||!['pending','overdue','acknowledged'].includes(h.status))throw Error('Handoff invalido');
@@ -101,7 +119,8 @@ export function observeCheckpoint(state,audit,now=new Date()){
     checkpointRecencyStatus:audit.checkpointRecencyStatus,
     executionStatus:audit.executionStatus,
     pendingHandoffs:audit.pendingHandoffs,
-    overdueHandoffs:audit.overdueHandoffs
+    overdueHandoffs:audit.overdueHandoffs,
+    operational:audit.operational
   };
   return assertState({...state,lastObservation:observation});
 }

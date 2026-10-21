@@ -74,6 +74,10 @@ prompts, stdout ou arquivo de diagnóstico.
 6. Em falha, desativar Railway antes de reativar Actions. Não apagar
    checkpoint ou dados históricos.
 
+## Observabilidade separada do checkpoint da May
+O arquivo `horizon-site/agents/checkpoints/maestro/checkpoint.json` continua historico e pertence ao registro da May. A importacao `migration_verified` apenas certifica a memoria SQLite cifrada em `May-Maestro-Executor/agent-state/railway-staging`.
+O observador `maestro/operational-state.mjs` valida SHA e HMAC da memoria e passa o SQLite autenticado por stdin a `maestro/operational-state.py`, que o examina em modo somente leitura e devolve exclusivamente totais e horarios de eventos. O supervisor armazena essa observacao junto aos handoffs locais SEM reconhece-los automaticamente. Codigo 0 do worker e snapshot SQLite recente nao substituem prova de QA/publicacao ou recibo da May.
+
 A publicação do módulo inerte NÃO comprova que os agentes já estão
 executando fora do GitHub Actions. A migração só acaba depois da
 validação de execução real e da troca do escritor.
