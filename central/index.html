@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#191e26">
+<meta name="description" content="Central Horizon: gestão dos 17 agentes, tarefas e eventos ao vivo."><meta name="apple-mobile-web-app-capable" content="yes">
+<title>Horizon | Central de Agentes</title><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css"><script type="module" src="./app.js"></script></head>
+<body>
+<div id="shell">
+  <aside class="side" aria-label="Navegação principal">
+    <a href="#inicio" class="brand" aria-label="Central Horizon, início"><span class="brand-mark">H</span><span><strong>HORIZON</strong><small>CENTRAL DE AGENTES</small></span></a>
+    <nav id="navigation" aria-label="Menu lateral">
+      <a data-page="inicio" href="#inicio"><span class="nav-icon">⌂</span> Início</a>
+      <a data-page="tarefas" href="#tarefas"><span class="nav-icon">☷</span> Tarefas</a>
+      <a data-page="agentes" href="#agentes"><span class="nav-icon">◎</span> 17 agentes</a>
+      <a data-page="historico" href="#historico"><span class="nav-icon">↶</span> Histórico</a>
+      <a data-page="consumo" href="#consumo"><span class="nav-icon">◉</span> Tokens</a>
+      <a data-page="sistema" href="#sistema"><span class="nav-icon">⚙</span> Sistema</a>
+    </nav>
+    <div class="side-bottom"><p>Controle operacional</p><small>Sem IA para atualizar indicadores.</small></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <div class="heading"><span class="compact-logo">H</span><span id="page-label">Central de Agentes</span></div>
+      <div class="top-actions"><span id="connection" class="connection"><i></i><span>Conectando…</span></span>
+      <button id="refresh" class="icon-button" title="Atualizar dados" aria-label="Atualizar dados">↻</button>
+      <button id="logout" class="icon-button" title="Sair" aria-label="Sair">⇥</button></div>
+    </header>
+    <main id="content" tabindex="-1"><div class="empty">Carregando a central...</div></main>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  </div>
+  <nav class="bottom-nav" aria-label="Menu do celular">
+    <a data-page="inicio" href="#inicio"><span>⌂</span>Início</a>
+    <a data-page="tarefas" href="#tarefas"><span>☷</span>Tarefas</a>
+    <a data-page="agentes" href="#agentes"><span>◎</span>Agentes</a>
+    <a data-page="consumo" href="#consumo"><span>◉</span>Tokens</a>
+    <a data-page="sistema" href="#sistema"><span>⚙</span>Sistema</a>
+  </nav>
+</div>
+<section id="gate" class="gate" hidden><div class="login">
+  <span class="brand-mark large">H</span><h1>Central Horizon</h1>
+  <p>Área administrativa privada. Use a chave de acesso administrativo já configurada no Horizon Site.</p>
+  <form id="login-form"><label for="password">Chave de acesso</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit" class="primary full">Entrar na central</button></form>
+  <p id="login-error" class="error" role="alert"></p>
+</div></section>
+</body></html>
