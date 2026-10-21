@@ -119,7 +119,7 @@ async function loadOverview(){
    if(Array.isArray(members?.agents))rec=members.agents.find(x=>x.id===id||x.agent===id);
    else if(members?.agents&&typeof members.agents==='object')rec=members.agents[id]||null;
    return {id,status:typeof rec?.status==='string'?rec.status:'sem telemetria individual',
-   currentTask:typeof rec?.current_task==='string'?rec.current_task:null,
+   currentTask:typeof rec?.current_task==='string'?rec.current_task:(typeof rec?.task_ref==='string'?rec.task_ref:null),
    updatedAt:typeof rec?.updated_at==='string'?rec.updated_at:null};
   });
   const issues=[];
