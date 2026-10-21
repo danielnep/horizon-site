@@ -134,7 +134,7 @@ class RailwayTeamTests(unittest.TestCase):
             returncode=1,
             stdout=json.dumps({'queue_reset': {'applied': True, 'removed': 12,
                                                 'secret': 'PRIVATE_TOKEN'}}),
-            stderr='Traceback (most recent call last):\\nRuntimeError: Queue not empty after owner reset')
+            stderr='Traceback (most recent call last):\nRuntimeError: Queue not empty after owner reset')
         buffer = StringIO()
         with redirect_stdout(buffer):
             team.report_cycle_telemetry(fake)
