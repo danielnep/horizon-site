@@ -184,11 +184,20 @@ function pageConsumo(){
  '<p class="warning">O executor ainda não fornece contabilidade individual de tokens para esta central.</p>'+
  '<p class="smallprint">A Central não inventa consumo nem estima custo sem a resposta da API. A análise opcional com IA informa o consumo daquela solicitação quando o provedor o disponibilizar.</p>';
 }
+function simpleDiagnosis(e){
+ const code=String(e?.rc||e?.code||'');
+ const reason=String(e?.reason||e?.errorClass||'');
+ if(reason==='quota'||code==='429')return 'Gemini atingiu seu limite. O sistema deve alternar para Groq.';
+ if(reason==='server'||code==='503')return 'O provedor de IA está temporariamente indisponível. É necessário usar o alternativo.';
+ if(reason==='RuntimeError'||code==='1'||e?.kind==='cycle_failed')return 'A execução falhou. Este registro não identifica a causa exata. É preciso investigar o erro interno.';
+ if(code==='0')return 'O ciclo terminou sem erro técnico. Isso não confirma entrega de tarefa.';
+ return 'Sem informações suficientes para identificar a causa de um erro.';
+}
 function pageSistema(){
  const w=snapshot?.worker||{status:'sem dados'};
  const last=w.lastCycle||{};
- return heading('Saúde do sistema','O que foi observado de verdade, sem confundir serviço online com agente trabalhando.')+
- '<section class="panel"><div class="section-heading"><h2>Execução Horizon</h2>'+chip(w.status)+'</div>'+
+ return heading('Saúde do sistema','O que aconteceu, o que significa e como resolver.')+
+ '<section class="panel"><div class="diagnosis">'+escapeHTML(simpleDiagnosis(last))+'</div><div class="section-heading"><h2>Execução Horizon</h2>'+chip(w.status)+'</div>'+
  '<div class="detail-grid">'+
  '<div><small>Serviço desta central</small><b>'+escapeHTML(online?'Conectado':'Sem confirmação de conexão')+'</b></div>'+
  '<div><small>Worker</small><b>'+escapeHTML(w.status||'não verificado')+'</b></div>'+
@@ -196,7 +205,7 @@ function pageSistema(){
  '<div><small>Resultado do último ciclo</small><b>'+escapeHTML(last.rc??last.code??'não informado')+'</b></div>'+
  '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'Railway consultado':'Railway indisponível')+'</b></div>'+
  '<div><small>Presença dos agentes</small><b>'+escapeHTML(snapshot?.available?.attendance?'Registros consultados':'Sem confirmação individual')+'</b></div></div>'+
- '<p class="smallprint">Os erros completos do processo permanecem nos logs do Railway. Este painel não tem acesso direto à API administrativa do Railway.</p></section>'+
+ '<p class="smallprint">Explicação baseada no último registro, sem inventar causas.</p><div class="task-controls"><button type="button" class="secondary" id="diagnose-ai">Investigar com IA</button></div><div id="diagnosis-result" class="diagnosis" hidden></div></section>'+
  '<div class="section-heading"><h2>Conexão</h2></div><div class="smallprint">Atualizações por SSE, com reconexão e atualização periódica de segurança. Nada de IA para sincronizar estados.</div>';
 }
 function render(){
@@ -233,6 +242,12 @@ function bind(){
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
  document.querySelectorAll('[data-assign-agent]').forEach(btn=>btn.addEventListener('click',()=>{selectedAgentId=btn.dataset.assignAgent;location.hash='#inicio';render();$('objective')?.focus();}));
  bindTaskActions(document);
+ const diagnosis=$('diagnose-ai');if(diagnosis)diagnosis.addEventListener('click',async()=>{
+  diagnosis.disabled=true;diagnosis.textContent='Analisando...';
+  try{const out=await api('ai/diagnose',{method:'POST',body:'{}'});
+   const target=$('diagnosis-result');target.hidden=false;target.textContent=out.response||'Sem conclusão do provedor.';
+  }catch(e){note(e.message,true);}finally{diagnosis.disabled=false;diagnosis.textContent='Investigar com IA';}
+ });
  const form=$('task-form');
  if(form){
  const project=$('project');
