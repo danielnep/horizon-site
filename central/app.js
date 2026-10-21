@@ -39,6 +39,7 @@ const PROJECTS={
 'novo-projeto':{name:'Outro projeto',repository:'danielnep/'}};
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
+let repositoryList=[],scopeByRepo=new Map(),repositoryProblem=null;
 let adminAuthorized=false;
 function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function time(x){if(!x)return 'Não informado';const d=new Date(x);return Number.isNaN(d.getTime())?'Não informado':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);}
@@ -100,22 +101,30 @@ function listTasks(tasks,limit=0){
  return list.length?'<div class="list">'+list.map(taskRow).join('')+'</div>':
  '<div class="empty">Nenhuma tarefa encontrada nos registros consultados. Se não houver fila ativa, o painel preserva resultados históricos separadamente.</div>';
 }
-function projectOptions(){return Object.entries(PROJECTS).map(([id,p])=>'<option value="'+id+'">'+escapeHTML(p.name)+'</option>').join('');}
+function projectOptions(){return repositoryList.length?repositoryList.map(r=>'<option value="'+escapeHTML(r.fullName)+'">'+escapeHTML(r.name)+'</option>').join(''):'<option value="">Carregando projetos…</option>';}
 function agentOptions(){return '<option value="may-maestro">Distribuição automática (Maestro)</option>'+Object.keys(AGENT_NAMES).filter(x=>x!=='may-maestro').map(id=>'<option value="'+id+'">'+escapeHTML(label(id))+'</option>').join('');}
 function requestForm(){
- return '<section class="panel request" aria-label="Nova solicitação"><div class="request-head"><h2>O que os agentes precisam fazer?</h2><span class="smallprint">Uma solicitação por vez</span></div>'+
- '<form id="task-form"><textarea id="objective" name="objective" placeholder="Ex.: Revisar o login do Ronda Pro, preservar a interface atual e verificar os testes..." required minlength="12" maxlength="2800">'+escapeHTML(draft)+'</textarea>'+
- '<div class="request-meta"><div class="field"><label for="project">Projeto</label><select id="project" name="project">'+projectOptions()+'</select></div>'+
+ return '<section class="panel request" aria-label="Nova solicitação"><div class="request-head"><h2>O que os agentes precisam fazer?</h2><span class="smallprint">Solicitação direta ao Maestro</span></div>'+
+ '<form id="task-form"><textarea id="objective" name="objective" placeholder="Ex.: Corrigir os problemas do Ronda Pro sem modificar o visual aprovado." required minlength="12" maxlength="2800">'+escapeHTML(draft)+'</textarea>'+
+ '<div class="request-meta"><div class="field"><label for="repo-search">Escolher projeto</label><input type="search" id="repo-search" placeholder="Buscar nos meus repositórios..." autocomplete="off">'+
+ '<select id="project" name="project" required>'+projectOptions()+'</select><small id="repository-message" class="smallprint">'+escapeHTML(repositoryProblem||'Projetos consultados diretamente no GitHub.')+'</small></div>'+
  '<div class="field"><label for="priority">Prioridade</label><select id="priority" name="priority"><option value="P2">Normal</option><option value="P1">Alta</option><option value="P0">Urgente</option><option value="P3">Baixa</option></select></div>'+
- '<div class="field"><label for="agent">Responsável</label><select id="agent" name="agent">'+agentOptions()+'</select></div></div>'+
- '<div id="task-advanced" hidden class="request-meta">'+
- '<div class="field"><label for="repo">Repositório GitHub</label><input id="repo" name="repo" autocomplete="off" value="danielnep/app-hondas-maxvel"></div>'+
- '<div class="field"><label for="delivery">Tipo de projeto</label><select id="delivery" name="delivery"><option value="existing_product">Projeto existente</option><option value="new_product">Novo projeto</option></select></div>'+
- '<div class="field"><label for="paths">Arquivos permitidos, separados por vírgula</label><input id="paths" name="paths" placeholder="src/**, index.html"></div></div>'+
- '<div class="request-actions"><label class="checkbox"><input type="checkbox" id="public-confirm" required>Confirmo que a solicitação não contém segredos ou dados privados (fila privada no Railway).</label>'+
- '<div class="actions-right"><button type="button" class="secondary" id="ai-action">Analisar com IA</button><button type="submit" class="primary" id="task-submit">Enviar solicitação ↑</button></div></div>'+
- '<button type="button" class="quiet" id="advanced-toggle" aria-expanded="false">Mostrar configuração da tarefa ▾</button>'+
+ '<div class="field"><label for="agent">Especialista</label><select id="agent" name="agent">'+agentOptions()+'</select></div></div>'+
+ '<div id="task-advanced" hidden><p class="smallprint">A Central consulta automaticamente os arquivos permitidos no repositório selecionado. Você não precisa digitar endereços ou caminhos técnicos.</p>'+
+ '<div class="field"><label for="delivery">Tipo de trabalho</label><select id="delivery"><option value="existing_product">Melhorar projeto existente</option><option value="new_product">Criar novo produto</option></select></div>'+
+ '<p id="scope-message" class="smallprint"></p></div>'+
+ '<div class="request-actions"><label class="checkbox"><input type="checkbox" id="public-confirm" required>Esta solicitação não contém senhas nem outros segredos.</label>'+
+ '<div class="actions-right"><button type="button" class="secondary" id="ai-action">Analisar pedido</button><button type="submit" class="primary" id="task-submit">Enviar para os agentes ↑</button></div></div>'+
+ '<button type="button" class="quiet" id="advanced-toggle" aria-expanded="false">Detalhes da solicitação ▾</button>'+
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
+}
+async function loadRepositories(){
+ try{
+  const response=await api('repositories');
+  repositoryList=Array.isArray(response.repositories)?response.repositories.filter(x=>/^danielnep\/[a-zA-Z0-9._-]+$/.test(x.fullName)):[];
+  repositoryProblem=repositoryList.length?null:'Nenhum projeto foi encontrado no GitHub.';
+ }catch(error){repositoryProblem='Não foi possível consultar seus projetos: '+error.message;}
+ if(active()==='inicio')render();
 }
 function overviewMarkup(){
  return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
@@ -201,22 +210,49 @@ function bind(){
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
  const form=$('task-form');
  if(form){
- const project=$('project'),repo=$('repo'),delivery=$('delivery'),advanced=$('task-advanced'),toggle=$('advanced-toggle');
- const presets={'ronda-pro':'src/**','michelle-preview':'index.html','horizon-site':'index.html'};
- function applyProject(){
-  if(project.value==='novo-projeto'){repo.value='danielnep/';delivery.value='new_product';$('paths').value='';advanced.hidden=false;toggle.setAttribute('aria-expanded','true');}
-  else{repo.value=PROJECTS[project.value].repository;delivery.value='existing_product';$('paths').value=presets[project.value]||'';}}
- project.addEventListener('change',applyProject);applyProject();
- toggle.addEventListener('click',()=>{advanced.hidden=!advanced.hidden;toggle.setAttribute('aria-expanded',String(!advanced.hidden));toggle.textContent=advanced.hidden?'Mostrar configuração da tarefa ▾':'Ocultar configuração ▴';});
+ const project=$('project'),delivery=$('delivery'),advanced=$('task-advanced'),toggle=$('advanced-toggle');
+ const scopeMessage=$('scope-message'),repoSearch=$('repo-search');
+ let scopePending=false;
+ async function inspectSelected(){
+  const repo=project.value;
+  if(!repo||!repositoryList.some(x=>x.fullName===repo))return;
+  if(scopeByRepo.has(repo)){scopeMessage.textContent='Áreas autorizadas: '+scopeByRepo.get(repo).join(', ');return;}
+  scopePending=true;
+  scopeMessage.textContent='Verificando arquivos do projeto...';
+  try{const result=await api('repository-scopes?repository='+encodeURIComponent(repo));
+   scopeByRepo.set(repo,Array.isArray(result.paths)?result.paths:[]);
+   if(project.value===repo)scopeMessage.textContent=scopeByRepo.get(repo).length?
+    'Áreas disponíveis: '+scopeByRepo.get(repo).join(', '):'Nenhuma área segura identificada para edição.';
+  }catch(error){scopeMessage.textContent=error.message;note('Falha ao consultar os arquivos de '+repo+'.',true);}
+  finally{scopePending=false;}
+ }
+ project.addEventListener('change',()=>void inspectSelected());
+ repoSearch.addEventListener('input',()=>{
+  const selected=project.value;
+  const term=repoSearch.value.trim().toLocaleLowerCase('pt-BR');
+  const filtered=repositoryList.filter(r=>r.name.toLocaleLowerCase('pt-BR').includes(term));
+  project.innerHTML=filtered.length?filtered.map(r=>'<option value="'+escapeHTML(r.fullName)+'">'+escapeHTML(r.name)+'</option>').join(''):'<option value="">Nenhum projeto com esse nome</option>';
+  if(filtered.some(r=>r.fullName===selected))project.value=selected;
+  void inspectSelected();
+ });
+ void inspectSelected();
+ toggle.addEventListener('click',()=>{advanced.hidden=!advanced.hidden;toggle.setAttribute('aria-expanded',String(!advanced.hidden));toggle.textContent=advanced.hidden?'Detalhes da solicitação ▾':'Ocultar detalhes ▴';});
  $('ai-action').addEventListener('click',async()=>{const message=objective.value.trim();if(message.length<12){note('Descreva a solicitação antes de analisar.',true);return;}
  const b=$('ai-action');b.disabled=true;b.textContent='Analisando...';
  try{const r=await api('ai/interpret',{method:'POST',body:JSON.stringify({message})});const target=$('ai-result');target.hidden=false;target.textContent=r.response+(r.usage?.input!==null&&r.usage?.input!==undefined?'\n\nTokens desta análise: '+r.usage.input+' entrada, '+(r.usage.output??'não informado')+' saída.':'');}
  catch(e){note(e.message,true);}finally{b.disabled=false;b.textContent='Analisar com IA';}});
  form.addEventListener('submit',async e=>{e.preventDefault();const b=$('task-submit');if(b.disabled)return;
- const value={objective:objective.value.trim(),project:project.value==='novo-projeto'?'novo-projeto':project.value,repository:repo.value.trim(),priority:$('priority').value,agent:$('agent').value,
- delivery_type:delivery.value,allowed_paths:$('paths').value.split(',').map(s=>s.trim()).filter(Boolean),public_data_confirmed:$('public-confirm').checked};
- if(!value.repository.startsWith('danielnep/')||value.repository.length<13){advanced.hidden=false;note('Informe o repositório autorizado.',true);return;}
- if(value.delivery_type==='existing_product'&&value.allowed_paths.length===0){advanced.hidden=false;note('Para alterar um projeto existente, informe os caminhos permitidos.',true);return;}
+ const repository=project.value;const selected=repositoryList.find(r=>r.fullName===repository);
+ if(!selected){note('Selecione um projeto da lista.',true);return;}
+ let paths=scopeByRepo.get(repository);
+ if(delivery.value==='existing_product'&&!paths){
+  try{const result=await api('repository-scopes?repository='+encodeURIComponent(repository));paths=result.paths;scopeByRepo.set(repository,paths);}
+  catch{note('Não consegui verificar os arquivos do projeto. Nada foi enviado.',true);return;}
+ }
+ if(delivery.value==='existing_product'&&(!Array.isArray(paths)||paths.length===0)){note('Não foi possível identificar áreas seguras neste projeto. Nada foi enviado.',true);return;}
+ const value={objective:objective.value.trim(),project:selected.name.toLowerCase(),repository,
+ priority:$('priority').value,agent:$('agent').value,delivery_type:delivery.value,
+ allowed_paths:delivery.value==='new_product'?[]:paths,public_data_confirmed:$('public-confirm').checked};
  b.disabled=true;b.textContent='Enviando...';
  try{const saved=await api('tasks',{method:'POST',body:JSON.stringify(value)});draft='';note('Solicitação '+saved.id+' enviada. A execução ainda não foi comprovada.');await refresh(true);}
  catch(err){note(err.message,true);}finally{b.disabled=false;b.textContent='Enviar solicitação ↑';}
@@ -261,6 +297,7 @@ async function boot(){
  try{const session=await api('session');adminAuthorized=Boolean(session.authenticated);}catch{}
  await refresh(true);
  connectEvents();
+ void loadRepositories();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));
 $('login-form').addEventListener('submit',async e=>{
