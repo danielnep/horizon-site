@@ -1,3 +1,4 @@
+import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
 const $=id=>document.getElementById(id);
 const PAGES_MODE=location.hostname.endsWith('.github.io');
 
@@ -109,6 +110,13 @@ function taskRow(t){
  const live='<div class="live-operation"><div class="live-operation-title">'+(active?'<i class="pulse" aria-hidden="true"></i>':'')+
   escapeHTML(active?'Atividade atual':'Última atividade conhecida')+'</div><p class="live-operation-message">'+escapeHTML(activity)+'</p>'+
   '<span class="live-operation-time">'+escapeHTML(subtitle)+'</span>'+track+'</div>';
+ const planItems=splitTaskPlan(t.description||t.title);
+ const statuses=taskPlanStatus(planItems,t.stages||[]);
+ const checklist=statuses.length>1?'<section class="task-plan"><h3>Etapas previstas</h3><ol>'+
+  statuses.map((item,i)=>'<li class="'+(item.verified?'task-step-done':'task-step-pending')+'"><span class="task-step-marker">'+
+  (item.verified?'✓':i+1)+'</span><div><span>'+escapeHTML(item.text)+'</span><small>'+
+  (item.verified?'Concluída com registro':item.grounded?emPortugues(item.state):'Aguardando confirmação individual')+
+  (item.agent?' · '+escapeHTML(label(item.agent)):'')+'</small></div></li>').join('')+'</ol></section>':'';
  const steps=Array.isArray(t.stages)&&t.stages.length?
   '<div class="task-stages">'+t.stages.map(stage=>'<div class="stage-line"><span class="stage-icon">'+
   (stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent))+'</b> '+
@@ -123,7 +131,7 @@ function taskRow(t){
  '<p class="smallprint">'+(t.inQueue?'Esta tarefa está na fila do servidor.':
  'Esta tarefa não está na fila atual. O registro anterior pode ser consultado no histórico.')+'</p>'+
  (t.blocker?'<p class="error">Problema: '+escapeHTML(t.blocker)+'</p>':'')+
- '<details><summary class="history-toggle">Ver etapas anteriores e resultados</summary>'+steps+
+ checklist+'<details><summary class="history-toggle">Ver histórico e comprovantes</summary>'+steps+
  '<div class="detail-grid"><div><small>Responsável</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
  '<div><small>Situação</small><b>'+escapeHTML(emPortugues(t.rawStatus))+'</b></div>'+
  '<div><small>Testes</small><b>'+(t.approved?'Aprovados':'Sem aprovação comprovada')+'</b></div>'+
