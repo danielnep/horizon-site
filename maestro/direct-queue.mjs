@@ -104,17 +104,33 @@ export async function directTasks(){
   const outcome=result?JSON.parse(result):null;
   const stages=Array.isArray(outcome?.tasks)?outcome.tasks:[];
   const rawStatus=outcome?.status||'pending';
+  const supervision=outcome?.supervision&&typeof outcome.supervision==='object'?
+    outcome.supervision:null;
+  const waitReason=String(supervision?.reason||'');
+  const waiting=['scheduled_retry','waiting_for_dependencies','being_executed',
+    'lease_expired'].includes(waitReason);
   const finished=['completed','done','succeeded','reported_complete'].includes(rawStatus);
   const status=finished?(outcome?.quality?.approved===true&&outcome?.publication?.published===true?
     'concluída':'aguardando validação'):
     /fail|error|block|reject/.test(rawStatus)?'bloqueada':
-    /running|in_progress/.test(rawStatus)?'em execução':'na fila';
+    /running|in_progress/.test(rawStatus)?'em execução':waiting?'aguardando':'na fila';
   tasks.push({id:task.task_id,project:task.project,repository:task.repository,
    agent:task.agent,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
    status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':status,
    rawStatus,hasResult:!!outcome,
-   stages:stages.map(x=>({agent:x.agent,state:x.status,summary:x.summary||null,
-    blocker:x.blocker||null})),
+   stages:stages.map(x=>({taskId:x.task_id||null,agent:x.agent,state:x.status,
+    summary:x.summary||null,blocker:x.blocker||null,
+    waitReason:x.wait_reason||null,retryReason:x.retry_reason||null,
+    nextRetryAt:x.next_retry_at||null,blockedBy:Array.isArray(x.blocked_by)?x.blocked_by.slice(0,17):[],
+    attempts:Number.isInteger(x.attempts)?x.attempts:0,
+    maxAttempts:Number.isInteger(x.max_attempts)?x.max_attempts:null,
+    checkpointStep:Number.isInteger(x.checkpoint_step)?x.checkpoint_step:null})),
+   supervision:supervision?{
+    reason:waitReason,firstPendingTask:supervision.first_pending_task||null,
+    firstPendingAgent:supervision.first_pending_agent||null,
+    blockedBy:Array.isArray(supervision.blocked_by)?supervision.blocked_by.slice(0,17):[],
+    retryReason:supervision.retry_reason||null,nextRetryAt:supervision.next_retry_at||null,
+    checkedAt:supervision.checked_at||null}:null,
    approved:outcome?.quality?.approved===true,
    published:outcome?.publication?.published===true,
    updatedAt:outcome?.updated_at||null,
