@@ -20,6 +20,8 @@ let sequence=0, lastCycle=null, workerState='não verificado';
 let monitorTimer=null,monitorDigest=null,monitorPending=false;
 let githubCache={expires:0,value:null,promise:null};
 const taskDocumentCache=new Map();
+let repoCache={expires:0,value:null,promise:null};
+const REPO_LABELS={'romaneio-digital':'Romaneio Digital','app-hondas-maxvel':'Ronda Pro','michelle-preview':'Painel Michelle','horizon-site':'Horizon Site','horizon-preview':'Horizon Preview','sistema-fluxo-restaurantes':'Fluxo Restaurantes','app-desert-falcons':'Desert Falcons','May-Maestro-Executor':'Maestro / Executor'};
 let aiBudget=new Map();
 function send(res,status,value,headers={}){
   res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store',
@@ -105,6 +107,63 @@ function statusLabel(obj){
  if(/waiting|await|pending|defer/.test(state))return 'aguardando';
  return 'na fila';
 }
+
+async function githubOwner(endpoint){
+ const token=process.env.GITHUB_TOKEN;
+ const response=await fetch('https://api.github.com/'+endpoint,{
+  headers:{accept:'application/vnd.github+json','user-agent':'Horizon-Control/1',
+   ...(token?{authorization:'Bearer '+token}:{})},
+  signal:AbortSignal.timeout(12000)});
+ if(!response.ok)throw Error('github_repos_http_'+response.status);
+ return response.json();
+}
+export async function ownerRepositories(){
+ if(repoCache.value&&repoCache.expires>Date.now())return repoCache.value;
+ if(repoCache.promise)return repoCache.promise;
+ repoCache.promise=(async()=>{
+  const pages=[];
+  for(let page=1;page<=3;page++){
+   const chunk=await githubOwner('users/danielnep/repos?per_page=100&page='+page+'&sort=updated&type=owner');
+   if(!Array.isArray(chunk))throw Error('resposta_repositorios_invalida');
+   pages.push(...chunk);
+   if(chunk.length<100)break;
+  }
+  const repositories=pages.filter(x=>x?.owner?.login==='danielnep'&&x.private!==true&&!x.archived)
+  .map(x=>({name:String(x.name),repository:String(x.full_name),label:REPO_LABELS[x.name]||String(x.name).replace(/-/g,' '),
+   description:String(x.description||'').slice(0,150),defaultBranch:String(x.default_branch||'main')}))
+  .filter(x=>REPO.test(x.repository))
+  .sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
+  repoCache.value=repositories;repoCache.expires=Date.now()+300000;
+  return repositories;
+ })().finally(()=>{repoCache.promise=null});
+ return repoCache.promise;
+}
+export function deriveCodePaths(items,repo){
+ if(!Array.isArray(items))return [];
+ const dirs=['src','app','js','css','assets','public','server','scripts','is','lib','components','pages','dist','tests','ferramentas','central','integrations','docs','analysis'];
+ const allowedFiles=/\.(html|css|js|mjs|jsx|ts|tsx|svg|webmanifest|json)$/i;
+ const restricted=/(\.env|lock\.json|credential|password|secret|private.?key|token|\.sqlite|\.db$)/i;
+ const blockedRepo=repo==='danielnep/May-Maestro-Executor'?new Set(['agents','horizon_core','sandbox','android_tools','maestro_exec','executors','tasks','tests']):new Set();
+ const folderPaths=dirs.filter(name=>!blockedRepo.has(name)&&items.some(x=>x.type==='dir'&&x.name===name)).map(name=>name+'/**');
+ const filenames=items.filter(x=>x.type==='file'&&allowedFiles.test(x.name)&&!restricted.test(x.name)&&!x.name.startsWith('.')).map(x=>x.name);
+ return [...folderPaths,...filenames].slice(0,25);
+}
+async function resolveTaskDefaults(value){
+ if(!value||typeof value!=='object')throw Error('solicitacao_invalida');
+ const repo=String(value.repository||'');
+ const repositories=await ownerRepositories();
+ const selected=repositories.find(x=>x.repository===repo);
+ if(!selected)throw Error('selecione_um_repositorio_da_lista');
+ const valueProject=String(value.project||selected.name).toLowerCase();
+ const paths=Array.isArray(value.allowed_paths)&&value.allowed_paths.length?value.allowed_paths:null;
+ if(value.delivery_type==='new_product')return {...value,project:valueProject,repository:repo,allowed_paths:paths||[]};
+ if(paths)return {...value,project:valueProject,repository:repo};
+ const root=await githubOwner('repos/'+repo+'/contents?ref='+encodeURIComponent(selected.defaultBranch));
+ const resolved=deriveCodePaths(root,repo);
+ if(!resolved.length)throw Error('nao_encontrei_arquivos_editaveis_nesse_projeto');
+ return {...value,project:valueProject,repository:repo,allowed_paths:resolved};
+}
+
 async function loadOverview(){
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
@@ -198,7 +257,8 @@ async function interpret(payload){
  output:Number.isFinite(usage.completion_tokens)?usage.completion_tokens:null},status:200};
 }
 async function createTask(value){
- const result=await submitDirectTask(value);
+ const normalized=await resolveTaskDefaults(value);
+ const result=await submitDirectTask(normalized);
  githubCache.expires=0;
  notify('task',{event:'submitted',taskId:result.id,project:String(value.project||'')});
  return {...result,note:'Maestro recebeu a solicitação no Railway; execução será confirmada pelo worker.'};
@@ -237,7 +297,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  }
  const publicRead=req.method==='GET'&&[
  '/central/api/overview','/central/api/agents','/central/api/tasks',
- '/central/api/usage','/central/api/history','/central/api/events'
+ '/central/api/usage','/central/api/history','/central/api/events','/central/api/repositories'
  ].includes(raw);
  if(!publicRead&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
  if(raw==='/central/api/logout'&&req.method==='POST'){
@@ -252,6 +312,10 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   for(const event of events.filter(e=>e.id>since))res.write('id: '+event.id+'\nevent: update\ndata: '+JSON.stringify(event)+'\n\n');
   const ping=setInterval(()=>{try{res.write(': ping\n\n');}catch{}},24000);
   req.on('close',()=>{clearInterval(ping);live.delete(res);stopLiveMonitorIfUnused();});return true;
+ }
+ if(req.method==='GET'&&raw==='/central/api/repositories'){
+  try{const repositories=await ownerRepositories();send(res,200,{repositories,count:repositories.length});}
+  catch{send(res,503,{error:'nao_foi_possivel_consultar_repositorios'});}return true;
  }
  if(req.method==='GET'&&['/central/api/overview','/central/api/agents','/central/api/tasks','/central/api/usage','/central/api/history'].includes(raw)){
   try{const overview=await loadOverview();
