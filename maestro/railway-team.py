@@ -414,11 +414,46 @@ def refresh_requests(root, token, *, opener=urllib.request.urlopen):
     return len(incoming), digest
 
 
+DIRECT_REQUEST = re.compile(r"^[a-z0-9][a-z0-9-]{2,69}\.json$")
+
+
+def direct_inventory(base):
+    """Read-only bounded manifest from the Railway persistent inbox.
+
+    A newly committed request is visible in the next second: no GitHub polling.
+    """
+    root = Path(base).resolve()
+    if not root.is_absolute():
+        raise RuntimeError("direct_inbox_invalid")
+    directory = root / "requests"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    (root / "results").mkdir(parents=True, exist_ok=True, mode=0o700)
+    entries = []
+    for item in directory.iterdir():
+        if item.name.startswith(".") and item.name.endswith(".tmp"):
+            continue
+        if not DIRECT_REQUEST.fullmatch(item.name):
+            raise RuntimeError("direct_inbox_filename_invalid")
+        if item.is_symlink() or not item.is_file():
+            raise RuntimeError("direct_inbox_file_invalid")
+        st = item.stat()
+        if not 0 < st.st_size <= 65536:
+            raise RuntimeError("direct_inbox_size_invalid")
+        entries.append((item.name, st.st_size, st.st_mtime_ns))
+        if len(entries) > 100:
+            raise RuntimeError("direct_inbox_full")
+    entries.sort()
+    digest = hashlib.sha256(json.dumps(entries).encode()).hexdigest()[:12]
+    return len(entries), digest
+
+
 def run_cycle(root, env, *, run=subprocess.run):
     if shutil.disk_usage(root).free < MIN_SCRATCH_FREE_BYTES:
         raise RuntimeError("scratch_storage_low")
+    inbox = str(Path(env.get("HORIZON_DIRECT_INBOX_DIR", "/data/horizon-direct-queue")).resolve())
     args = [sys.executable, "-m", "horizon_core.commit_bridge",
-            "--root", str(root), "--session-seconds", str(SESSION_SECONDS)]
+            "--root", str(root), "--direct-inbox", inbox,
+            "--session-seconds", str(SESSION_SECONDS)]
     # Never execute with a login shell or inject a key into arguments.
     result = run(args, cwd=root, env=env, capture_output=True, text=True,
                  check=False, timeout=SESSION_SECONDS + 65,
@@ -449,14 +484,20 @@ def main(environ=None):
         env["HORIZON_STATE_BACKEND"] = "github-sqlite"
         env["GITHUB_REPOSITORY"] = REPO
         probe_providers(root, env)
+        inbox = Path(env.get("HORIZON_DIRECT_INBOX_DIR", "/data/horizon-direct-queue"))
         while not stop:
-            # Recheck single-writer precondition in case Actions are re-enabled.
+            # GitHub is retained only for code/checkpoints, never for owner intake.
             verify_exclusive(env["GITHUB_TOKEN"])
-            request_count, request_digest = refresh_requests(root, env["GITHUB_TOKEN"])
+            request_count, request_digest = direct_inventory(inbox)
             event("requests_refreshed", count=request_count, sha=request_digest)
             run_cycle(root, env)
             for _ in range(SLEEP_SECONDS):
                 if stop:
+                    break
+                # New requests wake the Maestro without waiting for the timer.
+                latest_count, latest_digest = direct_inventory(inbox)
+                if latest_digest != request_digest:
+                    event("direct_request_wake", count=latest_count)
                     break
                 time.sleep(1)
     return 0

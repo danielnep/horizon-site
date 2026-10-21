@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {startServer} from '../server.mjs';
 import {SPECIALISTS,operationalDigest,teamLog} from '../central/controller.mjs';
 
@@ -63,6 +66,40 @@ test('login requires same-origin, issues HttpOnly session and protects write com
  });
 });
 
+test('central envia direto ao Maestro no Railway, sem gravar solicitações no GitHub',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'horizon-central-'));
+ const previous=process.env.HORIZON_DIRECT_INBOX_DIR;
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+ await withServer(async({url,origin})=>{
+  const login=await fetch(url+'/central/api/login',{method:'POST',
+   headers:{origin,'content-type':'application/json'},
+   body:JSON.stringify({password:'local-test-only-strong-secret-value'})});
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const headers={origin,cookie,'content-type':'application/json'};
+  const task={project:'romaneio-digital',repository:'danielnep/romaneio-digital',
+   objective:'Melhorar a UI e as animações sem alterar navegação e regras',
+   agent:'may-maestro',priority:'P2',public_data_confirmed:true,
+   delivery_type:'existing_product',allowed_paths:['css/style.css','index.html']};
+  const response=await fetch(url+'/central/api/tasks',
+   {method:'POST',headers,body:JSON.stringify(task)});
+  assert.equal(response.status,201);
+  const out=await response.json();
+  assert.equal(out.transport,'railway_local');
+  const body=JSON.parse(await readFile(join(root,'requests',out.id+'.json'),'utf8'));
+  assert.equal(body.repository,task.repository);
+  assert.deepEqual(body.payload.allowed_paths,task.allowed_paths);
+  const tasks=await fetch(url+'/central/api/tasks',{headers:{cookie}});
+  assert.equal(tasks.status,200);
+  const state=await tasks.json();
+  assert.ok(state.tasks.some(x=>x.id===out.id));
+ });
+ }finally{
+  if(previous===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;
+  else process.env.HORIZON_DIRECT_INBOX_DIR=previous;
+  await rm(root,{recursive:true,force:true});
+ }
+});
 test('PWA install icons are served with PNG MIME',async()=>{
  await withServer(async({url})=>{
   for(const icon of ['/central/icon-192.png','/central/icon-512.png']){

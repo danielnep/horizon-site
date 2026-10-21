@@ -1,6 +1,7 @@
 // Horizonte MCP: stateless Streamable HTTP server for ChatGPT.
 // Never returns secrets, never accepts raw commands or arbitrary GitHub API requests.
 import { timingSafeEqual } from 'node:crypto';
+import {submitDirectTask,directStatus} from './direct-queue.mjs';
 
 const CONTROL_REPO='danielnep/May-Maestro-Executor';
 const AGENTS=Object.freeze([
@@ -16,17 +17,21 @@ const MODULE='horizon-bridge';
 const agentInput={type:'object',properties:{},additionalProperties:false};
 const taskIdInput={type:'object',properties:{task_id:{type:'string',description:'ID de uma tarefa autorizada, sem informacoes pessoais.'}},required:['task_id'],additionalProperties:false};
 const submitInput={type:'object',properties:{
-  task_id:{type:'string',description:'ID unico 3 a 64 caracteres ASCII (letras, numeros, _ e -).'},
-  project:{type:'string',description:'Projeto publico sem dados de clientes.'},
-  objective:{type:'string',description:'Objetivo publico e sem segredos.'},
-  agent:{type:'string',enum:AGENTS},
-  public_data_confirmed:{type:'boolean',description:'Confirma que objetivo e materiais podem ficar em repositorio publico.'},
-  allowed_paths:{type:'array',items:{type:'string'},maxItems:15,description:'Caminhos permitidos do repo de controle. Ausente ou vazio: somente leitura.'}
-},required:['task_id','project','objective','agent','public_data_confirmed'],additionalProperties:false};
+ task_id:{type:'string',description:'Identificador único da solicitação'},
+ project:{type:'string',description:'Identificador do projeto'},
+ repository:{type:'string',description:'Repositório do aplicativo, por exemplo danielnep/romaneio-digital'},
+ objective:{type:'string',description:'Missão e critérios, sem segredos'},
+ agent:{type:'string',enum:AGENTS},
+ delivery_type:{type:'string',enum:['existing_product','new_product']},
+ priority:{type:'string',enum:['P0','P1','P2','P3']},
+ public_data_confirmed:{type:'boolean',description:'Confirma que o objetivo não contém segredos de clientes'},
+ allowed_paths:{type:'array',items:{type:'string'},maxItems:25}
+},required:['task_id','project','repository','objective','agent','public_data_confirmed','allowed_paths'],
+ additionalProperties:false};
 const TOOLS=Object.freeze([
  {name:'horizon_list_agents',description:'Retorna os 17 agentes do executor Horizon com nomes verificaveis. Nao inicia agentes.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}},
- {name:'horizon_task_status',description:'Consulta resultado publico de tarefa de agentes na fila GitHub, inclusive provas e bloqueios. Nao presume conclusao.',inputSchema:taskIdInput,annotations:{readOnlyHint:true,openWorldHint:false}},
- {name:'horizon_submit_task',description:'Envia tarefa publica e sem dados de clientes ao executor via GitHub Actions, com controles de allowlist. Requer credencial GitHub de escrita separada no servidor. A submissao NAO significa trabalho terminado.',inputSchema:submitInput,annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
+ {name:'horizon_task_status',description:'Consulta recebimento e resultados da fila interna Railway, sem consultar GitHub.',inputSchema:taskIdInput,annotations:{readOnlyHint:true,openWorldHint:false}},
+ {name:'horizon_submit_task',description:'Entrega ao Maestro no Railway em fila local duravel, imediatamente e sem GitHub Actions. Nao confunde aceite com conclusao.',inputSchema:submitInput,annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
  {name:'horizon_sync_status',description:'Consulta politica de sincronizacao agentes↔plugins no repositorio publico, sem fazer publicacao.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}}
 ]);
 function safeEqual(a,b){if(typeof a!=='string'||typeof b!=='string'||!a||!b)return false;const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length && timingSafeEqual(x,y);}
@@ -34,17 +39,6 @@ const reply=(res,status,body,headers={})=>{res.writeHead(status,{'content-type':
 const err=(id,code,message)=>({jsonrpc:'2.0',id,error:{code,message}});
 const result=(id,result)=>({jsonrpc:'2.0',id,result});
 const toolResponse=(value,isError=false)=>({content:[{type:'text',text:JSON.stringify(value)}],isError});
-function validPath(p,project){return p===`apps/${project}/**`;}
-function checkSubmit(a){
-  if(!a||typeof a!=='object'||Array.isArray(a))return 'Objeto invalido';
-  if(!ID.test(a.task_id||''))return 'task_id invalido';
-  if(typeof a.project!=='string'||!ID.test(a.project))return 'project invalido';
-  if(typeof a.objective!=='string'||a.objective.trim().length<12||a.objective.length>3000)return 'objective invalido';
-  if(!AGENTS.includes(a.agent))return 'Agente nao autorizado';
-  if(a.public_data_confirmed!==true)return 'Confirmacao expressa de dados publicos necessaria';
-  if(a.allowed_paths!==undefined&&(!Array.isArray(a.allowed_paths)||a.allowed_paths.length>15||!a.allowed_paths.every(p=>validPath(p,a.project))))return 'allowed_paths invalidos';
-  return null;
-}
 async function gh(path,{method='GET',body,token=process.env.HORIZON_MCP_GITHUB_TOKEN,fetcher=fetch}={}){
   const headers={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':MODULE};
   if(token)headers.Authorization=`Bearer ${token}`;
@@ -58,10 +52,8 @@ function decodeFile(body){const content=body?.content;if(typeof content!=='strin
 async function handleTool(name,a,options={}){
   if(name==='horizon_list_agents')return toolResponse({agents:AGENTS,source:CONTROL_REPO,count:AGENTS.length});
   if(name==='horizon_task_status'){
-    if(!ID.test(a?.task_id||''))return toolResponse({error:'task_id invalido'},true);
-    const r=await gh(`contents/tasks/results/${a.task_id}.json?ref=main`,options);
-    if(r.status===404)return toolResponse({task_id:a.task_id,status:'not_found',note:'Nao ha recibo confirmado na branch main; nao implica que a tarefa nao esteja na fila.'});
-    return toolResponse({task_id:a.task_id,result:decodeFile(r.body)});
+    try{return toolResponse(await directStatus(a?.task_id));}
+    catch(error){return toolResponse({error:String(error.message||'unavailable').slice(0,80)},true);}
   }
   if(name==='horizon_sync_status'){
     const r=await gh('contents/docs/plugin-sync.json?ref=main',options);
@@ -69,17 +61,8 @@ async function handleTool(name,a,options={}){
     return toolResponse({configured:true,policy:decodeFile(r.body)});
   }
   if(name==='horizon_submit_task'){
-    const why=checkSubmit(a);if(why)return toolResponse({error:why},true);
-    const token=options.token??process.env.HORIZON_MCP_GITHUB_TOKEN;
-    if(!token)return toolResponse({error:'github_write_not_configured',action:'Configurar HORIZON_MCP_GITHUB_TOKEN em variaveis Railway; nao enviar segredo na tarefa.'},true);
-    const path=`tasks/chat/${a.task_id}.json`;
-    const existing=await gh(`contents/${path}?ref=main`,{...options,token});
-    if(existing.status!==404)return toolResponse({error:'task_id_ja_existe',task_id:a.task_id},true);
-    const body={owner:'danielnep',repository:CONTROL_REPO,task_id:a.task_id,agent:a.agent,project:a.project,objective:a.objective,delivery_type:'new_product',payload:{allowed_paths:a.allowed_paths??[]}};
-    const content=Buffer.from(JSON.stringify(body,null,2)+'\n').toString('base64');
-    const saved=await gh(`contents/${path}`,{...options,token,method:'PUT',body:{message:`chore(chat): encaminhar pedido MCP ${a.task_id}`,content,branch:'main'}});
-    if(saved.status===422)return toolResponse({error:'task_conflict'},true);
-    return toolResponse({task_id:a.task_id,status:'submitted',commit:saved.body?.commit?.sha??null,result_hint:`tasks/results/${a.task_id}.json`,note:'Submetido ao GitHub; nao foi executado nem validado nesta chamada.'});
+    try{return toolResponse(await submitDirectTask(a));}
+    catch(error){return toolResponse({error:String(error.message||'submit_failed').slice(0,100)},true);}
   }
   throw Error('Unknown tool');
 }
@@ -101,7 +84,7 @@ export async function handleHorizonMcp(req,res,{fetcher=fetch,token=process.env.
   if(id===null&&input.method==='notifications/initialized'){res.writeHead(202);res.end();return;}
   let output;
   try{
-    if(input.method==='initialize')output=result(id,{protocolVersion:VERSION,capabilities:{tools:{listChanged:false}},serverInfo:{name:'horizon-agents',version:'1.0.0'},instructions:'Ponte entre ChatGPT May e 17 especialistas. Tarefas ficam no GitHub publico; nao enviar dados pessoais ou sigilosos. Submissao nao comprova execucao.'});
+    if(input.method==='initialize')output=result(id,{protocolVersion:VERSION,capabilities:{tools:{listChanged:false}},serverInfo:{name:'horizon-agents',version:'1.0.0'},instructions:'Ferramentas dos 17 especialistas. Envie solicitações diretamente ao Maestro no Railway; tarefas e resultados ficam no volume privativo. Aceite não significa conclusão.'});
     else if(input.method==='ping')output=result(id,{});
     else if(input.method==='tools/list')output=result(id,{tools:TOOLS});
     else if(input.method==='tools/call'){

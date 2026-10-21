@@ -1,6 +1,7 @@
 import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
+import {submitDirectTask,directTasks} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
@@ -108,49 +109,10 @@ async function loadOverview(){
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
  githubCache.promise=(async()=>{
-  const [queued,resultFiles,attendance]=await Promise.allSettled([
-   list('tasks/chat'),list('tasks/results'),file('tasks/attendance/equipe.json')]);
+  const [queued,attendance]=await Promise.allSettled([
+   directTasks(),file('tasks/attendance/equipe.json')]);
   const q=queued.status==='fulfilled'?queued.value:[];
-  const r=resultFiles.status==='fulfilled'?resultFiles.value:[];
-  const activeByName=new Map(q.map(x=>[x.name,x]));
-  const resultsByName=new Map(r.map(x=>[x.name,x]));
-  // A removal from tasks/chat is NOT proof of completion. Results must remain
-  // visible with an explicit label distinguishing history from live queue.
-  const union=[...new Set([...activeByName.keys(),...resultsByName.keys()])].slice(0,60);
-  const queueResults=await Promise.all(union.map(async name=>{
-   const request=activeByName.get(name),receipt=resultsByName.get(name);
-   const task=request?await file('tasks/chat/'+name,request.sha).catch(()=>null):null;
-   const result=receipt?await file('tasks/results/'+name,receipt.sha).catch(()=>null):null;
-   if(!task&&!result)return null;
-   const id=name.slice(0,-5);
-   const stages=Array.isArray(result?.tasks)?result.tasks.slice(0,20).map(stage=>({
-      agent:SPECIALISTS.includes(stage.agent)?stage.agent:null,
-      state:String(stage.status||'sem registro').slice(0,50),
-      summary:String(stage.summary||'').slice(0,220),
-      blocker:stage.blocker?String(stage.blocker).slice(0,180):null,
-      checks:Array.isArray(stage.verification)?stage.verification.length:0,
-      attempts:Number.isFinite(stage.attempts)?stage.attempts:null,
-   })):[];
-   const completedStages=stages.filter(x=>x.state==='succeeded'||x.state==='completed').length;
-   const rawStatus=String(result?.status||'sem resultado').slice(0,55);
-   const active=Boolean(request);
-   const finished=result?.quality?.approved===true&&result?.publication?.published===true&&['completed','done','succeeded'].includes(rawStatus);
-   return {
-    id,project:String(task?.project||result?.request_id?.split('-').slice(0,2).join('-')||'Projeto não informado').slice(0,80),
-    repository:String(task?.repository||result?.may_review?.repository||'').slice(0,110),
-    title:task?String(task.objective||'Sem descrição').slice(0,180):
-      'Registro preservado: '+id.replace(/-/g,' ').slice(0,120),
-    agent:SPECIALISTS.includes(task?.agent)?task.agent:(stages[0]?.agent||null),
-    priority:/^P[0-3]$/.test(task?.priority)?task.priority:null,
-    status:!active?(finished?'concluída • histórica':'fora da fila • '+(rawStatus==='pending'?'pendente':rawStatus)):
-      statusLabel(result), rawStatus, inQueue:active,hasResult:Boolean(result),
-    approved:result?.quality?.approved===true,published:result?.publication?.published===true,
-    progress:stages.length?{done:completedStages,total:stages.length,verified:stages.filter(x=>x.checks>0).length}:null,
-    stages,blocker:result?.quality?.qa_missing_evidence?.length?'Verificação de qualidade pendente':null,
-    updatedAt:result?.updated_at||null,
-    evidenceUrl:result?.may_review?.result_url||null
-   };
-  }));
+  const queueResults=q;
   const members=attendance.status==='fulfilled'&&attendance.value&&typeof attendance.value==='object'?attendance.value:null;
   const agents=SPECIALISTS.map(id=>{
    let rec=null;
@@ -161,12 +123,11 @@ async function loadOverview(){
    updatedAt:typeof rec?.updated_at==='string'?rec.updated_at:null};
   });
   const issues=[];
-  if(queued.status==='rejected')issues.push('Não foi possível consultar as solicitações no GitHub');
-  if(resultFiles.status==='rejected')issues.push('Não foi possível consultar os resultados no GitHub');
+  if(queued.status==='rejected')issues.push('Fila Railway temporariamente indisponível');
   if(attendance.status==='rejected')issues.push('Presença individual indisponível');
-  return {at:new Date().toISOString(),source:'GitHub e telemetria Railway deste processo',
+  return {at:new Date().toISOString(),source:'Fila direta Railway e telemetria deste processo',
    tasks:queueResults.filter(Boolean),agents,worker:{status:workerState,lastCycle},issues,
-   available:{queue:queued.status==='fulfilled',results:resultFiles.status==='fulfilled',attendance:attendance.status==='fulfilled'},
+   available:{queue:queued.status==='fulfilled',results:queued.status==='fulfilled',attendance:attendance.status==='fulfilled'},
    usage:{status:'sem dados de tokens por chamada',input:null,output:null,total:null}};
  })().then(v=>{githubCache.value=v;githubCache.expires=Date.now()+16000;return v}).finally(()=>{githubCache.promise=null});
  return githubCache.promise;
@@ -237,26 +198,10 @@ async function interpret(payload){
  output:Number.isFinite(usage.completion_tokens)?usage.completion_tokens:null},status:200};
 }
 async function createTask(value){
- const objective=String(value.objective||'').trim();
- const project=String(value.project||'').trim().toLowerCase();
- const agent=String(value.agent||'may-maestro');
- const repository=String(value.repository||'').trim();
- const priority=String(value.priority||'P2');
- const delivery=String(value.delivery_type||'existing_product');
- const paths=Array.isArray(value.allowed_paths)?value.allowed_paths:[];
- if(value.public_data_confirmed!==true)throw Error('confirme_que_a_solicitacao_e_publica');
- if(objective.length<12||objective.length>2800||!ID.test(project)||!SPECIALISTS.includes(agent)||!REPO.test(repository)||!/^P[0-3]$/.test(priority))throw Error('dados_da_tarefa_invalidos');
- if(!['new_product','existing_product'].includes(delivery))throw Error('modalidade_invalida');
- if(paths.length>10||paths.some(p=>typeof p!=='string'||!PATH.test(p)))throw Error('caminhos_nao_autorizados');
- if(delivery==='existing_product'&&paths.length===0)throw Error('informe_os_caminhos_permitidos_para_produto_existente');
- const id='ctl-'+Date.now().toString(36)+'-'+randomUUID().slice(0,8);
- const payload={owner:'danielnep',repository,task_id:id,agent,project,objective,priority,delivery_type:delivery,payload:{allowed_paths:delivery==='new_product'?['apps/'+project+'/**']:paths}};
- const content=Buffer.from(JSON.stringify(payload,null,2)+'\n').toString('base64');
- const result=await github('contents/tasks/chat/'+id+'.json',{method:'PUT',value:{message:'chore(control): registrar solicitação '+id,content,branch:'main'}});
- if(!result?.commit?.sha)throw Error('envio_nao_confirmado');
+ const result=await submitDirectTask(value);
  githubCache.expires=0;
- notify('task',{event:'submitted',taskId:id,project});
- return {id,commit:result.commit.sha,status:'enviada; execução ainda não comprovada'};
+ notify('task',{event:'submitted',taskId:result.id,project:String(value.project||'')});
+ return {...result,note:'Maestro recebeu a solicitação no Railway; execução será confirmada pelo worker.'};
 }
 export async function handleCentral(req,res,{reader=readFile}={}){
  const raw=(req.url||'/central/').split('?')[0];
