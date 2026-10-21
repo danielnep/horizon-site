@@ -169,7 +169,7 @@ test('all repository selections come from API, never three fixed projects or man
   assert.doesNotMatch(script,/const PROJECTS\s*=/);
   assert.doesNotMatch(script,/id="repo"/);
   assert.match(script,/await api\('repositories'\)/);
-  assert.match(script,/repository:repository/);
+  assert.match(script,/const repository=project\.value/);
  });
 });
 test('automatic scope identifies existing project source files and does not select secrets',()=>{
