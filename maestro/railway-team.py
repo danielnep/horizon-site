@@ -414,7 +414,7 @@ def refresh_requests(root, token, *, opener=urllib.request.urlopen):
     return len(incoming), digest
 
 
-DIRECT_REQUEST = re.compile(r"^[a-z0-9][a-z0-9-]{2,69}\\.json$")
+DIRECT_REQUEST = re.compile(r"^[a-z0-9][a-z0-9-]{2,69}\.json$")
 
 
 def direct_inventory(base):
