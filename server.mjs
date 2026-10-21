@@ -1,6 +1,7 @@
 import http from 'node:http';
 import {handleHorizonMcp} from './maestro/mcp-server.mjs';
 import {readFile} from 'node:fs/promises';
+import {handleCentral,teamLog,teamError} from './central/controller.mjs';
 import {fileURLToPath} from 'node:url';
 import {startSharedAgents,startCheckpointImport} from './maestro/shared-agents.mjs';
 import {migrationKey} from './maestro/checkpoint-migration-key.mjs';
@@ -30,6 +31,9 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   const checkpointRecipient=background?migrationKey():null;
   const server=http.createServer(async(req,res)=>{
     const path=(req.url||'/').split('?')[0];
+    if(path==='/central'||path.startsWith('/central/')){
+      await handleCentral(req,res,{reader});return;
+    }
     if(path==='/mcp'){await handleHorizonMcp(req,res);return;}
     if(path==='/api/internal/horizon-agent-state'){
       if(retirementConfirmed()){
@@ -89,7 +93,7 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   });
   // One opt-in Python specialist process; shares existing Railway service,
   // not its nearly full historical database volume.
-  const stopTeam=background?startSharedAgents():()=>{};
+  const stopTeam=background?startSharedAgents({log:teamLog,err:teamError}):()=>{};
   const stopMigration=background?startCheckpointImport():()=>{};
   // The active worker uses encrypted SQLite checkpoints on GitHub.
   // Never eagerly open/VACUUM the full legacy PGlite volume on normal site startup.
