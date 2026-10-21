@@ -109,7 +109,7 @@ test('monitoring and live events do not require a password; modifying tasks stil
   const ctrl=new AbortController();
   const stream=await fetch(url+'/central/api/events',{signal:ctrl.signal});
   assert.equal(stream.status,200);
-  assert.match(stream.headers.get('content-type'),'text/event-stream');
+  assert.match(stream.headers.get('content-type'),/text\/event-stream/);
   await stream.body.cancel();
   ctrl.abort();
   assert.equal((await fetch(url+'/central/api/tasks',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status,401);
