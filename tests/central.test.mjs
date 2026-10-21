@@ -184,6 +184,55 @@ test('automatic scope identifies existing project source files and does not sele
  assert.deepEqual(paths,['src/**','css/**','index.html','server.mjs']);
 });
 
+test('supervisor wait and dependency proof appear in real task API',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'horizon-supervision-'));
+ const prior=process.env.HORIZON_DIRECT_INBOX_DIR;
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+  await mkdir(join(root,'requests'),{recursive:true});
+  await mkdir(join(root,'results'),{recursive:true});
+  const id='ctl-supervised-20261021';
+  await writeFile(join(root,'requests',id+'.json'),JSON.stringify({
+   owner:'danielnep',task_id:id,agent:'may-maestro',project:'ronda-pro',
+   repository:'danielnep/app-hondas-maxvel',objective:'Validar interface mobile do Ronda Pro'
+  }));
+  await writeFile(join(root,'results',id+'.json'),JSON.stringify({
+   request_id:id,status:'pending',quality:{approved:false},
+   supervision:{reason:'scheduled_retry',first_pending_task:'chat-'+id+':ui',
+    first_pending_agent:'ui-ux-designer',retry_reason:'groq_capacity_wait',
+    next_retry_at:'2026-10-21T09:00:00Z',checked_at:'2026-10-21T06:00:00Z',blocked_by:[]},
+   tasks:[
+    {task_id:'chat-'+id,agent:'may-maestro',status:'succeeded',attempts:1},
+    {task_id:'chat-'+id+':ui',agent:'ui-ux-designer',status:'queued',
+     wait_reason:'scheduled_retry',retry_reason:'groq_capacity_wait',
+     next_retry_at:'2026-10-21T09:00:00Z',blocked_by:[],attempts:2,max_attempts:3},
+    {task_id:'chat-'+id+':qa',agent:'qa-engineer',status:'queued',
+     wait_reason:'waiting_for_dependencies',blocked_by:['chat-'+id+':ui'],attempts:0,max_attempts:3}
+   ]}));
+  const local=(await directTasks())[0];
+  assert.equal(local.status,'aguardando');
+  assert.equal(local.supervision.reason,'scheduled_retry');
+  assert.equal(local.supervision.firstPendingAgent,'ui-ux-designer');
+  assert.equal(local.stages[1].attempts,2);
+  assert.deepEqual(local.stages[2].blockedBy,['chat-'+id+':ui']);
+  await withServer(async({url})=>{
+   const res=await fetch(url+'/central/api/tasks');
+   assert.equal(res.status,200);
+   const task=(await res.json()).tasks.find(x=>x.id===id);
+   assert.equal(task.supervision.retryReason,'groq_capacity_wait');
+   assert.equal(task.stages[2].waitReason,'waiting_for_dependencies');
+   const ui=await (await fetch(url+'/central/app.js')).text();
+   assert.match(ui,/function waitDescription/);
+   assert.match(ui,/Primeira etapa:/);
+   assert.match(ui,/Etapas, motivos e retomada/);
+  });
+ }finally{
+  if(prior===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;
+  else process.env.HORIZON_DIRECT_INBOX_DIR=prior;
+  await rm(root,{recursive:true,force:true});
+ }
+});
+
 test('direct queue actions pause, cancel and restore tasks without losing records',async()=>{
  const root=await mkdtemp(join(tmpdir(),'horizon-queue-actions-'));
  const old=process.env.HORIZON_DIRECT_INBOX_DIR;
