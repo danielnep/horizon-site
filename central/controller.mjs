@@ -1,4 +1,4 @@
-import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
+import {createHmac,timingSafeEqual,randomUUID,createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {submitDirectTask,directTasks,cancelPendingRequest,restorePendingRequest} from '../maestro/direct-queue.mjs';
@@ -180,10 +180,31 @@ async function loadOverview(){
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
  githubCache.promise=(async()=>{
-  const [queued,attendance]=await Promise.allSettled([
-   directTasks(),file('tasks/attendance/equipe.json')]);
+  const [queued,attendance,history]=await Promise.allSettled([
+   directTasks(),file('tasks/attendance/equipe.json'),list('tasks/results')]);
   const q=queued.status==='fulfilled'?queued.value:[];
-  const queueResults=q;
+  const archive=history.status==='fulfilled'?history.value:[];
+  const archived=await Promise.all(archive.slice(0,35).filter(x=>!q.some(z=>z.id===x.name.slice(0,-5))).map(async item=>{
+   const result=await file('tasks/results/'+item.name,item.sha).catch(()=>null);
+   if(!result)return null;
+   const id=item.name.slice(0,-5),stages=Array.isArray(result.tasks)?result.tasks.slice(0,20).map(t=>({
+    agent:SPECIALISTS.includes(t.agent)?t.agent:null,state:String(t.status||'').slice(0,50),
+    summary:String(t.summary||'').slice(0,220),blocker:t.blocker?String(t.blocker).slice(0,150):null
+   })):[];
+   const successful=stages.filter(x=>x.state==='succeeded'||x.state==='completed').length;
+   const finished=result.quality?.approved===true&&result.publication?.published===true;
+   return {id,originalId:id,project:String(result.request_id||id).split('-').slice(0,2).join('-'),
+    repository:String(result.may_review?.repository||''),
+    title:'Solicitação anterior: '+id.replace(/-/g,' ').slice(0,110),agent:stages[0]?.agent||null,
+    inQueue:false,hasResult:true,archived:true,priority:null,status:finished?'concluída • histórica':'fora da fila • pendente',
+    rawStatus:String(result.status||'sem informação').slice(0,60),stages,
+    progress:stages.length?{total:stages.length,done:successful,verified:stages.filter(x=>x.state==='succeeded'&&x.summary).length}:null,
+    published:result.publication?.published===true,approved:result.quality?.approved===true,
+    explanation:finished?'Entrega histórica publicada e aprovada.':
+     'Esta solicitação saiu da fila, mas o relatório antigo continua salvo. Ainda não há confirmação de entrega final. Pode ser reenviada ao Maestro como uma nova tentativa.',
+    evidenceUrl:result.may_review?.result_url||null};
+  }));
+  const queueResults=[...q,...archived.filter(Boolean)];
   const members=attendance.status==='fulfilled'&&attendance.value&&typeof attendance.value==='object'?attendance.value:null;
   const agents=SPECIALISTS.map(id=>{
    let rec=null;
@@ -196,6 +217,7 @@ async function loadOverview(){
   const issues=[];
   if(queued.status==='rejected')issues.push('Fila Railway temporariamente indisponível');
   if(attendance.status==='rejected')issues.push('Presença individual indisponível');
+  if(history.status==='rejected')issues.push('Histórico antigo do GitHub temporariamente indisponível');
   return {at:new Date().toISOString(),source:'Fila direta Railway e telemetria deste processo',
    tasks:queueResults.filter(Boolean).map(t=>({...t,explanation:explainOperation(t)})),agents,worker:{status:workerState,lastCycle},issues,
    available:{queue:queued.status==='fulfilled',results:queued.status==='fulfilled',attendance:attendance.status==='fulfilled'},
@@ -268,6 +290,33 @@ async function interpret(payload){
  return {response:content.slice(0,1300),usage:{input:Number.isFinite(usage.prompt_tokens)?usage.prompt_tokens:null,
  output:Number.isFinite(usage.completion_tokens)?usage.completion_tokens:null},status:200};
 }
+
+async function retryLegacyRequest(id){
+ if(!ID.test(id))throw Error('identificador_invalido');
+ const candidates=await github('commits?path='+encodeURIComponent('tasks/chat/'+id+'.json')+'&per_page=10');
+ if(!Array.isArray(candidates)||!candidates.length)throw Error('pedido_original_nao_encontrado');
+ let original=null;
+ for(const commit of candidates.slice(0,8)){
+  const item=await github('contents/tasks/chat/'+id+'.json?ref='+commit.sha).catch(()=>null);
+  if(item?.content){
+   try{original=JSON.parse(Buffer.from(item.content.replace(/\s/g,''),'base64').toString('utf8'));break;}catch{}
+  }
+ }
+ if(!original||!/^danielnep\/[a-z0-9._-]+$/i.test(original.repository||''))
+  throw Error('pedido_original_indisponivel');
+ const targetId='retry-'+createHash('sha256').update(id).digest('hex').slice(0,24);
+ const objective='Retomar solicitação anterior '+id+'. Preserve o histórico e não recomece etapas comprovadas sem necessidade. '+String(original.objective||'').slice(0,2000);
+ const priority=/^P[0-3]\b/.exec(original.objective||'')?.[0]||'P2';
+ const result=await submitDirectTask({
+  task_id:targetId,project:original.project,repository:original.repository,
+  objective,agent:original.agent||'may-maestro',priority,
+  delivery_type:original.delivery_type||'existing_product',
+  allowed_paths:original.payload?.allowed_paths||[],public_data_confirmed:true
+ });
+ githubCache.expires=0;notify('task',{event:'requeued_from_history',taskId:targetId,sourceId:id});
+ return {...result,sourceId:id,note:'Nova tentativa enviada para o Railway. A execução e a recuperação dos checkpoints ainda precisam ser comprovadas.'};
+}
+
 async function createTask(value){
  const normalized=await resolveTaskDefaults(value);
  const result=await submitDirectTask(normalized);
@@ -340,11 +389,11 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   }catch{send(res,503,{error:'dados_temporariamente_indisponiveis'});}return true;
  }
 
- const taskAction=raw.match(/^\/central\/api\/tasks\/([a-z0-9-]{3,70})\/(cancel|restore)$/);
+ const taskAction=raw.match(/^\/central\/api\/tasks\/([a-z0-9-]{3,70})\/(cancel|restore|requeue)$/);
  if(req.method==='POST'&&taskAction){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{
-   const operation=taskAction[2]==='cancel'?cancelPendingRequest:restorePendingRequest;
+   const operation=taskAction[2]==='cancel'?cancelPendingRequest:taskAction[2]==='restore'?restorePendingRequest:retryLegacyRequest;
    const result=await operation(taskAction[1]);
    githubCache.expires=0;
    notify('task',{event:taskAction[2],taskId:taskAction[1]});
