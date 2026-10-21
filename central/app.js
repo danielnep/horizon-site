@@ -69,6 +69,16 @@ function counts(){
  blocked:q.filter(x=>x.status==='bloqueada').length,
  queue:q.length,offQueue:t.filter(x=>!x.inQueue&&!x.published).length};
 }
+function plainStatus(){
+ const t=snapshot?.tasks||[],q=t.filter(x=>x.inQueue),pending=t.filter(x=>!x.inQueue&&!x.published),cycle=snapshot?.worker?.lastCycle||null;
+ const parts=[];
+ parts.push(q.length?q.length+' pedidos estão na fila do Railway.':'A fila de novas solicitações está vazia.');
+ if(pending.length)parts.push(pending.length+' solicitação(ões) anteriores não têm conclusão comprovada. Você pode abrir os detalhes e escolher nova tentativa.');
+ if(cycle&&String(cycle.rc)==='0')parts.push('O último ciclo do supervisor terminou sem erro registrado. Isso não significa que tenha concluído trabalho.');
+ else if(cycle&&cycle.rc!==undefined)parts.push('O último ciclo apresentou erro. Peça uma investigação para saber o que ocorreu.');
+ return parts.join(' ');
+}
+
 function summary(){const c=counts();return '<div class="summary" aria-label="Situação geral"><span class="working"><b>'+c.active+'</b> trabalhando</span><span><b>'+c.queue+'</b> na fila</span><span><b>'+c.offQueue+'</b> pendências fora da fila</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas na fila</span><span><b>17</b> agentes</span></div>';}
 function taskRow(t){
  const progress=t.progress||null;
@@ -88,6 +98,7 @@ function taskRow(t){
  '<p class="task-explanation">'+escapeHTML(t.explanation||'Não há explicação disponível para este estado.')+'</p>'+
  (t.inQueue&&!t.hasResult?'<button type="button" class="secondary" data-task-action="cancel" data-id="'+escapeHTML(t.id)+'">Retirar da fila</button>':'')+
  (t.status==='retirada da fila'?'<button type="button" class="primary" data-task-action="restore" data-id="'+escapeHTML(t.id)+'">Recolocar na fila</button>':'')+
+ (t.archived&&!t.approved?'<button type="button" class="primary" data-task-action="requeue" data-id="'+escapeHTML(t.id)+'">Enviar nova tentativa</button>':'')+
  '<button type="button" class="secondary" data-diagnose="'+escapeHTML(t.id)+'">Investigar com IA</button>'+
  '<div id="diagnosis-'+escapeHTML(t.id)+'" class="assist-result" hidden></div>'+
  '<p class="smallprint">ID: '+escapeHTML(t.id)+'</p></div>';
@@ -135,7 +146,7 @@ function requestForm(){
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
 function overviewMarkup(){
- return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
+ return summary()+'<div class="plain-status"><b>O que está acontecendo?</b><p>'+escapeHTML(plainStatus())+'</p><button type="button" class="quiet" data-diagnose="worker">Investigar erro com IA</button><div id="diagnosis-worker" class="assist-result" hidden></div></div><div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
  listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do Railway indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'')+
  '<div class="section-heading"><h2>Agentes</h2><a class="linkrow" href="#agentes">Ver os 17 →</a></div>'+
@@ -191,6 +202,7 @@ function pageSistema(){
  const w=snapshot?.worker||{status:'sem dados'};
  const last=w.lastCycle||{};
  return heading('Saúde do sistema','O que foi observado de verdade, sem confundir serviço online com agente trabalhando.')+
+ '<div class="plain-status"><b>Em português simples</b><p>'+escapeHTML(plainStatus())+'</p><button type="button" class="quiet" data-diagnose="worker">Investigar com IA</button><div id="diagnosis-worker" class="assist-result" hidden></div></div>'+
  '<section class="panel"><div class="section-heading"><h2>Execução Horizon</h2>'+chip(w.status)+'</div>'+
  '<div class="detail-grid">'+
  '<div><small>Serviço desta central</small><b>'+escapeHTML(online?'Conectado':'Sem confirmação de conexão')+'</b></div>'+
@@ -208,12 +220,12 @@ function render(){
  bind();updateConn();
 }
 async function performTaskAction(id,action){
- if(!['cancel','restore'].includes(action))return;
+ if(!['cancel','restore','requeue'].includes(action))return;
  if(!adminAuthorized&&!PAGES_MODE){pendingCommand={id,action};showLogin(true);return;}
- const msg=action==='cancel'?'Retirar esta solicitação da fila? Se alguma etapa já começou, ela pode continuar.':'Recolocar esta solicitação na fila de entrada?';
+ const msg=action==='cancel'?'Retirar da fila? Etapas já iniciadas podem continuar.':action==='restore'?'Recolocar na fila do Railway?':'Reenviar esta tarefa antiga como nova tentativa, preservando seu histórico?';
  if(!window.confirm(msg))return;
  try{const result=await api('tasks/'+encodeURIComponent(id)+'/'+action,{method:'POST',body:'{}'});
-  note(action==='cancel'?'Pedido retirado da fila. Isso não garante interrupção de trabalho iniciado.':'Solicitação recolocada na fila do Railway.');
+  note(action==='cancel'?'Pedido retirado da fila. Isso não garante interrupção de trabalho iniciado.':action==='restore'?'Solicitação recolocada na fila do Railway.':'Nova tentativa registrada no Railway. Aguarde confirmação do executor.');
   await refresh(true);
  }catch(e){note('Não foi possível alterar a tarefa: '+e.message,true);}
 }
@@ -237,9 +249,9 @@ function bind(){
   finally{el.disabled=false;}
  }));
  document.querySelectorAll('[data-assign-agent]').forEach(el=>el.addEventListener('click',()=>{
-  selectedAgent=el.dataset.assignAgent;
+  selectedAgentId=el.dataset.assignAgent;
   location.hash='#inicio';render();
-  const input=$('agent');if(input)input.value=selectedAgent;
+  const input=$('agent');if(input)input.value=selectedAgentId;
   selectedAgent=null;
   $('objective')?.focus();
   note('Especialista selecionado. Descreva o trabalho e envie.');
