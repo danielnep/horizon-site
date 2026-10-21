@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'server.mjs'
-      - 'maestro-worker.mjs'
       - 'maestro/embedded-postgres.mjs'
       - 'tests/**'
       - 'package.json'
@@ -31,7 +30,6 @@ jobs:
       - name: Validate Node runtime syntax
         run: |
           node --check server.mjs
-          node --check maestro-worker.mjs
           node --check maestro/embedded-postgres.mjs
       - name: Run application and supervisor regression tests
         run: npm test

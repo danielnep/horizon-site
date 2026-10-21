@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import importlib.util
 from io import BytesIO, StringIO
 from contextlib import redirect_stdout
@@ -126,6 +128,65 @@ class RailwayTeamTests(unittest.TestCase):
         self.assertIn('"errorKind": "GitHubStateError"',delivered)
         self.assertNotIn('PRIVATE_CLIENT',delivered)
         self.assertNotIn('VERY_PRIVATE',delivered)
+
+    def test_supervisor_telemetry_is_typed_and_hides_private_data(self):
+        fake=types.SimpleNamespace(returncode=0,stderr='',stdout='\n'.join([
+            json.dumps({'supervisor_recovery':2,'payload':'PRIVATE_CLIENT'}),
+            json.dumps({'supervisor_rejection':'reservas-proof-v1',
+                        'errorKind':'ValueError','details':'PRIVATE_CLIENT'}),
+            json.dumps({'supervisor_rejection':'../../secret',
+                        'errorKind':'ValueError'}),
+            json.dumps({'processed':0,'rejected':0,'deferred':9,
+                        'ready_for_continuation':0})
+        ]))
+        buffer=StringIO()
+        with redirect_stdout(buffer):
+            team.report_cycle_telemetry(fake)
+        result=buffer.getvalue()
+        self.assertIn('supervisor_recovery',result)
+        self.assertIn('supervisor_rejection',result)
+        self.assertIn('"deferred": 9',result)
+        self.assertNotIn('PRIVATE_CLIENT',result)
+        self.assertNotIn('../../secret',result)
+
+    def test_live_requests_replace_pinned_snapshot_without_loading_code(self):
+        request = json.dumps({'owner':'danielnep','task_id':'new-task'}).encode()
+        sha = hashlib.sha1(b'blob ' + str(len(request)).encode() + b'\0' + request).hexdigest()
+        files = [{'name':'new-task.json','type':'file'}]
+        def opener(req, timeout=None):
+            if req.full_url.endswith('tasks/chat?ref=main'):
+                return Response(json.dumps(files).encode())
+            self.assertIn('new-task.json?ref=main',req.full_url)
+            payload={'name':'new-task.json','encoding':'base64',
+                     'content':base64.b64encode(request).decode(),'sha':sha}
+            return Response(json.dumps(payload).encode())
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            old=root/'tasks'/'chat'
+            old.mkdir(parents=True)
+            (old/'old-task.json').write_text('{}')
+            count,_=team.refresh_requests(root,'synthetic',opener=opener)
+            self.assertEqual(count,1)
+            self.assertEqual((old/'new-task.json').read_bytes(),request)
+            self.assertFalse((old/'old-task.json').exists())
+
+    def test_invalid_live_requests_fail_closed_without_wiping_current_queue(self):
+        request=b'{"task_id":"new-task"}'
+        files=[{'name':'new-task.json','type':'file'}]
+        def opener(req, timeout=None):
+            data=files if req.full_url.endswith('tasks/chat?ref=main') else {
+                'name':'new-task.json','encoding':'base64',
+                'content':base64.b64encode(request).decode(),'sha':'0'*40}
+            return Response(json.dumps(data).encode())
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            directory=root/'tasks'/'chat'
+            directory.mkdir(parents=True)
+            (directory/'old-task.json').write_text('{"preserved":true}')
+            with self.assertRaisesRegex(RuntimeError,'integrity'):
+                team.refresh_requests(root,'synthetic',opener=opener)
+            self.assertTrue((directory/'old-task.json').exists())
+            self.assertFalse((directory/'new-task.json').exists())
 
     def test_worker_session_is_bounded_and_no_secrets_in_arguments(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,9 +1,40 @@
-# May Maestro | identidade e agenda dinamica
+# Horizon | supervisor operacional unico
 
-Gemini e o SUPERVISOR DE HORARIOS da May. Sua missao e decidir quando a May deve ser chamada novamente e delegar o proximo objetivo verificavel. Ele nao audita projetos, nao escreve codigo e nao publica atualizacoes nos plugins.
+A supervisao dos 17 especialistas e feita dentro do processo Python existente em
+`maestro/railway-team.py`, no servico `horizon-site` do Railway. O processo
+carrega uma revisao fixada do repositorio `May-Maestro-Executor` (variavel
+`HORIZON_EXECUTOR_SHA`) e executa `horizon_core.commit_bridge`. O agente
+`may-maestro` ja pertence a esse executor e delega tarefas aos especialistas.
 
-May e a EXECUTORA: le manuais, inspeciona repositorios, programa, testa, corrige, coordena plugins conectados via ChatGPT e registra progresso.
+Nao existe agenda separada de supervisor Node, consulta ao ChatGPT via navegador
+ou caminho ativo DeepSeek. O frontend e o servidor nao invocam o modelo para
+cada atualizacao da fila. O roteador dos especialistas usa Gemini e Groq;
+os testes de inicializacao confirmam apenas conectividade, nao entrega de tarefa.
 
-O Railway chama Gemini para decidir next_call_minutes (60 a 10080 minutos), next_may_task, why_this_time e acceptance_criteria. Um unico timer executa novamente no intervalo escolhido, sem periodicidade fixa. O evento [maestro-supervisor] registra horario ISO da proxima chamada e tarefa. Em falhas, nova consulta em 60 minutos. Reinicios consultam o Gemini novamente. Sem checkpoint May recente, a decisao fica explicitamente limitada.
+## Regras operacionais
 
-O mesmo lembrete ChatGPT id 6ad32bbba5488191aee18ef5fafd37b7 deve ser atualizado pela May usando automations.update com o horario escolhido pelo Gemini. A API Gemini e o processo Railway nao controlam o agendador ChatGPT diretamente. Nas execucoes da automacao, a May executa o trabalho e atualiza novamente a MESMA automacao, se houver suporte. Nao criar lembretes adicionais, nao prometer conclusoes nao executadas e nao expor chaves.
+- Uma unica instancia escritora, com GitHub Actions de execucao aposentados.
+- Estado transitorio cifrado em SQLite na branch GitHub configurada; nao
+  alterar `agents/checkpoints` para forcar falsos reconhecimentos.
+- Em cada ciclo, verificar trabalhos realmente prontos, adiamentos, prazos de
+  concessao e dependencias antes de acionar agentes. Nao clonar projetos
+  finalizados a cada verificacao.
+- Apos atualizacao efetiva do SHA do executor, uma unica tentativa de recuperacao
+  por trabalho anteriormente falho e permitida. Checkpoints, resultados e eventos
+  antigos permanecem. Repeticoes com o mesmo SHA sao bloqueadas.
+- Falha por evidencia visual ausente, bloqueio de qualidade ou permissao nao
+  autoriza retomar sem a prova ou decisao correspondente.
+- Rejeicao de pedido gera resultado e diagnostico proprio. Nao transforma todo
+  ciclo do worker em erro. Falha de persistencia GitHub continua sendo erro
+  de infraestrutura e nao deve ser escondida.
+- `rc=0` significa somente que o ciclo concluiu; nao comprova QA, publicacao
+  ou execucao de todos os 17 especialistas.
+
+## Validacao da instalacao
+
+O commit do executor deve passar CI, ser integrado a `main` e depois ser
+fixado em `HORIZON_EXECUTOR_SHA` no Railway. A hospedagem deve mostrar
+`preflight_verified`, `source_loaded`, `cycle_summary` e, quando aplicavel,
+`supervisor_recovery` e `supervisor_rejection`. Uma tarefa so sera declarada
+concluida com resultado e provas individuais. Os relatorios de consumo das APIs
+devem ser obtidos do uso retornado por cada provedor, nao inferidos.

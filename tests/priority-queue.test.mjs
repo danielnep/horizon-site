@@ -1,7 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPriorityQueue,enforceQueuePriority,selectHighestPriority} from '../maestro/priority-queue.mjs';
-import {runSupervisorCycle} from '../maestro-worker.mjs';
 import {normalizeDecision} from '../maestro/protocol.mjs';
 
 const p0id='a-ronda-pro-auditoria-total-20261019';
@@ -81,36 +80,4 @@ test('load errors fail closed rather than treating an unreadable registry as emp
  await assert.rejects(()=>loadPriorityQueue({fetcher:async()=>response('rate limit',429)}),/HTTP 429/);
  assert.throws(()=>enforceQueuePriority(normalizeDecision(romaneio,{now}),{status:'unavailable'}),/unavailable/);
  assert.equal(selectHighestPriority([{id:'a',priority:'P1',resolved:false},{id:'b',priority:'P0',resolved:true}]).id,'a');
-});
-test('cycle logs priority override and persists the corrected handoff, not the bad suggestion',async()=>{
- const logs=[];
- const queue=await loadPriorityQueue({fetcher:stubQueueFetch(),now});
- const state=await runSupervisorCycle({
-  fetcher:async()=>response(checkpoint),
-  clock:()=>now,
-  log:s=>logs.push(s),
-  priorityQueueLoader:async()=>queue,
-  gemini:async({priorityQueue})=>{
-   assert.equal(priorityQueue.highest.id,p0id);
-   return normalizeDecision(romaneio,{now,checkpoint});
-  }
- });
- assert.equal(state.decision.focus,repo);
- assert.equal(state.handoff.focus,repo);
- assert.equal(state.decision.queueTaskId,p0id);
- assert.equal(state.handoff.priority,'critical');
- assert.ok(logs.some(line=>line.includes('[maestro-priority-enforcement]')));
-});
-test('cycle with inaccessible queue never calls provider or publishes handoff',async()=>{
- const logs=[];
- let called=false;
- await assert.rejects(()=>runSupervisorCycle({
-  fetcher:async()=>response(checkpoint),
-  clock:()=>now,
-  log:s=>logs.push(s),
-  priorityQueueLoader:async()=>{throw Error('GitHub queue HTTP 429');},
-  gemini:async()=>{called=true;}
- }),/HTTP 429/);
- assert.equal(called,false);
- assert.equal(logs.some(x=>x.startsWith('[maestro-handoff]')),false);
 });

@@ -38,7 +38,7 @@ def event(kind, **safe):
     """Log only declared machine metadata. No exception text or task payload."""
     allowed = {"count", "rc", "seconds", "sha", "reason", "required", "state",
                "processed", "rejected", "ready_for_continuation", "taskId",
-               "delegatedCount", "qaVerified", "errorClass", "errorKind"}
+               "delegatedCount", "qaVerified", "errorClass", "errorKind", "deferred"}
     packet = {k: v for k, v in safe.items() if k in allowed}
     print("[team-railway] " + kind + " " + json.dumps(packet, sort_keys=True), flush=True)
 
@@ -216,10 +216,20 @@ def report_cycle_telemetry(result):
             continue
         if not isinstance(packet, dict):
             continue
-        if (type(packet.get("processed")) is int and packet["processed"] >= 0 and
+        if (type(packet.get("supervisor_recovery")) is int and
+                0 < packet["supervisor_recovery"] <= 10000):
+            event("supervisor_recovery", count=packet["supervisor_recovery"])
+        elif (isinstance(packet.get("supervisor_rejection"), str) and
+                SAFE_TASK_ID.fullmatch(packet["supervisor_rejection"]) and
+                isinstance(packet.get("errorKind"), str) and
+                SAFE_ERROR_KIND.fullmatch(packet["errorKind"])):
+            event("supervisor_rejection", taskId=packet["supervisor_rejection"],
+                  errorKind=packet["errorKind"])
+        elif (type(packet.get("processed")) is int and packet["processed"] >= 0 and
                 type(packet.get("rejected")) is int and packet["rejected"] >= 0):
             event("cycle_summary", processed=packet["processed"],
                   rejected=packet["rejected"],
+                  deferred=packet.get("deferred") if type(packet.get("deferred")) is int else None,
                   ready_for_continuation=(
                       packet.get("ready_for_continuation") if
                       type(packet.get("ready_for_continuation")) is int and
@@ -295,6 +305,80 @@ def probe_providers(root, env, *, run=subprocess.run):
         event('provider_probe', reason='process_failed', rc=result.returncode)
 
 
+# Requests are DATA from current main; Python code remains pinned by SHA.
+# Without this reader, Railway would never notice tasks submitted after its
+# executor snapshot was deployed.
+REQUEST_FILE = re.compile(r"^[a-z0-9][a-z0-9-]{0,69}\.json$")
+MAX_REQUEST_FILES = 100
+MAX_REQUEST_BYTES = 128000
+
+
+def refresh_requests(root, token, *, opener=urllib.request.urlopen):
+    endpoint = "https://api.github.com/repos/" + REPO + "/contents/tasks/chat"
+    headers = {"Authorization": "Bearer " + token,
+               "Accept": "application/vnd.github+json",
+               "User-Agent": "Horizon-Railway-Team/1"}
+    def fetch(url, maximum):
+        req = urllib.request.Request(url, headers=headers)
+        with opener(req, timeout=20) as response:
+            body = response.read(maximum + 1)
+        if len(body) > maximum:
+            raise RuntimeError("request_manifest_oversized")
+        try:
+            return json.loads(body)
+        except (ValueError, UnicodeError):
+            raise RuntimeError("request_manifest_invalid") from None
+
+    listing = fetch(endpoint + "?ref=main", 150000)
+    if not isinstance(listing, list) or len(listing) > MAX_REQUEST_FILES:
+        raise RuntimeError("request_listing_invalid")
+    incoming = {}
+    for row in listing:
+        name = row.get("name") if isinstance(row, dict) else None
+        if (not isinstance(name, str) or not REQUEST_FILE.fullmatch(name)
+                or row.get("type") != "file" or name in incoming):
+            raise RuntimeError("request_listing_invalid")
+        file_info = fetch(endpoint + "/" + name + "?ref=main", 190000)
+        if (not isinstance(file_info, dict) or file_info.get("encoding") != "base64"
+                or file_info.get("name") != name
+                or not isinstance(file_info.get("content"), str)):
+            raise RuntimeError("request_content_invalid")
+        try:
+            data = base64.b64decode(file_info["content"].replace("\n", ""), validate=True)
+            json.loads(data.decode("utf-8"))
+        except (ValueError, UnicodeError, TypeError):
+            raise RuntimeError("request_content_invalid") from None
+        if len(data) > MAX_REQUEST_BYTES:
+            raise RuntimeError("request_content_oversized")
+        blob = b"blob " + str(len(data)).encode() + b"\0" + data
+        if hashlib.sha1(blob).hexdigest() != file_info.get("sha"):
+            raise RuntimeError("request_content_integrity_failed")
+        incoming[name] = data
+
+    # Swap only after the complete collection is independently verified.
+    parent = root / "tasks"
+    parent.mkdir(parents=True, exist_ok=True)
+    directory = parent / "chat"
+    staged = parent / "chat.incoming"
+    previous = parent / "chat.previous"
+    if staged.exists() or previous.exists():
+        raise RuntimeError("request_staging_collision")
+    try:
+        staged.mkdir()
+        for name, data in incoming.items():
+            (staged / name).write_bytes(data)
+        if directory.exists():
+            directory.rename(previous)
+        staged.rename(directory)
+        if previous.exists():
+            shutil.rmtree(previous)
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
+    digest = hashlib.sha256("".join(sorted(incoming)).encode()).hexdigest()[:12]
+    return len(incoming), digest
+
+
 def run_cycle(root, env, *, run=subprocess.run):
     if shutil.disk_usage(root).free < MIN_SCRATCH_FREE_BYTES:
         raise RuntimeError("scratch_storage_low")
@@ -333,6 +417,8 @@ def main(environ=None):
         while not stop:
             # Recheck single-writer precondition in case Actions are re-enabled.
             verify_exclusive(env["GITHUB_TOKEN"])
+            request_count, request_digest = refresh_requests(root, env["GITHUB_TOKEN"])
+            event("requests_refreshed", count=request_count, sha=request_digest)
             run_cycle(root, env)
             for _ in range(SLEEP_SECONDS):
                 if stop:
