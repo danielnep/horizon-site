@@ -1,7 +1,7 @@
 import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {submitDirectTask,directTasks} from '../maestro/direct-queue.mjs';
+import {submitDirectTask,directTasks,directTaskAction} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
@@ -328,6 +328,23 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    send(res,200,answer);
   }catch{send(res,503,{error:'dados_temporariamente_indisponiveis'});}return true;
  }
+
+ const actionPath=raw.match(/^\/central\/api\/tasks\/([a-z0-9-]{3,70})\/action$/);
+ if(req.method==='POST'&&actionPath){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const data=await body(req,600);
+   const result=await directTaskAction(actionPath[1],data.action);
+   githubCache.expires=0;
+   notify('task',{event:'control',taskId:result.id,action:data.action});
+   send(res,200,result);
+  }catch(e){
+   const reason=String(e?.message||'comando_nao_aplicado').slice(0,100);
+   send(res,/invalido|nao_foi/.test(reason)?400:409,{error:reason});
+  }
+  return true;
+ }
+
  if(req.method==='POST'&&raw==='/central/api/tasks'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{const value=await body(req);const output=await createTask(value);send(res,201,output);}
