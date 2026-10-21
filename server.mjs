@@ -2,7 +2,6 @@ import http from 'node:http';
 import {handleHorizonMcp} from './maestro/mcp-server.mjs';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {startScheduledReviewer} from './maestro-worker.mjs';
 import {startSharedAgents,startCheckpointImport} from './maestro/shared-agents.mjs';
 import {migrationKey} from './maestro/checkpoint-migration-key.mjs';
 import {handleAgentState} from './maestro/embedded-postgres.mjs';
@@ -88,7 +87,6 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
     }
     res.writeHead(404,{'content-type':'text/plain'});res.end('Nao encontrado');
   });
-  const stop=background?startScheduledReviewer():()=>{};
   // One opt-in Python specialist process; shares existing Railway service,
   // not its nearly full historical database volume.
   const stopTeam=background?startSharedAgents():()=>{};
@@ -112,7 +110,7 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
       }catch(e){console.error('[horizon-volume-inventory-error] '+String(e?.code||e?.message||e).slice(0,120));}
     })();
   }
-  server.on('close',()=>{stop();stopTeam();stopMigration();});
+  server.on('close',()=>{stopTeam();stopMigration();});
   server.listen(listenPort,'0.0.0.0');
   return server;
 }
