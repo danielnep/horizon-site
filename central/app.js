@@ -187,7 +187,7 @@ function pageSistema(){
 }
 function render(){
  updateMenu();const page=active();const template={inicio:pageInicio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
- const content=$('content');content.innerHTML=template();if(PAGES_MODE)$('logout').hidden=true;
+ const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
  bind();updateConn();
 }
 function bind(){
@@ -262,15 +262,16 @@ async function boot(){
  await refresh(true);
  connectEvents();
 }
+$('close-gate').addEventListener('click',()=>showLogin(false));
 $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
- $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada.');await refresh(true);
+ $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada. Agora pode enviar a solicitação.');await refresh(true);
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
 $('logout').addEventListener('click',async()=>{if(PAGES_MODE)return;try{await api('logout',{method:'POST'});}catch{}
- adminAuthorized=false;showLogin(false);note('Acesso administrativo encerrado. Acompanhamento continua livre.');});
+ adminAuthorized=false;showLogin(false);note('Acesso administrativo encerrado. Acompanhamento continua livre.');render();});
 window.addEventListener('hashchange',render);
 window.addEventListener('online',()=>refresh(true));
 window.addEventListener('offline',()=>{online=false;updateConn()});
