@@ -39,7 +39,8 @@ def event(kind, **safe):
     allowed = {"count", "rc", "seconds", "sha", "reason", "required", "state",
                "processed", "rejected", "ready_for_continuation", "taskId",
                "delegatedCount", "qaVerified", "errorClass", "errorKind", "deferred",
-               "applied", "removed"}
+               "applied", "removed", "retryReason", "nextRetryAt", "agent",
+               "blockedBy"}
     packet = {k: v for k, v in safe.items() if k in allowed}
     print("[team-railway] " + kind + " " + json.dumps(packet, sort_keys=True), flush=True)
 
@@ -231,6 +232,35 @@ def report_cycle_telemetry(result):
                 SAFE_ERROR_KIND.fullmatch(packet["errorKind"])):
             event("supervisor_rejection", taskId=packet["supervisor_rejection"],
                   errorKind=packet["errorKind"])
+        elif (isinstance(packet.get("supervisor_wait"), str) and
+                SAFE_TASK_ID.fullmatch(packet["supervisor_wait"]) and
+                isinstance(packet.get("reason"), str) and
+                re.fullmatch(r"[a-z_]{3,45}", packet["reason"])):
+            # The reason is computed by the supervisor from real queue rows.
+            # Check all types before releasing a diagnostic to public logs.
+            pending = packet.get("task_id")
+            agent = packet.get("agent")
+            retry = packet.get("retry_reason")
+            timestamp = packet.get("next_retry_at")
+            deps = packet.get("blocked_by")
+            if pending is not None and (not isinstance(pending, str) or
+                    not SAFE_TASK_ID.fullmatch(pending)):
+                continue
+            if agent is not None and (not isinstance(agent, str) or
+                    not re.fullmatch(r"[a-z-]{3,50}", agent)):
+                continue
+            if retry is not None and (not isinstance(retry, str) or
+                    not re.fullmatch(r"[a-z_]{3,45}", retry)):
+                continue
+            if timestamp is not None and (not isinstance(timestamp, str) or
+                    not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", timestamp)):
+                continue
+            if not isinstance(deps, list) or len(deps) > 17 or any(
+                    not isinstance(dep, str) or not SAFE_TASK_ID.fullmatch(dep) for dep in deps):
+                continue
+            event("supervisor_wait", taskId=packet["supervisor_wait"],
+                  reason=packet["reason"], agent=agent, retryReason=retry,
+                  nextRetryAt=timestamp, blockedBy=deps)
         elif (type(packet.get("processed")) is int and packet["processed"] >= 0 and
                 type(packet.get("rejected")) is int and packet["rejected"] >= 0):
             event("cycle_summary", processed=packet["processed"],
