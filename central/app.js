@@ -98,11 +98,14 @@ function requestForm(){
  '<button type="button" class="quiet" id="advanced-toggle" aria-expanded="false">Mostrar configuração da tarefa ▾</button>'+
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
-function pageInicio(){
- return heading('Central de agentes','Solicite, acompanhe e intervenha sem abrir outra conversa.')+(PAGES_MODE?'<section class="panel request"><h2>Modo acompanhamento</h2><p class="subtitle">Informações públicas do GitHub. Comandos e IA aguardam o serviço protegido do Horizon Site.</p></section>':requestForm())+
- summary()+'<div class="section-heading"><h2>Em acompanhamento</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
+function overviewMarkup(){
+ return summary()+'<div class="section-heading"><h2>Em acompanhamento</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
  listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do GitHub indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'');
+}
+function pageInicio(){
+ return heading('Central de agentes','Solicite, acompanhe e intervenha sem abrir outra conversa.')+(PAGES_MODE?'<section class="panel request"><h2>Modo acompanhamento</h2><p class="subtitle">Informações públicas do GitHub. Comandos e IA aguardam o serviço protegido do Horizon Site.</p></section>':requestForm())+
+ '<section id="live-overview" aria-label="Situação atual da equipe">'+overviewMarkup()+'</section>';
 }
 function pageTarefas(){
  const tasks=snapshot?.tasks||[];const text=term.toLocaleLowerCase('pt-BR');
@@ -196,15 +199,25 @@ function bind(){
 }
 function updateConn(){
  const el=$('connection');el.className='connection '+(online?'ok':'off');
- el.querySelector('span').textContent=online?(PAGES_MODE?'GitHub (leitura)':'Conectado'):'Sem conexão';
+ const streaming=!PAGES_MODE&&stream?.readyState===EventSource.OPEN;
+ el.className='connection '+(!online?'off':streaming||PAGES_MODE?'ok':'');
+ el.querySelector('span').textContent=online?(PAGES_MODE?'GitHub (leitura)':streaming?'Ao vivo':'Sincronizando'):'Sem conexão';
 }
 async function refresh(force=false){
  if(refreshing)return refreshing;
  refreshing=(async()=>{
   try{const data=await api('overview');snapshot=data;online=true;
    const focused=document.activeElement;
-   if(force||!focused||!['TEXTAREA','INPUT','SELECT'].includes(focused.tagName)||!$('task-form')?.contains(focused))render();
-   else updateConn();
+   const formFocused=!force&&focused&&['TEXTAREA','INPUT','SELECT'].includes(focused.tagName)&&$('task-form')?.contains(focused);
+   if(formFocused&&active()==='inicio'&&$('live-overview')){
+    // Refresh tasks/agent status without clearing what the owner is typing.
+    $('live-overview').innerHTML=overviewMarkup();
+    document.querySelectorAll('#live-overview [data-detail]').forEach(el=>el.addEventListener('click',()=>{
+      const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
+      target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
+    }));
+    updateConn();
+   }else render();
   }catch(e){online=false;updateConn();if(!snapshot)$('content').innerHTML='<div class="empty">Sem dados ao vivo: '+escapeHTML(e.message)+'. Verifique a sessão e tente novamente.</div>';}
  })().finally(()=>refreshing=null);
  return refreshing;
@@ -214,7 +227,8 @@ function connectEvents(){
  if(stream){stream.close();stream=null;}
  stream=new EventSource('/central/api/events');
  stream.addEventListener('update',()=>{setTimeout(()=>refresh(),450)});
- stream.onerror=()=>{if(!navigator.onLine){online=false;updateConn();}};
+ stream.onopen=()=>updateConn();
+ stream.onerror=()=>{if(!navigator.onLine)online=false;updateConn();};
 }
 async function boot(){
  try{const s=await api('session');showLogin(!s.authenticated);

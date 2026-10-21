@@ -7,8 +7,8 @@ export const SPECIALISTS=Object.freeze([
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
 '':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css',
-'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg'});
-const MIME={html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml'};
+'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
+const MIME={html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
 const REPO=/^danielnep\/[a-z0-9._-]{2,90}$/i;
 const PATH=/^(?!\/)(?!.*(?:^|\/)\.)(?!.*\.\.)(?!.*[\\])[a-zA-Z0-9_./*-]{1,120}$/;
@@ -16,6 +16,7 @@ const origins=new Map();
 const live=new Set();
 const events=[];
 let sequence=0, lastCycle=null, workerState='não verificado';
+let monitorTimer=null,monitorDigest=null,monitorPending=false;
 let githubCache={expires:0,value:null,promise:null};
 let aiBudget=new Map();
 function send(res,status,value,headers={}){
@@ -64,6 +65,7 @@ function parseAgentLog(line){
  if(kind==='exited'||kind==='cycle_failed'||kind==='stopped')workerState='falha registrada';
  if(kind==='cycle'&&Number(metadata.rc)===0)workerState='ciclo concluído';
  if(kind==='cycle'||kind==='cycle_failed'||kind==='exited')lastCycle={kind,at:new Date().toISOString(),...selected};
+ if(githubCache.value){githubCache.value.worker={status:workerState,lastCycle};}
  notify('worker',{event:kind,...selected});
 }
 export const teamLog=(line)=>{console.log(line);parseAgentLog(line);};
@@ -133,6 +135,45 @@ async function loadOverview(){
  })().then(v=>{githubCache.value=v;githubCache.expires=Date.now()+16000;return v}).finally(()=>{githubCache.promise=null});
  return githubCache.promise;
 }
+
+// The live stream receives worker events immediately. GitHub is the durable
+// source for queues/attendance, so reconcile it at most every 20 seconds while
+// a dashboard is connected, then push only real changes via SSE.
+export function operationalDigest(data){
+ if(!data||typeof data!=='object')return '';
+ return JSON.stringify({
+  tasks:data.tasks??[],agents:data.agents??[],
+  available:data.available??{},issues:data.issues??[],
+ });
+}
+async function pollLiveState(){
+ if(monitorPending||live.size===0)return;
+ monitorPending=true;
+ try{
+  const view=await loadOverview();
+  const digest=operationalDigest(view);
+  if(monitorDigest!==null&&monitorDigest!==digest){
+   notify('state',{event:'snapshot_changed',tasks:view.tasks.length,agents:view.agents.length});
+  }
+  monitorDigest=digest;
+ }catch{
+  notify('system',{event:'snapshot_unavailable'});
+ }finally{monitorPending=false;}
+}
+function startLiveMonitor(){
+ if(monitorTimer!==null)return;
+ monitorDigest=null;
+ monitorTimer=setInterval(()=>void pollLiveState(),20000);
+ monitorTimer.unref?.();
+ void pollLiveState();
+}
+function stopLiveMonitorIfUnused(){
+ if(live.size!==0||monitorTimer===null)return;
+ clearInterval(monitorTimer);
+ monitorTimer=null;
+ monitorDigest=null;
+}
+
 const authAttempts=new Map();
 function limit(key,cap=6,window=900000){
  const now=Date.now();let entry=authAttempts.get(key);
@@ -221,11 +262,11 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  if(raw==='/central/api/events'&&req.method==='GET'){
   if(live.size>=25){send(res,503,{error:'limite_de_conexoes'});return true;}
   res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store','connection':'keep-alive','x-content-type-options':'nosniff'});
-  res.write('retry: 5000\n\n');live.add(res);
+  res.write('retry: 5000\n\n');live.add(res);startLiveMonitor();
   const since=Number(req.headers['last-event-id']||new URL(req.url,'http://local').searchParams.get('since')||0);
   for(const event of events.filter(e=>e.id>since))res.write('id: '+event.id+'\nevent: update\ndata: '+JSON.stringify(event)+'\n\n');
   const ping=setInterval(()=>{try{res.write(': ping\n\n');}catch{}},24000);
-  req.on('close',()=>{clearInterval(ping);live.delete(res)});return true;
+  req.on('close',()=>{clearInterval(ping);live.delete(res);stopLiveMonitorIfUnused();});return true;
  }
  if(req.method==='GET'&&['/central/api/overview','/central/api/agents','/central/api/tasks','/central/api/usage','/central/api/history'].includes(raw)){
   try{const overview=await loadOverview();

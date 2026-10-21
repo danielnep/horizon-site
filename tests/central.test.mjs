@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {startServer} from '../server.mjs';
-import {SPECIALISTS} from '../central/controller.mjs';
+import {SPECIALISTS,operationalDigest,teamLog} from '../central/controller.mjs';
 
 async function withServer(fn){
  const old=process.env.HORIZON_MCP_TOKEN;
@@ -24,7 +24,7 @@ test('PWA loads on existing Horizon server without changing the institutional ho
   const [site,central,manifest,script,health]=await Promise.all(['/','/central/','/central/manifest.webmanifest','/central/app.js','/health'].map(p=>fetch(url+p)));
   assert.equal(site.status,200);assert.match(await site.text(),/Horizon/i);
   assert.equal(central.status,200);assert.match(await central.text(),/Central de Agentes/);
-  assert.equal(manifest.status,200);assert.equal(JSON.parse(await manifest.text()).scope,'/central/');
+  assert.equal(manifest.status,200);assert.equal(new URL(JSON.parse(await manifest.text()).scope,url+'/central/').pathname,'/central/');
   assert.equal(script.status,200);assert.match(await script.text(),/EventSource/);
   assert.equal(health.status,200);
  });
@@ -60,5 +60,44 @@ test('login requires same-origin, issues HttpOnly session and protects write com
   const stream=await fetch(url+'/central/api/events',{headers:{cookie:session}});
   assert.equal(stream.status,200);assert.match(stream.headers.get('content-type'),/text\/event-stream/);
   await stream.body.cancel();
+ });
+});
+
+test('PWA install icons are served with PNG MIME',async()=>{
+ await withServer(async({url})=>{
+  for(const icon of ['/central/icon-192.png','/central/icon-512.png']){
+   const r=await fetch(url+icon);
+   assert.equal(r.status,200);
+   assert.equal(r.headers.get('content-type'),'image/png');
+   const bytes=new Uint8Array(await r.arrayBuffer());
+   assert.deepEqual(Array.from(bytes.slice(0,8)),[137,80,78,71,13,10,26,10]);
+  }
+ });
+});
+test('change detector ignores request timestamps but detects agent and task updates',()=>{
+ const state={at:'2026-10-21T00:00:00Z',tasks:[],agents:[{id:'may-maestro',status:'ocioso'}],available:{queue:true},issues:[]};
+ const before=operationalDigest(state);
+ assert.equal(before,operationalDigest({...state,at:'2026-10-21T02:00:00Z'}));
+ assert.notEqual(before,operationalDigest({...state,agents:[{id:'may-maestro',status:'em execução'}]}));
+ assert.notEqual(before,operationalDigest({...state,tasks:[{id:'request-1',status:'na fila'}]}));
+});
+test('SSE immediately streams actual worker state, never needs an AI call',async()=>{
+ await withServer(async({url,origin})=>{
+  const login=await fetch(url+'/central/api/login',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({password:'local-test-only-strong-secret-value'})});
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const abort=new AbortController();
+  const response=await fetch(url+'/central/api/events',{headers:{cookie},signal:abort.signal});
+  assert.equal(response.status,200);
+  const reader=response.body.getReader();
+  const first=await reader.read();assert.match(new TextDecoder().decode(first.value),/retry: 5000/);
+  teamLog('[horizon-team] cycle {"rc":0,"seconds":90}');
+  let found='',tries=0;
+  while(!found.includes('"kind":"worker"')&&tries++<3){
+   const item=await reader.read();if(item.done)break;found+=new TextDecoder().decode(item.value);
+  }
+  assert.match(found,/"event":"cycle"/);
+  assert.match(found,/"rc":"0"/);
+  abort.abort();
+  await reader.cancel().catch(()=>{});
  });
 });
