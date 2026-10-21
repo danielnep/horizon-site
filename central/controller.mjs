@@ -70,6 +70,9 @@ function parseAgentLog(line){
  if(kind==='exited'||kind==='cycle_failed'||kind==='stopped')workerState='falha registrada';
  if(kind==='cycle'&&Number(metadata.rc)===0)workerState='ciclo concluído';
  if(kind==='cycle'||kind==='cycle_failed'||kind==='exited')lastCycle={kind,at:new Date().toISOString(),...selected};
+ // New durable reports must invalidate the previous task snapshot immediately.
+ if(['supervisor_wait','cycle_summary','delegation_released','supervisor_rejection'].includes(kind))
+  githubCache.expires=0;
  if(githubCache.value){githubCache.value.worker={status:workerState,lastCycle};}
  notify('worker',{event:kind,...selected});
 }
