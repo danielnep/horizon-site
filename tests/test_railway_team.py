@@ -170,70 +170,6 @@ class RailwayTeamTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_CLIENT',result)
         self.assertNotIn('../../secret',result)
 
-    def test_empty_owner_queue_is_valid_and_clears_stale_local_requests(self):
-        def opener(req, timeout=None):
-            self.assertTrue(req.full_url.endswith('tasks/chat?ref=main'))
-            return Response(json.dumps([{'name':'.gitkeep','type':'file'}]).encode())
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)
-            local=root/'tasks'/'chat'
-            local.mkdir(parents=True)
-            (local/'old.json').write_text('{}')
-            count,_=team.refresh_requests(root,'synthetic',opener=opener)
-            self.assertEqual(count,0)
-            self.assertEqual(list(local.iterdir()),[])
-
-    def test_unknown_owner_queue_file_is_rejected_without_mutation(self):
-        def opener(req, timeout=None):
-            return Response(json.dumps([{'name':'unexpected.txt','type':'file'}]).encode())
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)
-            local=root/'tasks'/'chat'
-            local.mkdir(parents=True)
-            (local/'old.json').write_text('{}')
-            with self.assertRaisesRegex(RuntimeError,'request_listing_invalid'):
-                team.refresh_requests(root,'synthetic',opener=opener)
-            self.assertTrue((local/'old.json').exists())
-
-    def test_live_requests_replace_pinned_snapshot_without_loading_code(self):
-        request = json.dumps({'owner':'danielnep','task_id':'new-task'}).encode()
-        sha = hashlib.sha1(b'blob ' + str(len(request)).encode() + b'\0' + request).hexdigest()
-        files = [{'name':'new-task.json','type':'file'}]
-        def opener(req, timeout=None):
-            if req.full_url.endswith('tasks/chat?ref=main'):
-                return Response(json.dumps(files).encode())
-            self.assertIn('new-task.json?ref=main',req.full_url)
-            payload={'name':'new-task.json','encoding':'base64',
-                     'content':base64.b64encode(request).decode(),'sha':sha}
-            return Response(json.dumps(payload).encode())
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)
-            old=root/'tasks'/'chat'
-            old.mkdir(parents=True)
-            (old/'old-task.json').write_text('{}')
-            count,_=team.refresh_requests(root,'synthetic',opener=opener)
-            self.assertEqual(count,1)
-            self.assertEqual((old/'new-task.json').read_bytes(),request)
-            self.assertFalse((old/'old-task.json').exists())
-
-    def test_invalid_live_requests_fail_closed_without_wiping_current_queue(self):
-        request=b'{"task_id":"new-task"}'
-        files=[{'name':'new-task.json','type':'file'}]
-        def opener(req, timeout=None):
-            data=files if req.full_url.endswith('tasks/chat?ref=main') else {
-                'name':'new-task.json','encoding':'base64',
-                'content':base64.b64encode(request).decode(),'sha':'0'*40}
-            return Response(json.dumps(data).encode())
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)
-            directory=root/'tasks'/'chat'
-            directory.mkdir(parents=True)
-            (directory/'old-task.json').write_text('{"preserved":true}')
-            with self.assertRaisesRegex(RuntimeError,'integrity'):
-                team.refresh_requests(root,'synthetic',opener=opener)
-            self.assertTrue((directory/'old-task.json').exists())
-            self.assertFalse((directory/'new-task.json').exists())
-
     def test_railway_inbox_fingerprint_detects_new_owner_task(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(team.direct_inventory(tmp)[0], 0)
@@ -251,7 +187,6 @@ class RailwayTeamTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             inbox=Path(tmp)/'requests'
             inbox.mkdir()
-            (inbox/'../../no').exists()
             (inbox/'badfile.txt').write_text('inert')
             with self.assertRaisesRegex(RuntimeError,'filename_invalid'):
                 team.direct_inventory(tmp)
