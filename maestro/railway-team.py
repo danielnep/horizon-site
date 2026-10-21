@@ -198,7 +198,7 @@ def _memory_cap():
     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
 
-SAFE_TASK_ID = re.compile(r"^[a-zA-Z0-9_.:-]{1,160}$")
+SAFE_TASK_ID = re.compile(r"^[a-zA-Z0-9_.:-][a-zA-Z0-9_.:\-]{0,159}$")
 SAFE_ERROR_KIND = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
 
 
