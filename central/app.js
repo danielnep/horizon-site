@@ -34,7 +34,7 @@ const AGENT_NAMES={
 const LABELS={inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'17 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
-let noticeTimeout;
+let noticeTimeout,pendingCommand=null;
 let adminAuthorized=false;
 function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function time(x){if(!x)return 'Não informado';const d=new Date(x);return Number.isNaN(d.getTime())?'Não informado':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);}
@@ -85,6 +85,11 @@ function taskRow(t){
  '<div><small>Publicação</small><b>'+(t.published?'Confirmada':'Não confirmada')+'</b></div></div>'+
  (t.blocker?'<p class="error">'+escapeHTML(t.blocker)+'</p>':'')+
  (t.evidenceUrl&&/^https:\/\/github\.com\/danielnep\//.test(t.evidenceUrl)?'<a class="linkrow" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(t.evidenceUrl)+'">Ver resultado preservado ↗</a>':'')+
+ '<p class="task-explanation">'+escapeHTML(t.explanation||'Não há explicação disponível para este estado.')+'</p>'+
+ (t.inQueue&&!t.hasResult?'<button type="button" class="secondary" data-task-action="cancel" data-id="'+escapeHTML(t.id)+'">Retirar da fila</button>':'')+
+ (t.status==='retirada da fila'?'<button type="button" class="primary" data-task-action="restore" data-id="'+escapeHTML(t.id)+'">Recolocar na fila</button>':'')+
+ '<button type="button" class="secondary" data-diagnose="'+escapeHTML(t.id)+'">Investigar com IA</button>'+
+ '<div id="diagnosis-'+escapeHTML(t.id)+'" class="assist-result" hidden></div>'+
  '<p class="smallprint">ID: '+escapeHTML(t.id)+'</p></div>';
  return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
  (t.progress?'<div class="tiny-progress">'+t.progress.done+'/'+t.progress.total+' etapas registradas</div>':'')+'</div>'+chip(t.status)+
@@ -154,7 +159,7 @@ function pageTarefas(){
 function agentRow(a){
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
  chip(a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Ver agente →</button>'+
- (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'</div>':'')+'</div>';
+ (selectedAgent===a.id?'<div class="inline-detail"><b>'+escapeHTML(label(a.id))+'</b><p class="smallprint">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual confirmada')+'</p><p class="smallprint">Último registro: '+escapeHTML(time(a.updatedAt))+'</p><button class="primary" data-assign-agent="'+escapeHTML(a.id)+'">Acionar este especialista</button></div>':'')+'</div>';
 }
 function pageAgentes(){
  const a=snapshot?.agents||[];
@@ -202,12 +207,44 @@ function render(){
  const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
  bind();updateConn();
 }
+async function performTaskAction(id,action){
+ if(!['cancel','restore'].includes(action))return;
+ if(!adminAuthorized&&!PAGES_MODE){pendingCommand={id,action};showLogin(true);return;}
+ const msg=action==='cancel'?'Retirar esta solicitação da fila? Se alguma etapa já começou, ela pode continuar.':'Recolocar esta solicitação na fila de entrada?';
+ if(!window.confirm(msg))return;
+ try{const result=await api('tasks/'+encodeURIComponent(id)+'/'+action,{method:'POST',body:'{}'});
+  note(action==='cancel'?'Pedido retirado da fila. Isso não garante interrupção de trabalho iniciado.':'Solicitação recolocada na fila do Railway.');
+  await refresh(true);
+ }catch(e){note('Não foi possível alterar a tarefa: '+e.message,true);}
+}
+
 function bind(){
  document.querySelectorAll('[data-detail]').forEach(el=>el.addEventListener('click',()=>{
  const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
  target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
  }));
  document.querySelectorAll('[data-agent]').forEach(el=>el.addEventListener('click',()=>{selectedAgent=selectedAgent===el.dataset.agent?null:el.dataset.agent;render()}));
+
+ document.querySelectorAll('[data-task-action]').forEach(el=>el.addEventListener('click',()=>void performTaskAction(el.dataset.id,el.dataset.taskAction)));
+ document.querySelectorAll('[data-diagnose]').forEach(el=>el.addEventListener('click',async()=>{
+  const target=document.getElementById('diagnosis-'+el.dataset.diagnose);
+  if(!target)return;
+  if(!adminAuthorized&&!PAGES_MODE){pendingCommand={id:el.dataset.diagnose,action:'diagnose'};showLogin(true);return;}
+  target.hidden=false;target.textContent='Investigando os registros com a IA...';el.disabled=true;
+  try{const answer=await api('ai/diagnose',{method:'POST',body:JSON.stringify({taskId:el.dataset.diagnose})});
+   target.textContent=answer.response||'Não consegui esclarecer a causa. Nenhuma correção foi aplicada automaticamente.';
+  }catch(e){target.textContent='Não foi possível investigar: '+e.message;}
+  finally{el.disabled=false;}
+ }));
+ document.querySelectorAll('[data-assign-agent]').forEach(el=>el.addEventListener('click',()=>{
+  selectedAgent=el.dataset.assignAgent;
+  location.hash='#inicio';render();
+  const input=$('agent');if(input)input.value=selectedAgent;
+  selectedAgent=null;
+  $('objective')?.focus();
+  note('Especialista selecionado. Descreva o trabalho e envie.');
+ }));
+
  const search=$('search');if(search)search.addEventListener('input',()=>{term=search.value;render();$('search')?.focus();$('search')?.setSelectionRange(term.length,term.length)});
  const dropdown=$('filter');if(dropdown){dropdown.value=filter;dropdown.addEventListener('change',()=>{filter=dropdown.value;render()});}
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
@@ -276,11 +313,11 @@ async function boot(){
  await loadRepositories();
  connectEvents();
 }
-$('close-gate').addEventListener('click',()=>showLogin(false));
+$('close-gate').addEventListener('click',()=>{pendingCommand=null;showLogin(false);});
 $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
- $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada. Agora pode enviar a solicitação.');await refresh(true);
+ $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada.');await refresh(true);const command=pendingCommand;pendingCommand=null;if(command){if(command.action==='diagnose'){const btn=document.querySelector('[data-diagnose="'+command.id+'"]');btn?.click();}else await performTaskAction(command.id,command.action);}
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
