@@ -250,7 +250,7 @@ export function conciseProjectFacts(view,question){
   tarefaAtual:x.currentTask||null,pausado:Boolean(x.held)}));
  const tasks=(view.tasks||[]).filter(t=>q.includes(String(t.project||'').toLowerCase())||q.includes(String(t.id||'').toLowerCase())||/tarefas?|fazendo|andamento|progresso/.test(q)).slice(0,9);
  return {fonte:'Central Horizon, registros do Railway',
-  verificacao:view.at,agentes,numeroTarefas:view.tasks?.length||0,
+  verificacao:view.at,agentes:agents,numeroTarefas:view.tasks?.length||0,
   tarefas:tasks.map(t=>({projeto:t.project,objetivo:t.title,estado:t.status,responsavel:t.agent,
     etapas:t.progress,acao:t.lastActivity?.action||null,arquivo:t.lastActivity?.path||null})),
   worker:view.worker,consumo:view.usage?.available?{total:view.usage.total,porEspecialista:view.usage.byAgent}:null,
