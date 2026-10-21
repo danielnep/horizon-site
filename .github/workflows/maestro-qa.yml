@@ -22,8 +22,9 @@ jobs:
       - name: Validate syntax
         run: |
           node --check server.mjs
-          node --check maestro-worker.mjs
       - name: Install Node dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Tests (mock Gemini, no secrets)
+      - name: Tests (without provider calls)
         run: npm test
+      - name: Python host supervisor regression
+        run: python3 -m unittest discover -s tests -p 'test_railway_team.py'
