@@ -118,7 +118,7 @@ export function studioMarkup(repositories=[]){
   '<details class="studio-source"><summary>Conectar endereço do preview</summary><div class="studio-source-form"><label for="studio-url">URL HTTPS do app ou servidor de desenvolvimento</label><input id="studio-url" type="url" inputmode="url" placeholder="https://meu-projeto.exemplo.com/" autocomplete="url"><button id="studio-connect" type="button" class="secondary">Conectar</button><button id="studio-clear" type="button" class="quiet">Usar publicação detectada</button></div><p class="smallprint">O preview mostra a aplicação real. Se o servidor bloquear incorporação, abra o endereço em outra guia. Alterações locais ainda não publicadas precisam de um servidor de preview.</p></details>'+
   '</section>';
 }
-export function mountStudio({repositories=[]}={}){
+export function mountStudio({repositories=[],onProjectChange=()=>{}}={}){
  const root=document.getElementById('studio-root');
  if(!root)return;
  if(state.root===root)return;
@@ -128,7 +128,8 @@ export function mountStudio({repositories=[]}={}){
  if(!state.project&&select.options.length)state.project=select.value;
  select.value=state.project;
  $(root,'studio-url').value=state.manualUrls[state.project]||'';
- select.addEventListener('change',()=>chooseProject(select.value));
+ select.addEventListener('change',()=>{chooseProject(select.value);onProjectChange(select.value)});
+ if(state.project)onProjectChange(state.project);
  root.querySelectorAll('[data-device]').forEach(b=>b.addEventListener('click',()=>setDevice(b.dataset.device)));
  $(root,'studio-check').addEventListener('click',()=>{if(state.source==='custom'){state.currentUrl='';display(validPreview(state.manualUrls[state.project]),String(Date.now()));setStatus('Preview recarregado','ready');}else void probe({force:true})});
  $(root,'studio-open').addEventListener('click',e=>{if(!state.currentUrl){e.preventDefault();setStatus('Primeiro conecte uma publicação.','empty')}});
@@ -138,7 +139,7 @@ export function mountStudio({repositories=[]}={}){
   fitPreview();
  });
  $(root,'studio-connect').addEventListener('click',()=>setManual($(root,'studio-url').value));
- $(root,'studio-clear').addEventListener('click',()=>{state.manualUrls[state.project]='';$(root,'studio-url').value='';state.currentUrl='';persist();void probe({force:true})});
+ $(root,'studio-clear').addEventListener('click',()=>{delete state.manualUrls[state.project];$(root,'studio-url').value='';state.currentUrl='';persist();void probe({force:true})});
  $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Aplicativo aberto no preview · '+(state.source==='custom'?'URL personalizada':'publicação verificada'),'ready')});
  if(typeof ResizeObserver!=='undefined'){state.observer=new ResizeObserver(fitPreview);state.observer.observe($(root,'studio-canvas'));}
  window.addEventListener('resize',fitPreview);
