@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {startServer} from '../server.mjs';
-import {SPECIALISTS,operationalDigest,teamLog,deriveCodePaths} from '../central/controller.mjs';
+import {SPECIALISTS,operationalDigest,teamLog,deriveCodePaths,quickAnswer,conciseProjectFacts} from '../central/controller.mjs';
+import {operationalTelemetry} from '../central/telemetry.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds} from '../maestro/direct-queue.mjs';
 
 async function withServer(fn){
@@ -237,4 +238,59 @@ test('holding one agent pauses its pending work and rejects new work until resum
   if(old===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=old;
   await rm(root,{recursive:true,force:true});
  }
+});
+
+test('tokens from two real provider receipt shapes are counted by agent and model',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'horizon-tokens-'));
+ const old=process.env.HORIZON_DIRECT_INBOX_DIR;
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+  await mkdir(join(root,'telemetry'));
+  const today=new Date().toISOString().slice(0,10);
+  await writeFile(join(root,'telemetry','usage-'+today+'.jsonl'),[
+   JSON.stringify({at:new Date().toISOString(),agent:'qa-engineer',provider:'gemini',model:'gemini-3.5-flash-lite',input:100,output:20,total:128}),
+   JSON.stringify({at:new Date().toISOString(),agent:'backend-engineer',provider:'groq',model:'openai/gpt-oss-120b',input:250,output:60,total:310})
+  ].join('\n')+'\n');
+  await writeFile(join(root,'telemetry','activity-'+today+'.jsonl'),[
+   JSON.stringify({at:new Date().toISOString(),taskId:'ctl-testing',agent:'qa-engineer',action:'write_file',step:2,path:'src/app.js'})
+  ].join('\n')+'\n');
+  const data=await operationalTelemetry(7);
+  assert.equal(data.usage.total,438);
+  assert.equal(data.usage.input,350);
+  assert.equal(data.usage.output,80);
+  assert.equal(data.usage.byAgent['qa-engineer'].total,128);
+  assert.equal(data.usage.byProvider.groq.total,310);
+  assert.equal(data.activity.lastByTask['ctl-testing'].path,'src/app.js');
+ }finally{
+  if(old===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=old;
+  await rm(root,{recursive:true,force:true});
+ }
+});
+test('chat answers common questions with algorithms without model calls',async()=>{
+ const view={agents:[],tasks:[{id:'ctl-1',inQueue:true}],usage:{available:true,days:7,total:480,calls:4}};
+ assert.match(quickAnswer('quantos agentes existem?',view),/17 especialistas/);
+ assert.match(quickAnswer('quantos tokens consumimos?',view),/480/);
+ assert.match(quickAnswer('quantas tarefas na fila?',view),/1 tarefas/);
+ assert.equal(quickAnswer('O que é esta função pouco comum?',view),null);
+ const context=conciseProjectFacts({...view,at:'2026-10-21T00:00:00Z'},'quantos agentes');
+ assert.equal(context.numeroTarefas,1);
+ assert.equal(context.fonte,'Central Horizon, registros do Railway');
+});
+test('help chat uses simple Portuguese and is available without secret access',async()=>{
+ await withServer(async({url,origin})=>{
+  const response=await fetch(url+'/central/api/ai/chat',{method:'POST',
+   headers:{origin,'content-type':'application/json'},
+   body:JSON.stringify({message:'quantos agentes temos?'})});
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.match(body.response,/17 especialistas/);
+  assert.equal(body.usage.total,0);
+  const html=await fetch(url+'/central/').then(x=>x.text());
+  assert.match(html,/id="help-panel"/);
+  assert.match(html,/id="action-gate"/);
+  const script=await fetch(url+'/central/app.js').then(x=>x.text());
+  assert.doesNotMatch(script,/&&confirm\(/);
+  assert.match(script,/function janelaDeAcao/);
+  assert.match(script,/function acaoEmPortugues/);
+ });
 });
