@@ -32,11 +32,7 @@ const AGENT_NAMES={
 'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
 'corregedoria-may':'Corregedoria','may-persona':'May Persona'};
 const LABELS={inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'17 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
-const PROJECTS={
-'ronda-pro':{name:'Ronda Pro',repository:'danielnep/app-hondas-maxvel'},
-'michelle-preview':{name:'Painel Michelle',repository:'danielnep/michelle-preview'},
-'horizon-site':{name:'Horizon Site',repository:'danielnep/horizon-site'},
-'novo-projeto':{name:'Outro projeto',repository:'danielnep/'}};
+let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
 let adminAuthorized=false;
@@ -100,21 +96,37 @@ function listTasks(tasks,limit=0){
  return list.length?'<div class="list">'+list.map(taskRow).join('')+'</div>':
  '<div class="empty">Nenhuma tarefa encontrada nos registros consultados. Se não houver fila ativa, o painel preserva resultados históricos separadamente.</div>';
 }
-function projectOptions(){return Object.entries(PROJECTS).map(([id,p])=>'<option value="'+id+'">'+escapeHTML(p.name)+'</option>').join('');}
+function projectOptions(){return repoList.length?repoList.map(r=>'<option value="'+escapeHTML(r.repository)+'"'+(selectedRepository===r.repository?' selected':'')+'>'+escapeHTML(r.label)+'</option>').join(''):
+ '<option value="">'+escapeHTML(repoLoadError?'Não foi possível consultar os projetos':'Consultando seus projetos...')+'</option>';}
 function agentOptions(){return '<option value="may-maestro">Distribuição automática (Maestro)</option>'+Object.keys(AGENT_NAMES).filter(x=>x!=='may-maestro').map(id=>'<option value="'+id+'">'+escapeHTML(label(id))+'</option>').join('');}
+
+async function loadRepositories(){
+ try{
+  let data;
+  if(PAGES_MODE){
+   const response=await fetch('https://api.github.com/users/danielnep/repos?per_page=100&type=owner',{cache:'no-store'});
+   if(!response.ok)throw Error('Consulta pública indisponível');
+   const repos=await response.json();
+   data={repositories:repos.filter(r=>r?.owner?.login==='danielnep'&&r.private!==true&&!r.archived).map(r=>({
+    repository:r.full_name,name:r.name,label:r.name.replace(/-/g,' ')
+   }))};
+  }else data=await api('repositories');
+  repoList=(data.repositories||[]).filter(r=>/^danielnep\/[a-z0-9._-]+$/i.test(r.repository));
+  repoLoadError=null;
+  if(repoList.length&&!repoList.some(r=>r.repository===selectedRepository))selectedRepository=repoList[0].repository;
+ }catch(e){repoLoadError=e.message;repoList=[];}
+ if(active()==='inicio')render();
+}
+
 function requestForm(){
- return '<section class="panel request" aria-label="Nova solicitação"><div class="request-head"><h2>O que os agentes precisam fazer?</h2><span class="smallprint">Uma solicitação por vez</span></div>'+
- '<form id="task-form"><textarea id="objective" name="objective" placeholder="Ex.: Revisar o login do Ronda Pro, preservar a interface atual e verificar os testes..." required minlength="12" maxlength="2800">'+escapeHTML(draft)+'</textarea>'+
- '<div class="request-meta"><div class="field"><label for="project">Projeto</label><select id="project" name="project">'+projectOptions()+'</select></div>'+
+ return '<section class="panel request" aria-label="Nova solicitação"><div class="request-head"><h2>O que os agentes precisam fazer?</h2><span class="smallprint">Central Horizon</span></div>'+
+ '<form id="task-form"><textarea id="objective" name="objective" placeholder="Ex.: Corrija o login do Ronda Pro. Mantenha a interface aprovada e teste no celular." required minlength="12" maxlength="2800">'+escapeHTML(draft)+'</textarea>'+
+ '<div class="request-meta"><div class="field"><label for="project">Meu projeto</label><select id="project" name="project" required'+(!repoList.length?' disabled':'')+'>'+projectOptions()+'</select></div>'+
  '<div class="field"><label for="priority">Prioridade</label><select id="priority" name="priority"><option value="P2">Normal</option><option value="P1">Alta</option><option value="P0">Urgente</option><option value="P3">Baixa</option></select></div>'+
  '<div class="field"><label for="agent">Responsável</label><select id="agent" name="agent">'+agentOptions()+'</select></div></div>'+
- '<div id="task-advanced" hidden class="request-meta">'+
- '<div class="field"><label for="repo">Repositório GitHub</label><input id="repo" name="repo" autocomplete="off" value="danielnep/app-hondas-maxvel"></div>'+
- '<div class="field"><label for="delivery">Tipo de projeto</label><select id="delivery" name="delivery"><option value="existing_product">Projeto existente</option><option value="new_product">Novo projeto</option></select></div>'+
- '<div class="field"><label for="paths">Arquivos permitidos, separados por vírgula</label><input id="paths" name="paths" placeholder="src/**, index.html"></div></div>'+
- '<div class="request-actions"><label class="checkbox"><input type="checkbox" id="public-confirm" required>Confirmo que a solicitação não contém segredos ou dados privados (fila privada no Railway).</label>'+
- '<div class="actions-right"><button type="button" class="secondary" id="ai-action">Analisar com IA</button><button type="submit" class="primary" id="task-submit">Enviar solicitação ↑</button></div></div>'+
- '<button type="button" class="quiet" id="advanced-toggle" aria-expanded="false">Mostrar configuração da tarefa ▾</button>'+
+ (repoLoadError?'<p class="error">Não consegui consultar seus repositórios. <button type="button" class="quiet" id="retry-repos">Tentar novamente</button></p>':'<p class="smallprint">'+repoList.length+' repositórios encontrados. A Central identifica os arquivos permitidos automaticamente.</p>')+
+ '<div class="request-actions"><span class="smallprint">Você acompanha a tarefa logo abaixo após enviar.</span>'+
+ '<div class="actions-right"><button type="button" class="secondary" id="ai-action">Analisar com IA</button><button type="submit" class="primary" id="task-submit"'+(!repoList.length?' disabled':'')+'>Enviar solicitação ↑</button></div></div>'+
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
 function overviewMarkup(){
@@ -201,22 +213,23 @@ function bind(){
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
  const form=$('task-form');
  if(form){
- const project=$('project'),repo=$('repo'),delivery=$('delivery'),advanced=$('task-advanced'),toggle=$('advanced-toggle');
- const presets={'ronda-pro':'src/**','michelle-preview':'index.html','horizon-site':'index.html'};
- function applyProject(){
-  if(project.value==='novo-projeto'){repo.value='danielnep/';delivery.value='new_product';$('paths').value='';advanced.hidden=false;toggle.setAttribute('aria-expanded','true');}
-  else{repo.value=PROJECTS[project.value].repository;delivery.value='existing_product';$('paths').value=presets[project.value]||'';}}
- project.addEventListener('change',applyProject);applyProject();
- toggle.addEventListener('click',()=>{advanced.hidden=!advanced.hidden;toggle.setAttribute('aria-expanded',String(!advanced.hidden));toggle.textContent=advanced.hidden?'Mostrar configuração da tarefa ▾':'Ocultar configuração ▴';});
+ const project=$('project');
+ project.value=selectedRepository;
+ $('priority').value=selectedPriority;
+ $('agent').value=selectedAgentId;
+ project.addEventListener('change',()=>{selectedRepository=project.value;});
+ $('priority').addEventListener('change',()=>{selectedPriority=$('priority').value;});
+ $('agent').addEventListener('change',()=>{selectedAgentId=$('agent').value;});
+ const retry=$('retry-repos');if(retry)retry.addEventListener('click',()=>loadRepositories());
  $('ai-action').addEventListener('click',async()=>{const message=objective.value.trim();if(message.length<12){note('Descreva a solicitação antes de analisar.',true);return;}
  const b=$('ai-action');b.disabled=true;b.textContent='Analisando...';
  try{const r=await api('ai/interpret',{method:'POST',body:JSON.stringify({message})});const target=$('ai-result');target.hidden=false;target.textContent=r.response+(r.usage?.input!==null&&r.usage?.input!==undefined?'\n\nTokens desta análise: '+r.usage.input+' entrada, '+(r.usage.output??'não informado')+' saída.':'');}
  catch(e){note(e.message,true);}finally{b.disabled=false;b.textContent='Analisar com IA';}});
  form.addEventListener('submit',async e=>{e.preventDefault();const b=$('task-submit');if(b.disabled)return;
- const value={objective:objective.value.trim(),project:project.value==='novo-projeto'?'novo-projeto':project.value,repository:repo.value.trim(),priority:$('priority').value,agent:$('agent').value,
- delivery_type:delivery.value,allowed_paths:$('paths').value.split(',').map(s=>s.trim()).filter(Boolean),public_data_confirmed:$('public-confirm').checked};
- if(!value.repository.startsWith('danielnep/')||value.repository.length<13){advanced.hidden=false;note('Informe o repositório autorizado.',true);return;}
- if(value.delivery_type==='existing_product'&&value.allowed_paths.length===0){advanced.hidden=false;note('Para alterar um projeto existente, informe os caminhos permitidos.',true);return;}
+ const repository=project.value;
+ if(!repoList.some(r=>r.repository===repository)){note('Selecione um projeto da lista.',true);return;}
+ const value={objective:objective.value.trim(),repository,project:repository.split('/')[1].toLowerCase(),priority:selectedPriority,agent:selectedAgentId,
+ delivery_type:'existing_product',public_data_confirmed:true};
  b.disabled=true;b.textContent='Enviando...';
  try{const saved=await api('tasks',{method:'POST',body:JSON.stringify(value)});draft='';note('Solicitação '+saved.id+' enviada. A execução ainda não foi comprovada.');await refresh(true);}
  catch(err){note(err.message,true);}finally{b.disabled=false;b.textContent='Enviar solicitação ↑';}
@@ -260,6 +273,7 @@ async function boot(){
  showLogin(false);
  try{const session=await api('session');adminAuthorized=Boolean(session.authenticated);}catch{}
  await refresh(true);
+ await loadRepositories();
  connectEvents();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));
