@@ -4,7 +4,7 @@ const STORE='horizon.studio.preview.v1';
 const $=(root,id)=>root.querySelector('#'+id);
 const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const previous=(()=>{try{return JSON.parse(sessionStorage.getItem(STORE)||'{}')}catch{return {}}})();
-const state={device:SIZES[previous.device]?previous.device:'mobile',project:previous.project||'',manualUrls:previous.manualUrls||{},lastRevision:'',currentUrl:'',source:'',checking:false,lastCheck:0,loop:null,observer:null,root:null,disposed:false};
+const state={device:SIZES[previous.device]?previous.device:'mobile',project:previous.project||'',manualUrls:previous.manualUrls||{},lastRevision:'',currentUrl:'',source:'',checking:false,wantedReload:false,lastCheck:0,loop:null,observer:null,root:null,disposed:false};
 function persist(){try{sessionStorage.setItem(STORE,JSON.stringify({device:state.device,project:state.project,manualUrls:state.manualUrls}))}catch{}}
 function validPreview(raw){
  try{
@@ -64,7 +64,8 @@ function display(url,revision=''){
  fitPreview();
 }
 async function probe({force=false}={}){
- const root=state.root;if(!root||!root.isConnected||state.checking||state.disposed)return;
+ const root=state.root;if(!root||!root.isConnected||state.disposed)return;
+ if(state.checking){if(force)state.wantedReload=true;return;}
  if(!force&&Date.now()-state.lastCheck<14000)return;
  state.lastCheck=Date.now();state.checking=true;
  const project=state.project;
@@ -89,7 +90,8 @@ async function probe({force=false}={}){
   setStatus(data.revision?'Preview publicado · atualização automática ativa':'Preview publicado · verificando alterações','ready');
  }catch{
   if(project===state.project){display('');setStatus('Não foi possível consultar a publicação. Use um endereço de preview direto.','error');}
- }finally{state.checking=false;if(state.root===root)checkButton.disabled=false}
+ }finally{state.checking=false;if(state.root===root)checkButton.disabled=false;
+  if(state.wantedReload&&!state.disposed){state.wantedReload=false;queueMicrotask(()=>void probe({force:true}));}}
 }
 function chooseProject(value){
  if(!value||value===state.project)return;
@@ -140,7 +142,7 @@ export function mountStudio({repositories=[],onProjectChange=()=>{}}={}){
  });
  $(root,'studio-connect').addEventListener('click',()=>setManual($(root,'studio-url').value));
  $(root,'studio-clear').addEventListener('click',()=>{delete state.manualUrls[state.project];$(root,'studio-url').value='';state.currentUrl='';persist();void probe({force:true})});
- $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Aplicativo aberto no preview · '+(state.source==='custom'?'URL personalizada':'publicação verificada'),'ready')});
+ $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Preview solicitado · se a tela ficar vazia, use Abrir','ready')});
  if(typeof ResizeObserver!=='undefined'){state.observer=new ResizeObserver(fitPreview);state.observer.observe($(root,'studio-canvas'));}
  window.addEventListener('resize',fitPreview);
  state.loop=setInterval(()=>void probe(),20000);
@@ -154,5 +156,5 @@ export function stopStudio(){
  if(state.loop){clearInterval(state.loop);state.loop=null}
  if(state.observer){state.observer.disconnect();state.observer=null}
  window.removeEventListener('resize',fitPreview);
- state.root=null;state.disposed=true;
+ state.root=null;state.disposed=true;state.wantedReload=false;
 }
