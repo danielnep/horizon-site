@@ -27,3 +27,16 @@ test('servidor publica módulo do planejamento para a interface',async()=>{
   assert.match(await response.text(),/splitTaskPlan/);
  }finally{server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
 });
+
+test('parágrafo único com oito resultados exibe oito etapas do executor, mesmo sem lista no pedido',async()=>{
+ const source=await (await import('node:fs/promises')).readFile(new URL('../central/app.js',import.meta.url),'utf8');
+ assert.match(source,/recordedStages\.length>1/);
+ assert.match(source,/recordedStages\.map/);
+ const stages=Array.from({length:8},(_,i)=>({summary:'Etapa '+(i+1),state:i<2?'completed':'pending',agent:'qa-engineer'}));
+ const writtenPlan=splitTaskPlan('Reformule o painel Studio Horizon e valide a interface.');
+ const items=writtenPlan.length>1?writtenPlan:stages.length>1?stages.map(x=>x.summary):writtenPlan;
+ const result=taskPlanStatus(items,stages);
+ assert.equal(result.length,8);
+ assert.equal(result.filter(x=>x.verified).length,2);
+ assert.equal(result[3].verified,false);
+});
