@@ -170,6 +170,25 @@ class RailwayTeamTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_CLIENT',result)
         self.assertNotIn('../../secret',result)
 
+    def test_supervisor_wait_logs_only_safe_reason_and_deadline(self):
+        waiting = {'supervisor_wait':'ctl-synthetic-123','reason':'scheduled_retry',
+                   'task_id':'chat-ctl-synthetic-123:ui',
+                   'agent':'ui-ux-designer','retry_reason':'groq_capacity_wait',
+                   'next_retry_at':'2026-10-21T09:00:00Z',
+                   'blocked_by':[], 'secret':'DO_NOT_LOG'}
+        fake = types.SimpleNamespace(returncode=0,stderr='',
+                    stdout=json.dumps(waiting)+'\n'+json.dumps(
+                        dict(waiting,supervisor_wait='../../secret')))
+        buffer=StringIO()
+        with redirect_stdout(buffer):
+            team.report_cycle_telemetry(fake)
+        output=buffer.getvalue()
+        self.assertIn('supervisor_wait',output)
+        self.assertIn('groq_capacity_wait',output)
+        self.assertIn('nextRetryAt',output)
+        self.assertNotIn('DO_NOT_LOG',output)
+        self.assertNotIn('../../secret',output)
+
     def test_railway_inbox_fingerprint_detects_new_owner_task(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(team.direct_inventory(tmp)[0], 0)

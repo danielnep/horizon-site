@@ -65,6 +65,34 @@ function acaoEmPortugues(action,path){
  search_web:'Está pesquisando informações',fetch_public:'Está consultando uma referência',
  inspect_image:'Está verificando uma imagem'})[action]||'Atividade recente identificada';
 }
+const WAIT_LABELS=Object.freeze({
+ scheduled_retry:'Nova tentativa programada',
+ waiting_for_dependencies:'Aguardando uma etapa anterior',
+ ready_for_worker:'Pronta para execução pelo worker',
+ being_executed:'Etapa em execução',
+ lease_expired:'Execução anterior perdeu a reserva; recuperação necessária',
+ terminal_failed:'Etapa falhou e exige recuperação',
+ terminal_blocked:'Etapa bloqueada por falha anterior',
+ all_stages_reported:'Etapas encerradas; verificar testes e publicação'
+});
+const RETRY_LABELS=Object.freeze({
+ groq_capacity_wait:'Aguardando capacidade de chamadas do Groq',
+ provider_retry:'A IA respondeu com erro temporário; nova tentativa agendada',
+ repair_cycle:'O especialista encontrou falhas repetidas e precisa refazer o diagnóstico'
+});
+function waitDescription(reason,retryReason){
+ const base=WAIT_LABELS[reason]||'Aguardando justificativa registrada pelo executor';
+ return reason==='scheduled_retry'&&retryReason?base+': '+(RETRY_LABELS[retryReason]||retryReason.replaceAll('_',' ')):base;
+}
+function taskWaitingSummary(t){
+ const s=t.supervision;
+ if(!s||!s.firstPendingTask||!s.reason)return '';
+ let info=waitDescription(s.reason,s.retryReason);
+ if(s.firstPendingAgent)info+=' · '+label(s.firstPendingAgent);
+ if(s.nextRetryAt)info+=' · próxima tentativa '+time(s.nextRetryAt);
+ if(s.blockedBy?.length)info+=' · depende de '+s.blockedBy.join(', ');
+ return info;
+}
 function chip(s){
  const v=String(s||'não verificado');
  const cls=/bloque|falha|rejeit|erro/i.test(v)?'bad':/execu|conclu|ativo|iniciado/i.test(v)?'good':/aguard|fila/i.test(v)?'warn':'';
@@ -98,6 +126,7 @@ function counts(){
 function summary(){const c=counts();return '<div class="summary" aria-label="Situação geral"><span class="working"><b>'+c.active+'</b> trabalhando</span><span><b>'+c.queue+'</b> na fila</span><span><b>'+c.offQueue+'</b> pendências fora da fila</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas na fila</span><span><b>17</b> agentes</span></div>';}
 function taskRow(t){
  const latest=t.lastActivity||null,stamp=latest&&Date.parse(latest.at),fresh=Number.isFinite(stamp)&&Date.now()-stamp<120000;
+ const pendingDiagnosis=taskWaitingSummary(t);
  const active=fresh&&t.inQueue&&!/pausada|cancelada|concluída/.test(t.status);
  const progress=t.progress;
  const validProgress=progress&&Number.isInteger(progress.done)&&Number.isInteger(progress.total)&&progress.total>0&&progress.done<=progress.total;
@@ -125,20 +154,38 @@ function taskRow(t){
   (item.text.length>155?'<details class="task-step-full"><summary>Ver descrição completa</summary><p>'+escapeHTML(item.text)+'</p></details>':'')+
   '</div></li>').join('')+'</ol></section>':'';
  const steps=Array.isArray(t.stages)&&t.stages.length?
-  '<div class="task-stages">'+t.stages.map(stage=>'<div class="stage-line"><span class="stage-icon">'+
-  (stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent))+'</b> '+
-  chip(stage.state)+(stage.summary?'<p>'+escapeHTML(stage.summary)+'</p>':'')+
-  (stage.blocker?'<p class="error">Problema: '+escapeHTML(stage.blocker)+'</p>':'')+'</div></div>').join('')+'</div>':
+  '<div class="task-stages">'+t.stages.map(stage=>{
+   const technical=stage.state==='queued'||stage.state==='running'?
+    '<p class="stage-reason">'+escapeHTML(waitDescription(stage.waitReason,stage.retryReason))+
+    (stage.nextRetryAt?' · Retomar: '+escapeHTML(time(stage.nextRetryAt)):'')+
+    (stage.blockedBy?.length?' · Depende de: '+escapeHTML(stage.blockedBy.join(', ')):'')+'</p>':'';
+   const attempts=Number.isInteger(stage.attempts)?
+    '<small class="smallprint">Tentativas: '+stage.attempts+
+    (Number.isInteger(stage.maxAttempts)?' de '+stage.maxAttempts:'')+
+    (Number.isInteger(stage.checkpointStep)?' · Ações registradas: '+stage.checkpointStep:'')+'</small>':'';
+   return '<div class="stage-line"><span class="stage-icon">'+
+   (stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+
+   '</span><div><b>'+escapeHTML(label(stage.agent))+'</b> '+chip(stage.state)+
+   (stage.summary?'<p>'+escapeHTML(stage.summary)+'</p>':'')+
+   technical+attempts+(stage.blocker?'<p class="error">Problema: '+escapeHTML(stage.blocker)+'</p>':'')+
+   '</div></div>';
+  }).join('')+'</div>':
   '<p class="smallprint">Não há detalhes de etapas anteriores registrados.</p>';
  const controls=PAGES_MODE?'':t.inQueue?
  '<div class="task-controls"><button class="secondary" data-task-action="pause" data-task-id="'+escapeHTML(t.id)+'">Pausar</button>'+
  '<button class="secondary" data-task-action="cancel" data-task-id="'+escapeHTML(t.id)+'">Cancelar tarefa</button></div>':
  /pausada|cancelada/.test(t.status)?'<div class="task-controls"><button class="secondary" data-task-action="resume" data-task-id="'+escapeHTML(t.id)+'">Devolver para a fila</button></div>':'';
- const detail='<div class="task-detail">'+live+controls+
+ const diagnosis=t.supervision?'<section class="wait-diagnosis" aria-label="Diagnóstico do supervisor"><b>Supervisor · Situação real</b>'+
+  '<p>'+escapeHTML(pendingDiagnosis||waitDescription(t.supervision.reason,t.supervision.retryReason))+'</p>'+
+  (t.supervision.firstPendingTask?'<small>Primeira etapa: '+escapeHTML(t.supervision.firstPendingTask)+'</small>':'')+
+  (t.supervision.checkedAt?'<small> · Conferido: '+escapeHTML(time(t.supervision.checkedAt))+'</small>':'')+
+  '</section>':'';
+ const detail='<div class="task-detail">'+live+diagnosis+controls+
  '<p class="smallprint">'+(t.inQueue?'Esta tarefa está na fila do servidor.':
  'Esta tarefa não está na fila atual. O registro anterior pode ser consultado no histórico.')+'</p>'+
  (t.blocker?'<p class="error">Problema: '+escapeHTML(t.blocker)+'</p>':'')+
- checklist+'<details><summary class="history-toggle">Ver histórico e comprovantes</summary>'+steps+
+ checklist+'<h3 class="stages-heading">Etapas, motivos e retomada</h3>'+steps+
+ '<details><summary class="history-toggle">Ver comprovantes e validação</summary>'+
  '<div class="detail-grid"><div><small>Responsável</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
  '<div><small>Situação</small><b>'+escapeHTML(emPortugues(t.rawStatus))+'</b></div>'+
  '<div><small>Testes</small><b>'+(t.approved?'Aprovados':'Sem aprovação comprovada')+'</b></div>'+
@@ -146,6 +193,7 @@ function taskRow(t){
  '<a class="linkrow" href="#historico">Abrir histórico completo →</a></div>';
  return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
  (latest?'<div class="recent-action">'+escapeHTML(acaoEmPortugues(latest.action,latest.path))+'</div>':'')+
+ (pendingDiagnosis?'<div class="pending-reason">'+escapeHTML(pendingDiagnosis)+'</div>':'')+
  (validProgress?'<div class="tiny-progress">'+progress.done+'/'+progress.total+' etapas com resultado</div>':'')+'</div>'+
  chip(t.status)+'<button class="linkrow" data-detail="'+escapeHTML(t.id)+'" aria-expanded="false">Acompanhar ▾</button>'+
  '<div class="inline-detail" id="detail-'+escapeHTML(t.id)+'" hidden>'+detail+'</div></div>';
