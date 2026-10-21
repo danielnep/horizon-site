@@ -177,7 +177,7 @@ class RailwayTeamTests(unittest.TestCase):
                    'next_retry_at':'2026-10-21T09:00:00Z',
                    'blocked_by':[], 'secret':'DO_NOT_LOG'}
         fake = types.SimpleNamespace(returncode=0,stderr='',
-                    stdout=json.dumps(waiting)+'\\n'+json.dumps(
+                    stdout=json.dumps(waiting)+'\n'+json.dumps(
                         dict(waiting,supervisor_wait='../../secret')))
         buffer=StringIO()
         with redirect_stdout(buffer):
