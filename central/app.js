@@ -1,4 +1,5 @@
 import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
+import {studioMarkup,mountStudio,notifyStudioChanged,stopStudio} from './studio.mjs';
 const $=id=>document.getElementById(id);
 const PAGES_MODE=location.hostname.endsWith('.github.io');
 
@@ -32,7 +33,7 @@ const AGENT_NAMES={
 'integration-engineer':'Integrações','qa-engineer':'QA / Testes','security-engineer':'Segurança',
 'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
 'corregedoria-may':'Corregedoria','may-persona':'May Persona'};
-const LABELS={inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'17 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
+const LABELS={estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'17 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
@@ -341,10 +342,34 @@ function pageSistema(){
  '<p class="smallprint">Explicação baseada no último registro, sem inventar causas.</p><div class="task-controls"><button type="button" class="secondary" id="diagnose-ai">Investigar com IA</button></div><div id="diagnosis-result" class="diagnosis" hidden></div></section>'+
  '<div class="section-heading"><h2>Conexão</h2></div><div class="smallprint">Atualizações por SSE, com reconexão e atualização periódica de segurança. Nada de IA para sincronizar estados.</div>';
 }
+
+function studioProgress(){
+ const active=(snapshot?.tasks||[]).filter(t=>t.inQueue).slice(0,5);
+ return '<h2>Agentes trabalhando</h2>'+
+ (active.length?active.map(t=>'<div class="studio-progress-line"><strong>'+escapeHTML(String(t.title||t.project||'Tarefa').slice(0,68))+'</strong>'+
+ chip(t.status)+'</div>').join(''):'<p class="smallprint">Nenhuma tarefa em execução confirmada. Envie uma solicitação para acompanhar o progresso.</p>')+
+ '<p class="smallprint">Os indicadores vêm da fila real do Railway. O preview mostra a publicação do projeto, não um mockup.</p>';
+}
+function pageEstudio(){
+ return heading('Estúdio de criação','Converse com os especialistas e veja o aplicativo no celular ou desktop.')+
+ '<div class="studio-layout"><div class="studio-compose">'+
+ (PAGES_MODE?'<section class="panel request"><h2>Prévia do projeto</h2><p class="subtitle">No GitHub Pages, o estúdio funciona em modo de acompanhamento.</p></section>':requestForm())+
+ '<section id="studio-progress" class="studio-progress" aria-label="Atividade real dos agentes">'+studioProgress()+'</section>'+
+ '</div>'+studioMarkup(repoList)+'</div>';
+}
+let renderedPage=null;
 function render(){
- updateMenu();const page=active();const template={inicio:pageInicio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
+ updateMenu();const page=active();
+ if(page==='estudio'&&renderedPage==='estudio'&&$('studio-root')){
+  const progress=$('studio-progress');if(progress)progress.innerHTML=studioProgress();
+  notifyStudioChanged();updateConn();return;
+ }
+ if(renderedPage==='estudio')stopStudio();
+ const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
- bind();updateConn();
+ renderedPage=page;bind();if(page==='estudio')mountStudio({repositories:repoList,onProjectChange:repository=>{
+ selectedRepository=repository;const selector=$('project');if(selector&&[...selector.options].some(o=>o.value===repository))selector.value=repository;
+ }});updateConn();
 }
 
 
@@ -427,7 +452,7 @@ function bind(){
  project.value=selectedRepository;
  $('priority').value=selectedPriority;
  $('agent').value=selectedAgentId;
- project.addEventListener('change',()=>{selectedRepository=project.value;});
+ project.addEventListener('change',()=>{selectedRepository=project.value;if(active()==='estudio'){const picker=$('studio-project');if(picker&&picker.value!==selectedRepository){picker.value=selectedRepository;picker.dispatchEvent(new Event('change'));}}});
  $('priority').addEventListener('change',()=>{selectedPriority=$('priority').value;});
  $('agent').addEventListener('change',()=>{selectedAgentId=$('agent').value;});
  const retry=$('retry-repos');if(retry)retry.addEventListener('click',()=>loadRepositories());
