@@ -223,7 +223,7 @@ async function loadRepositories(){
   repoLoadError=null;
   if(repoList.length&&!repoList.some(r=>r.repository===selectedRepository))selectedRepository=repoList[0].repository;
  }catch(e){repoLoadError=e.message;repoList=[];}
- if(active()==='inicio')render();
+ if(active()==='inicio'||active()==='estudio')render();
 }
 
 function requestForm(){
@@ -360,7 +360,7 @@ function pageEstudio(){
 let renderedPage=null;
 function render(){
  updateMenu();const page=active();
- if(page==='estudio'&&renderedPage==='estudio'&&$('studio-root')){
+ if(page==='estudio'&&renderedPage==='estudio'&&$('studio-root')&&$('studio-project')?.options.length===repoList.length){
   const progress=$('studio-progress');if(progress)progress.innerHTML=studioProgress();
   notifyStudioChanged();updateConn();return;
  }
