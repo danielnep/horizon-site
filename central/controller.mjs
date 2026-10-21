@@ -8,7 +8,7 @@ export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css',
+'':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
@@ -176,6 +176,55 @@ async function resolveTaskDefaults(value){
  const resolved=deriveCodePaths(root,repo);
  if(!resolved.length)throw Error('nao_encontrei_arquivos_editaveis_nesse_projeto');
  return {...value,project:valueProject,repository:repo,allowed_paths:resolved};
+}
+
+
+// Public preview discovery is scoped to repos owned by this account and a fixed set of public hosts.
+// Never fetch arbitrary URLs received from a browser (SSRF) and never imply that a commit equals a working build.
+const previewCache=new Map();
+export function safePublishedUrl(raw){
+ try{
+  const url=new URL(String(raw||''));
+  if(url.protocol!=='https:'||url.username||url.password||url.port)return null;
+  const host=url.hostname.toLowerCase();
+  if(host==='danielnep.github.io'||host==='horizonsolucoes.com'||host==='www.horizonsolucoes.com'||
+     host.endsWith('.up.railway.app')||host.endsWith('.vercel.app')||
+     host.endsWith('.netlify.app')||host.endsWith('.pages.dev'))return url.href;
+ }catch{}
+ return null;
+}
+async function projectPreview(repoName){
+ const repo=(await ownerRepositories()).find(x=>x.repository===repoName);
+ if(!repo)return {ready:false,message:'Selecione um repositório da sua lista.'};
+ const cached=previewCache.get(repoName);
+ if(cached&&cached.until>Date.now())return cached.data;
+ const name=repo.name;
+ const meta=await githubOwner('repos/'+repoName);
+ let candidates=[];
+ if(safePublishedUrl(meta.homepage))candidates.push(safePublishedUrl(meta.homepage));
+ if(meta.has_pages){
+  try{
+   const page=await githubOwner('repos/'+repoName+'/pages');
+   if(safePublishedUrl(page?.html_url))candidates.push(safePublishedUrl(page.html_url));
+  }catch{}
+  candidates.push('https://danielnep.github.io/'+encodeURIComponent(name)+'/');
+ }
+ const unique=[...new Set(candidates)];
+ let result={ready:false,message:'Nenhuma publicação encontrada. Conecte o endereço HTTPS do preview no Estúdio.'};
+ for(const url of unique){
+  try{
+   const response=await fetch(url,{method:'HEAD',redirect:'manual',signal:AbortSignal.timeout(5500),
+    headers:{'user-agent':'Horizon-Control-Preview/1','accept':'text/html'}});
+   if(response.ok){
+    const revision=(response.headers.get('etag')||response.headers.get('last-modified')||'').replace(/[^a-zA-Z0-9._-]/g,'').slice(0,36);
+    result={ready:true,url,revision,source:'published'};
+    break;
+   }
+  }catch{}
+ }
+ previewCache.set(repoName,{until:Date.now()+15000,data:result});
+ if(previewCache.size>60)previewCache.delete(previewCache.keys().next().value);
+ return result;
 }
 
 async function loadOverview(){
@@ -352,7 +401,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    const ext=asset.split('.').pop();
    const headers={'content-type':MIME[ext]||'application/octet-stream','x-content-type-options':'nosniff',
     'cache-control':asset==='sw.js'||asset==='index.html'?'no-cache':'public, max-age=300',
-    'content-security-policy':"default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    'content-security-policy':"default-src 'self'; connect-src 'self'; frame-src https:; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     'referrer-policy':'no-referrer'};
    res.writeHead(200,headers);res.end(req.method==='HEAD'?undefined:value);
   }catch{send(res,503,{error:'painel_indisponivel'});}return true;
@@ -373,7 +422,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  }
  const publicRead=(req.method==='POST'&&raw==='/central/api/ai/chat')||req.method==='GET'&&[
  '/central/api/overview','/central/api/agents','/central/api/tasks',
- '/central/api/usage','/central/api/history','/central/api/events','/central/api/repositories',
+ '/central/api/usage','/central/api/history','/central/api/events','/central/api/repositories','/central/api/preview',
  '/central/api/ai/chat'
  ].includes(raw);
  if(!publicRead&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
@@ -389,6 +438,13 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   for(const event of events.filter(e=>e.id>since))res.write('id: '+event.id+'\nevent: update\ndata: '+JSON.stringify(event)+'\n\n');
   const ping=setInterval(()=>{try{res.write(': ping\n\n');}catch{}},24000);
   req.on('close',()=>{clearInterval(ping);live.delete(res);stopLiveMonitorIfUnused();});return true;
+ }
+ if(req.method==='GET'&&raw==='/central/api/preview'){
+  const project=new URL(req.url,'http://local').searchParams.get('repository')||'';
+  if(!REPO.test(project)){send(res,400,{ready:false,message:'Projeto inválido.'});return true;}
+  try{send(res,200,await projectPreview(project));}
+  catch{send(res,503,{ready:false,message:'Publicações temporariamente indisponíveis. Conecte a URL diretamente.'});}
+  return true;
  }
  if(req.method==='GET'&&raw==='/central/api/repositories'){
   try{const repositories=await ownerRepositories();send(res,200,{repositories,count:repositories.length});}
