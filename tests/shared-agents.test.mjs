@@ -96,3 +96,11 @@ test('one-time memory import is inert without an artifact and starts once when a
   stop();
   assert.equal(process.closed,'SIGTERM');
 });
+
+for(const key of ['GROQ_API_KEY','API_IA_GROQ']) {
+  test('Groq-only preflight accepts '+key,()=>{
+    const env={...complete,[key]:'synthetic'};
+    delete env.GEMINI_API_KEY;
+    assert.equal(sharedAgentPreflight(env).ready,true);
+  });
+}

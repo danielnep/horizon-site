@@ -88,7 +88,7 @@ def verify_environment(env):
         raise RuntimeError("railway_state_branch_invalid")
     if env.get("HORIZON_AGENT_ACTIONS_DISABLED")!="1":
         raise RuntimeError("single_writer_not_armed")
-    if not (env.get("GEMINI_API_KEY") or env.get("DEEPSEEK_API_KEY")):
+    if not (env.get("GEMINI_API_KEY") or env.get("GROQ_API_KEY") or env.get("API_IA_GROQ")):
         raise RuntimeError("no_reasoning_provider")
     key_file=(Path(env.get("RAILWAY_VOLUME_MOUNT_PATH","/data"))
               /"horizon-checkpoint-migration-private.pem")
@@ -254,6 +254,47 @@ def report_cycle_telemetry(result):
         event("cycle_failed", rc=code, errorClass=error_class)
 
 
+def probe_providers(root, env, *, run=subprocess.run):
+    """Once per startup: synthetic inference, no queue/state mutations."""
+    if env.get('HORIZON_PROVIDER_STARTUP_PROBE') != '1':
+        return
+    try:
+        result = run([sys.executable, '-m', 'horizon_core.runtime_provider_probe'],
+                     cwd=root, env=env, capture_output=True, text=True,
+                     check=False, timeout=100)
+    except subprocess.TimeoutExpired:
+        event('provider_probe', reason='timeout')
+        return
+    for line in (result.stdout or '')[-16384:].splitlines():
+        try:
+            row = json.loads(line).get('provider_probe', {})
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        if (row.get('route') not in ('primary','forced_fallback') or
+                row.get('provider') not in ('gemini','groq','all') or
+                type(row.get('ok')) is not bool):
+            continue
+        # Compose only allowlisted enums/integers, never relay model text.
+        event('provider_probe', state=row['route'],
+              reason=('ok_' if row['ok'] else 'failed_') + row['provider'])
+        failures = row.get('failures', [])
+        for failure in failures[:4] if isinstance(failures, list) else []:
+            if not isinstance(failure, dict):
+                continue
+            if (failure.get('provider') in ('gemini','groq') and
+                    failure.get('reason') in ('quota','authentication','server','http',
+                    'transport','configuration','invalid_action','invalid_response',
+                    'rate_limited_local','operator_limit','blocked_response')):
+                code = failure.get('status')
+                event('provider_probe_failure', state=failure['provider'],
+                      reason=failure['reason'],
+                      count=code if type(code) is int and 100 <= code <= 599 else 0)
+    if result.returncode:
+        event('provider_probe', reason='process_failed', rc=result.returncode)
+
+
 def run_cycle(root, env, *, run=subprocess.run):
     if shutil.disk_usage(root).free < MIN_SCRATCH_FREE_BYTES:
         raise RuntimeError("scratch_storage_low")
@@ -288,6 +329,7 @@ def main(environ=None):
             env["PYTHONPATH"] = str(target) + os.pathsep + env.get("PYTHONPATH", "")
         env["HORIZON_STATE_BACKEND"] = "github-sqlite"
         env["GITHUB_REPOSITORY"] = REPO
+        probe_providers(root, env)
         while not stop:
             # Recheck single-writer precondition in case Actions are re-enabled.
             verify_exclusive(env["GITHUB_TOKEN"])
