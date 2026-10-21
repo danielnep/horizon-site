@@ -162,3 +162,34 @@ test('PWA dashboard does not block visitors behind the login overlay',async()=>{
   assert.match(script,/t\.stages/);
  });
 });
+
+test('a Central mostra repositórios reais do GitHub sem digitar caminhos',async()=>{
+ const nativeFetch=globalThis.fetch;
+ const fake=[{name:'romaneio-digital',owner:{login:'danielnep'},private:false,archived:false,description:'Romaneio'},
+ {name:'horizon-site',owner:{login:'danielnep'},private:false,archived:false},
+ {name:'projeto-privado',owner:{login:'danielnep'},private:true,archived:false},
+ {name:'outro',owner:{login:'alguem'},private:false,archived:false}];
+ globalThis.fetch=(url,options)=> {
+  const u=String(url);
+  if(u.includes('api.github.com/user/repos')||u.includes('api.github.com/users/danielnep/repos'))return Promise.resolve(new Response(JSON.stringify(fake),{status:200,headers:{'content-type':'application/json'}}));
+  if(u.includes('api.github.com/repos/danielnep/romaneio-digital/contents'))return Promise.resolve(new Response(JSON.stringify([
+   {name:'src',type:'dir'}, {name:'index.html',type:'file'}, {name:'.env',type:'file'},
+   {name:'node_modules',type:'dir'}]),{status:200}));
+  return nativeFetch(url,options);
+ };
+ try {
+  await withServer(async({url})=>{
+   const res=await nativeFetch(url+'/central/api/repositories');
+   assert.equal(res.status,200);
+   const names=(await res.json()).repositories.map(x=>x.name);
+   assert.deepEqual(names,['horizon-site','romaneio-digital']);
+   const scopes=await nativeFetch(url+'/central/api/repository-scopes?repository=danielnep%2Fromaneio-digital');
+   assert.equal(scopes.status,200);
+   assert.deepEqual((await scopes.json()).paths,['src/**','index.html']);
+   const ui=await nativeFetch(url+'/central/app.js').then(x=>x.text());
+   assert.match(ui,/loadRepositories/);
+   assert.match(ui,/Buscar nos meus repositórios/);
+   assert.doesNotMatch(ui,/id="repo" name="repo"/);
+  });
+ }finally{globalThis.fetch=nativeFetch;}
+});
