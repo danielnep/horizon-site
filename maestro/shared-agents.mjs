@@ -18,8 +18,8 @@ export function sharedAgentPreflight(env=process.env) {
     missing.push('HORIZON_STATE_BRANCH_FORMAT');
   if(env.HORIZON_AGENT_ACTIONS_DISABLED!=='1')
     missing.push('HORIZON_AGENT_ACTIONS_DISABLED');
-  if(!(env.GEMINI_API_KEY||env.DEEPSEEK_API_KEY))
-    missing.push('GEMINI_API_KEY_OR_DEEPSEEK_API_KEY');
+  if(!(env.GEMINI_API_KEY||env.GROQ_API_KEY||env.API_IA_GROQ))
+    missing.push('GEMINI_API_KEY_OR_GROQ_API_KEY');
   return {ready:missing.length===0,reason:missing.length?'configuration_missing':'ready',missing};
 }
 

@@ -149,3 +149,20 @@ class RailwayTeamTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+class ProviderProbeTests(unittest.TestCase):
+    def test_probe_logs_only_typed_provider_status(self):
+        result=types.SimpleNamespace(returncode=0,stdout='\n'.join([
+            json.dumps({'provider_probe':{'route':'primary','ok':True,'provider':'gemini',
+                        'private':'DO_NOT_LOG','failures':[]}}),
+            json.dumps({'provider_probe':{'route':'forced_fallback','ok':True,'provider':'groq',
+                        'failures':[{'provider':'gemini','reason':'server','status':503,
+                                     'message':'DO_NOT_LOG'}]}})]))
+        seen=[]
+        with patch.object(team,'event',side_effect=lambda kind,**kw:seen.append((kind,kw))):
+            team.probe_providers(Path('.'),{'HORIZON_PROVIDER_STARTUP_PROBE':'1'},
+                                 run=lambda *a,**kw:result)
+        self.assertEqual(seen[0][1]['reason'],'ok_gemini')
+        self.assertEqual(seen[1][1]['reason'],'ok_groq')
+        self.assertEqual(seen[2][1]['count'],503)
+        self.assertNotIn('DO_NOT_LOG',str(seen))
