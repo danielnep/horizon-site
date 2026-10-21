@@ -215,6 +215,8 @@ test('supervisor wait and dependency proof appear in real task API',async()=>{
   assert.equal(local.supervision.firstPendingAgent,'ui-ux-designer');
   assert.equal(local.stages[1].attempts,2);
   assert.deepEqual(local.stages[2].blockedBy,['chat-'+id+':ui']);
+  // The worker's durable report event invalidates any previously cached view.
+  teamLog('[horizon-team] supervisor_wait {"taskId":"'+id+'","reason":"scheduled_retry"}');
   await withServer(async({url})=>{
    const res=await fetch(url+'/central/api/tasks');
    assert.equal(res.status,200);
