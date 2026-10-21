@@ -38,7 +38,8 @@ def event(kind, **safe):
     """Log only declared machine metadata. No exception text or task payload."""
     allowed = {"count", "rc", "seconds", "sha", "reason", "required", "state",
                "processed", "rejected", "ready_for_continuation", "taskId",
-               "delegatedCount", "qaVerified", "errorClass", "errorKind", "deferred"}
+               "delegatedCount", "qaVerified", "errorClass", "errorKind", "deferred",
+               "applied", "removed"}
     packet = {k: v for k, v in safe.items() if k in allowed}
     print("[team-railway] " + kind + " " + json.dumps(packet, sort_keys=True), flush=True)
 
@@ -216,7 +217,12 @@ def report_cycle_telemetry(result):
             continue
         if not isinstance(packet, dict):
             continue
-        if (type(packet.get("supervisor_recovery")) is int and
+        reset = packet.get("queue_reset")
+        if (isinstance(reset, dict) and type(reset.get("applied")) is bool
+                and type(reset.get("removed")) is int
+                and 0 <= reset["removed"] <= 100000):
+            event("queue_reset", applied=reset["applied"], removed=reset["removed"])
+        elif (type(packet.get("supervisor_recovery")) is int and
                 0 < packet["supervisor_recovery"] <= 10000):
             event("supervisor_recovery", count=packet["supervisor_recovery"])
         elif (isinstance(packet.get("supervisor_rejection"), str) and
@@ -261,7 +267,29 @@ def report_cycle_telemetry(result):
             if match:
                 error_class = match.group(1)
                 break
-        event("cycle_failed", rc=code, errorClass=error_class)
+        # Only exact known diagnostics; never copy a traceback or model content
+        # into public Railway logs, where tokens/client details may appear.
+        known = {
+            "Queue not empty after owner reset": "QueueResetAssertion",
+            "Queue not empty immediately after owner reset": "QueueResetIntegrity",
+            "Previous SQLite checkpoint missing; refusing empty queue": "CheckpointMissing",
+            "Invalid GitHub checkpoint response": "CheckpointInvalid",
+            "Restored SQLite integrity check failed": "SQLiteIntegrity",
+            "GitHub HTTP 403": "GitHubForbidden",
+            "GitHub HTTP 409": "GitHubConflict",
+            "GitHub HTTP 422": "GitHubRejected",
+            "GitHub transport failed": "GitHubTransport",
+            "Public project Git operation failed": "GitProjectFailed",
+            "Unsupported state backend; refusing implicit fallback": "UnsupportedStateBackend",
+        }
+        diagnostic = "UnclassifiedFailure"
+        for line in reversed(stderr[-8192:].splitlines()):
+            if ": " in line:
+                detail = line.split(": ", 1)[1].strip()
+                if detail in known:
+                    diagnostic = known[detail]
+                    break
+        event("cycle_failed", rc=code, errorClass=error_class, errorKind=diagnostic)
 
 
 def probe_providers(root, env, *, run=subprocess.run):
