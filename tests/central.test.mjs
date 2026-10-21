@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {startServer} from '../server.mjs';
 import {SPECIALISTS,operationalDigest,teamLog,deriveCodePaths} from '../central/controller.mjs';
+import {submitDirectTask,directTasks,directTaskAction} from '../maestro/direct-queue.mjs';
 
 async function withServer(fn){
  const old=process.env.HORIZON_MCP_TOKEN;
@@ -180,4 +181,38 @@ test('automatic scope identifies existing project source files and does not sele
   {name:'token.js',type:'file'},{name:'README.md',type:'file'}];
  const paths=deriveCodePaths(items,'danielnep/romaneio-digital');
  assert.deepEqual(paths,['src/**','css/**','index.html','server.mjs']);
+});
+
+test('direct queue actions pause, cancel and restore tasks without losing records',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'horizon-queue-actions-'));
+ const old=process.env.HORIZON_DIRECT_INBOX_DIR;
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+  const task=await submitDirectTask({project:'romaneio-digital',repository:'danielnep/romaneio-digital',
+   objective:'Testar fluxo do painel e preservar a interface aprovada',agent:'qa-engineer',priority:'P2',
+   delivery_type:'existing_product',allowed_paths:['js/**','index.html'],public_data_confirmed:true});
+  let rows=await directTasks();assert.equal(rows.find(x=>x.id===task.id).inQueue,true);
+  const paused=await directTaskAction(task.id,'pause');
+  assert.equal(paused.status,'pausada');
+  rows=await directTasks();assert.equal(rows.find(x=>x.id===task.id).status,'pausada');
+  const restored=await directTaskAction(task.id,'resume');
+  assert.equal(restored.status,'na fila');
+  rows=await directTasks();assert.equal(rows.find(x=>x.id===task.id).inQueue,true);
+  const cancelled=await directTaskAction(task.id,'cancel');
+  assert.equal(cancelled.status,'cancelada');
+  rows=await directTasks();assert.equal(rows.find(x=>x.id===task.id).status,'cancelada');
+  assert.equal(rows.find(x=>x.id===task.id).inQueue,false);
+  await assert.rejects(()=>directTaskAction('../secrets','resume'),/comando_invalido/);
+ }finally{
+  if(old===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;
+  else process.env.HORIZON_DIRECT_INBOX_DIR=old;
+  await rm(root,{recursive:true,force:true});
+ }
+});
+test('task control endpoint requires a session and cannot be triggered by strangers',async()=>{
+ await withServer(async({url})=>{
+  const unauthorized=await fetch(url+'/central/api/tasks/ctl-test-123/action',{method:'POST',
+   headers:{'content-type':'application/json'},body:JSON.stringify({action:'cancel'})});
+  assert.equal(unauthorized.status,401);
+ });
 });

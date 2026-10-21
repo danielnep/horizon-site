@@ -1,7 +1,7 @@
 import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {submitDirectTask,directTasks} from '../maestro/direct-queue.mjs';
+import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
@@ -169,22 +169,24 @@ async function loadOverview(){
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
  githubCache.promise=(async()=>{
-  const [queued,attendance]=await Promise.allSettled([
-   directTasks(),file('tasks/attendance/equipe.json')]);
+  const [queued,attendance,holds]=await Promise.allSettled([
+   directTasks(),file('tasks/attendance/equipe.json'),agentHolds()]);
   const q=queued.status==='fulfilled'?queued.value:[];
   const queueResults=q;
   const members=attendance.status==='fulfilled'&&attendance.value&&typeof attendance.value==='object'?attendance.value:null;
+  const heldSet=new Set(holds.status==='fulfilled'?holds.value:[]);
   const agents=SPECIALISTS.map(id=>{
    let rec=null;
    if(Array.isArray(members?.agents))rec=members.agents.find(x=>x.id===id||x.agent===id);
    else if(members?.agents&&typeof members.agents==='object')rec=members.agents[id]||null;
-   return {id,status:typeof rec?.status==='string'?rec.status:'sem telemetria individual',
+   return {id,status:typeof rec?.status==='string'?rec.status:'sem telemetria individual',held:heldSet.has(id),
    currentTask:typeof rec?.current_task==='string'?rec.current_task:(typeof rec?.task_ref==='string'?rec.task_ref:null),
    updatedAt:typeof rec?.updated_at==='string'?rec.updated_at:null};
   });
   const issues=[];
   if(queued.status==='rejected')issues.push('Fila Railway temporariamente indisponível');
   if(attendance.status==='rejected')issues.push('Presença individual indisponível');
+  if(holds.status==='rejected')issues.push('Estado de pausa dos agentes indisponível');
   return {at:new Date().toISOString(),source:'Fila direta Railway e telemetria deste processo',
    tasks:queueResults.filter(Boolean),agents,worker:{status:workerState,lastCycle},issues,
    available:{queue:queued.status==='fulfilled',results:queued.status==='fulfilled',attendance:attendance.status==='fulfilled'},
@@ -240,9 +242,13 @@ function limit(key,cap=6,window=900000){
 }
 async function interpret(payload){
  if(!limit('ai',8,60000))return {error:'limite_de_consultas',status:429};
- const message=String(payload?.message||'').trim();
- if(message.length<12||message.length>1600)return {error:'mensagem_deve_ter_12_a_1600_caracteres',status:400};
- const prompt='Você auxilia a central dos 17 agentes Horizon. Responda em português simples, com no máximo 100 palavras. Entenda a intenção, identifique projeto e agentes sugeridos, risco e próximo passo. Não invente estados, percentuais, logs, acessos ou conclusão. Não execute comandos nem inclua segredos.\nPedido: '+message;
+ const diagnosing=payload?.mode==='diagnose';
+ const recent=events.slice(-12).filter(x=>x.kind==='worker'||x.kind==='system').map(x=>({at:x.at,event:x.event,rc:x.rc,errorClass:x.errorClass,reason:x.reason,state:x.state}));
+ const message=diagnosing?JSON.stringify({workerStatus:workerState,lastCycle,events:recent}):String(payload?.message||'').trim();
+ if(!diagnosing&&(message.length<12||message.length>1600))return {error:'mensagem_deve_ter_12_a_1600_caracteres',status:400};
+ const prompt=diagnosing?
+  'Analise estes eventos técnicos da Horizon com cuidado. Explique em português popular: O que foi observado, o que significa, causas possíveis (não invente uma causa exata sem prova), próximos passos e se já há uma solução automática segura. Seja sucinto, até 110 palavras. Nunca alegue execução de correção. Dados: '+message:
+  'Você auxilia a central dos 17 agentes Horizon. Responda em português simples, com no máximo 100 palavras. Entenda a intenção, identifique projeto e agentes sugeridos, risco e próximo passo. Não invente estados, percentuais, logs, acessos ou conclusão. Não execute comandos nem inclua segredos.\nPedido: '+message;
  const groqKey=process.env.GROQ_API_KEY||process.env.API_IA_GROQ;
  if(!groqKey)return {error:'provedor_ia_nao_configurado',status:503};
  const response=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
@@ -328,10 +334,46 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    send(res,200,answer);
   }catch{send(res,503,{error:'dados_temporariamente_indisponiveis'});}return true;
  }
+
+
+ const agentAction=raw.match(/^\/central\/api\/agents\/([a-z0-9-]{3,70})\/action$/);
+ if(req.method==='POST'&&agentAction){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const data=await body(req,600);
+   const result=await directAgentAction(agentAction[1],data.action);
+   githubCache.expires=0;
+   notify('agent',{event:'control',agent:result.agent,action:data.action});
+   send(res,200,result);
+  }catch(e){send(res,409,{error:String(e?.message||'acao_indisponivel').slice(0,100)});}
+  return true;
+ }
+
+ const actionPath=raw.match(/^\/central\/api\/tasks\/([a-z0-9-]{3,70})\/action$/);
+ if(req.method==='POST'&&actionPath){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const data=await body(req,600);
+   const result=await directTaskAction(actionPath[1],data.action);
+   githubCache.expires=0;
+   notify('task',{event:'control',taskId:result.id,action:data.action});
+   send(res,200,result);
+  }catch(e){
+   const reason=String(e?.message||'comando_nao_aplicado').slice(0,100);
+   send(res,/invalido|nao_foi/.test(reason)?400:409,{error:reason});
+  }
+  return true;
+ }
+
  if(req.method==='POST'&&raw==='/central/api/tasks'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{const value=await body(req);const output=await createTask(value);send(res,201,output);}
   catch(e){send(res,400,{error:String(e?.message||'falha_de_envio').slice(0,100)});}return true;
+ }
+ if(req.method==='POST'&&raw==='/central/api/ai/diagnose'){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{const output=await interpret({mode:'diagnose'});send(res,output.status,{response:output.response||null,error:output.error||null,usage:output.usage||null});}
+  catch{send(res,502,{error:'provedor_indisponivel'});}return true;
  }
  if(req.method==='POST'&&raw==='/central/api/ai/interpret'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}

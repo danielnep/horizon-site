@@ -1,6 +1,6 @@
 // Railway-local durable owner inbox. GitHub is never the task transport.
 import {randomUUID} from 'node:crypto';
-import {mkdir,open,link,unlink,readFile,readdir,lstat} from 'node:fs/promises';
+import {mkdir,open,link,unlink,readFile,readdir,lstat,appendFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 
 const ID=/^[a-z0-9][a-z0-9-]{2,69}$/;
@@ -53,7 +53,7 @@ function validated(v){
 }
 async function ensure(){
  const root=directRoot();
- for(const p of [root,join(root,'requests'),join(root,'results')]){
+ for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'agent-holds')]){
   await mkdir(p,{recursive:true,mode:0o700});
   const st=await lstat(p);if(!st.isDirectory()||st.isSymbolicLink())throw Error('diretorio_unsafe');
  }
@@ -62,6 +62,8 @@ async function ensure(){
 export async function submitDirectTask(value){
  const request=validated(value);
  const root=await ensure(),id=request.task_id;
+ try{await lstat(join(root,'agent-holds',request.agent+'.json'));throw Error('agente_tem_novas_tarefas_pausadas');}
+ catch(e){if(e.code!=='ENOENT')throw e;}
  const target=join(root,'requests',id+'.json');
  const bytes=JSON.stringify(request,null,2)+'\n';
  if(Buffer.byteLength(bytes)>65536)throw Error('tarefa_grande_demais');
@@ -87,14 +89,15 @@ export async function submitDirectTask(value){
 }
 export async function directTasks(){
  const root=await ensure();
- const names=await readdir(join(root,'requests'));
- if(names.length>120)throw Error('fila_oversized');
+ const groups=await Promise.all(['requests','paused','cancelled'].map(async state=>({state,names:await readdir(join(root,state))})));
+ if(groups.reduce((n,x)=>n+x.names.length,0)>160)throw Error('fila_oversized');
  const tasks=[];
- for(const name of names.sort()){
+ for(const group of groups){
+ for(const name of group.names.sort()){
   if(!name.endsWith('.json'))continue;
   if(!ID.test(name.slice(0,-5)))throw Error('fila_invalida');
   const [raw,result]=await Promise.all([
-    readFile(join(root,'requests',name),'utf8'),
+    readFile(join(root,group.state,name),'utf8'),
     readFile(join(root,'results',name),'utf8').catch(e=>e.code==='ENOENT'?null:Promise.reject(e))
   ]);
   const task=JSON.parse(raw);
@@ -107,8 +110,9 @@ export async function directTasks(){
     /fail|error|block|reject/.test(rawStatus)?'bloqueada':
     /running|in_progress/.test(rawStatus)?'em execução':'na fila';
   tasks.push({id:task.task_id,project:task.project,repository:task.repository,
-   agent:task.agent,title:String(task.objective).slice(0,180),inQueue:true,
-   status,rawStatus,hasResult:!!outcome,
+   agent:task.agent,title:String(task.objective).slice(0,180),inQueue:group.state==='requests',
+   status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':status,
+   rawStatus,hasResult:!!outcome,
    stages:stages.map(x=>({agent:x.agent,state:x.status,summary:x.summary||null,
     blocker:x.blocker||null})),
    approved:outcome?.quality?.approved===true,
@@ -118,8 +122,68 @@ export async function directTasks(){
      ['succeeded','completed','failed','blocked'].includes(x.status)).length,
      verified:stages.filter(x=>x.quality?.approved===true).length}:null});
  }
+ }
  return tasks;
 }
+
+export async function directTaskAction(taskId,action){
+ if(!ID.test(taskId)||!['pause','cancel','resume'].includes(action))throw Error('comando_invalido');
+ const root=await ensure();
+ const name=taskId+'.json';
+ let state;
+ for(const dir of ['requests','paused','cancelled']){
+  const path=join(root,dir,name);
+  try{const file=await lstat(path);if(file.isFile()&&!file.isSymbolicLink()){state=dir;break;}}
+  catch(e){if(e.code!=='ENOENT')throw e;}
+ }
+ if(!state)throw Error('tarefa_nao_encontrada_no_railway');
+ const target=action==='pause'?'paused':action==='cancel'?'cancelled':'requests';
+ if(action==='resume'&&state==='requests')throw Error('tarefa_ja_esta_na_fila');
+ if(action==='pause'&&state!=='requests')throw Error('so_pode_pausar_uma_tarefa_na_fila');
+ if(action==='resume'&&state!=='paused'&&state!=='cancelled')throw Error('tarefa_nao_estava_suspensa');
+ if(state===target)return {id:taskId,status:state,already:true};
+ const sourcePath=join(root,state,name),targetPath=join(root,target,name);
+ try{await link(sourcePath,targetPath);}
+ catch(e){if(e.code==='EEXIST')throw Error('tarefa_duplicada_no_destino');throw e;}
+ try{await unlink(sourcePath);}
+ catch(e){await unlink(targetPath).catch(()=>{});throw e;}
+ await appendFile(join(root,'control-actions.jsonl'),JSON.stringify({taskId,action,at:new Date().toISOString(),
+  note:'Comando aplicado à fila local; não interrompe processos já carregados pelo executor.'})+'\n',{mode:0o600});
+ return {id:taskId,status:target==='requests'?'na fila':target==='paused'?'pausada':'cancelada',
+  note:'Aplicado na fila do Railway. Se o agente já estava executando, essa etapa pode continuar até encerrar.'};
+}
+
+
+export async function agentHolds(){
+ const root=await ensure(),names=await readdir(join(root,'agent-holds'));
+ return names.filter(name=>name.endsWith('.json')&&AGENTS.has(name.slice(0,-5))).map(name=>name.slice(0,-5));
+}
+export async function directAgentAction(agent,action){
+ if(!AGENTS.has(agent)||!['pause','resume'].includes(action))throw Error('comando_invalido');
+ const root=await ensure();
+ const file=join(root,'agent-holds',agent+'.json');
+ if(action==='pause'){
+  try{
+   const fd=await open(file,'wx',0o600);
+   try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString()})+'\n');await fd.sync();}
+   finally{await fd.close();}
+  }catch(e){if(e.code!=='EEXIST')throw e;}
+ }else{
+  await unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});
+ }
+ const tasks=await directTasks();
+ let moved=0;
+ for(const t of tasks){
+  if(t.agent!==agent)continue;
+  if(action==='pause'&&!t.inQueue)continue;
+  if(action==='resume'&&t.status!=='pausada')continue;
+  try{await directTaskAction(t.id,action==='pause'?'pause':'resume');moved++;}
+  catch(e){if(!/ja_esta|nao_estava|so_pode/.test(e.message))throw e;}
+ }
+ return {agent,status:action==='pause'?'novas tarefas suspensas':'novas tarefas liberadas',
+  affected:moved,note:'Este comando controla novas tarefas no Railway. Um processamento já iniciado pode continuar até terminar.'};
+}
+
 export async function directStatus(taskId){
  if(!ID.test(taskId))throw Error('task_id_invalido');
  const root=await ensure();

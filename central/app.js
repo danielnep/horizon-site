@@ -36,6 +36,7 @@ let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digita
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
 let adminAuthorized=false;
+let pendingCommand=null;
 function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function time(x){if(!x)return 'Não informado';const d=new Date(x);return Number.isNaN(d.getTime())?'Não informado':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);}
 function label(id){return AGENT_NAMES[id]||id||'Não atribuído';}
@@ -76,9 +77,10 @@ function taskRow(t){
  const steps=Array.isArray(t.stages)&&t.stages.length?
   '<div class="task-stages">'+t.stages.map((stage,i)=>'<div class="stage-line"><span class="stage-icon">'+(stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent||'Especialista'))+'</b> '+chip(stage.state)+
   (stage.summary?'<p>'+escapeHTML(stage.summary)+'</p>':'')+(stage.blocker?'<p class="error">Bloqueio: '+escapeHTML(stage.blocker)+'</p>':'')+'</div></div>').join('')+'</div>':'<p class="smallprint">Sem etapas individuais registradas.</p>';
+ const taskActions=PAGES_MODE?'':(t.inQueue?'<div class="task-controls"><button class="secondary" data-task-action="pause" data-task-id="'+escapeHTML(t.id)+'">Pausar tarefa</button><button class="secondary" data-task-action="cancel" data-task-id="'+escapeHTML(t.id)+'">Cancelar tarefa</button></div>':(/pausada|cancelada/.test(t.status)?'<div class="task-controls"><button class="secondary" data-task-action="resume" data-task-id="'+escapeHTML(t.id)+'">Voltar para a fila</button></div>':''));
  const detail='<div class="task-detail">'+
  '<p class="smallprint">'+(t.inQueue?'Solicitação presente na fila atual.':'Fora da fila atual. O resultado histórico continua preservado; isso NÃO significa conclusão.')+'</p>'+
- progressLine+steps+
+ progressLine+steps+taskActions+
  '<div class="detail-grid"><div><small>Responsável principal</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
  '<div><small>Estado do registro</small><b>'+escapeHTML(t.rawStatus||'indisponível')+'</b></div>'+
  '<div><small>QA</small><b>'+(t.approved?'Aprovado':'Não comprovado')+'</b></div>'+
@@ -154,7 +156,7 @@ function pageTarefas(){
 function agentRow(a){
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
  chip(a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Ver agente →</button>'+
- (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'</div>':'')+'</div>';
+ (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa a este agente</button></div></div>':'')+'</div>';
 }
 function pageAgentes(){
  const a=snapshot?.agents||[];
@@ -162,6 +164,23 @@ function pageAgentes(){
  '<div class="summary"><span><b>17</b> cadastrados</span><span>Atualização individual conforme registros disponíveis</span></div>'+
  '<div class="list">'+a.map(agentRow).join('')+'</div>';
 }
+
+function explainEvent(e){
+ const event=String(e?.event||'');
+ const reason=String(e?.reason||'');
+ if(event==='cycle_failed')return 'O executor encontrou um problema e não terminou essa tentativa. A causa exata precisa ser investigada.';
+ if(event==='cycle'&&String(e.rc)==='0')return 'O ciclo técnico terminou sem erro. Isso não significa que as tarefas foram concluídas.';
+ if(event==='cycle'&&String(e.rc)==='1')return 'O ciclo falhou. É necessário consultar o erro de origem para corrigir.';
+ if(event==='provider_probe_failure'&&reason==='quota')return 'Gemini atingiu o limite de consultas. O sistema deve tentar o modelo alternativo.';
+ if(event==='provider_probe_failure'&&reason==='server')return 'Gemini teve uma falha temporária no serviço. O sistema deve recorrer ao modelo alternativo.';
+ if(event==='provider_probe')return 'Um dos modelos de IA respondeu ao teste de conexão.';
+ if(event==='requests_refreshed')return 'O executor atualizou a lista de tarefas.';
+ if(event==='snapshot_changed')return 'Mudança identificada nas tarefas ou nos agentes.';
+ if(event==='submitted')return 'Uma nova solicitação foi recebida.';
+ if(event==='control')return 'Comando aplicado à fila. Consulte o estado atualizado da tarefa.';
+ return 'Houve uma atualização técnica no servidor.';
+}
+
 function pageHistorico(){
  const events=snapshot?.events||[];
  return heading('Histórico','Resultados operacionais no Railway e eventos recentes da equipe.')+
@@ -169,8 +188,8 @@ function pageHistorico(){
  '<div class="section-heading"><h2>Atividade recente do servidor</h2></div>'+
  (!events.length?'<div class="empty">Ainda não há eventos recentes da equipe nesta instância.</div>':
  '<div class="list">'+[...events].reverse().map(e=>
- '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(e.kind==='worker'?'Worker: '+e.event:'Tarefa: '+e.event)+'</strong>'+
- '<p>'+escapeHTML(Object.entries(e).filter(([k])=>!['id','at','kind','event'].includes(k)).map(([k,v])=>k+': '+v).join(' • ')||'Evento recebido')+'</p></div></div>').join('')+'</div>')+
+ '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(e.kind==='worker'?'Execução':'Atividade da Central')+'</strong>'+
+ '<p>'+escapeHTML(explainEvent(e))+'</p><details><summary class="smallprint">Ver dados técnicos</summary><p>'+escapeHTML(Object.entries(e).filter(([k])=>!['id','at','kind','event'].includes(k)).map(([k,v])=>k+': '+v).join(' • ')||'Sem detalhes adicionais')+'</p></details></div></div>').join('')+'</div>')+
  '<p class="smallprint">Reiniciar o servidor limpa apenas este painel de eventos recentes, não os registros permanentes do executor.</p>';
 }
 function pageConsumo(){
@@ -182,11 +201,20 @@ function pageConsumo(){
  '<p class="warning">O executor ainda não fornece contabilidade individual de tokens para esta central.</p>'+
  '<p class="smallprint">A Central não inventa consumo nem estima custo sem a resposta da API. A análise opcional com IA informa o consumo daquela solicitação quando o provedor o disponibilizar.</p>';
 }
+function simpleDiagnosis(e){
+ const code=String(e?.rc||e?.code||'');
+ const reason=String(e?.reason||e?.errorClass||'');
+ if(reason==='quota'||code==='429')return 'Gemini atingiu seu limite. O sistema deve alternar para Groq.';
+ if(reason==='server'||code==='503')return 'O provedor de IA está temporariamente indisponível. É necessário usar o alternativo.';
+ if(reason==='RuntimeError'||code==='1'||e?.kind==='cycle_failed')return 'A execução falhou. Este registro não identifica a causa exata. É preciso investigar o erro interno.';
+ if(code==='0')return 'O ciclo terminou sem erro técnico. Isso não confirma entrega de tarefa.';
+ return 'Sem informações suficientes para identificar a causa de um erro.';
+}
 function pageSistema(){
  const w=snapshot?.worker||{status:'sem dados'};
  const last=w.lastCycle||{};
- return heading('Saúde do sistema','O que foi observado de verdade, sem confundir serviço online com agente trabalhando.')+
- '<section class="panel"><div class="section-heading"><h2>Execução Horizon</h2>'+chip(w.status)+'</div>'+
+ return heading('Saúde do sistema','O que aconteceu, o que significa e como resolver.')+
+ '<section class="panel"><div class="diagnosis">'+escapeHTML(simpleDiagnosis(last))+'</div><div class="section-heading"><h2>Execução Horizon</h2>'+chip(w.status)+'</div>'+
  '<div class="detail-grid">'+
  '<div><small>Serviço desta central</small><b>'+escapeHTML(online?'Conectado':'Sem confirmação de conexão')+'</b></div>'+
  '<div><small>Worker</small><b>'+escapeHTML(w.status||'não verificado')+'</b></div>'+
@@ -194,7 +222,7 @@ function pageSistema(){
  '<div><small>Resultado do último ciclo</small><b>'+escapeHTML(last.rc??last.code??'não informado')+'</b></div>'+
  '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'Railway consultado':'Railway indisponível')+'</b></div>'+
  '<div><small>Presença dos agentes</small><b>'+escapeHTML(snapshot?.available?.attendance?'Registros consultados':'Sem confirmação individual')+'</b></div></div>'+
- '<p class="smallprint">Os erros completos do processo permanecem nos logs do Railway. Este painel não tem acesso direto à API administrativa do Railway.</p></section>'+
+ '<p class="smallprint">Explicação baseada no último registro, sem inventar causas.</p><div class="task-controls"><button type="button" class="secondary" id="diagnose-ai">Investigar com IA</button></div><div id="diagnosis-result" class="diagnosis" hidden></div></section>'+
  '<div class="section-heading"><h2>Conexão</h2></div><div class="smallprint">Atualizações por SSE, com reconexão e atualização periódica de segurança. Nada de IA para sincronizar estados.</div>';
 }
 function render(){
@@ -202,6 +230,24 @@ function render(){
  const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
  bind();updateConn();
 }
+
+async function executeTaskAction(id,action,skipConfirm=false){
+ if(!skipConfirm&&!confirm(action==='cancel'?'Cancelar esta tarefa na fila do Railway?':'Aplicar '+(action==='pause'?'pausa': 'retomada')+' à tarefa?'))return;
+ try{
+  const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
+  note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
+  await refresh(true);
+ }catch(e){
+  if(e.message.includes('autorização')||e.message.includes('autorizacao')){
+   pendingCommand={id,action};
+   note('Para controlar execuções, autorize o dispositivo uma vez.',true);
+  }else note(e.message,true);
+ }
+}
+function bindTaskActions(root=document){
+ root.querySelectorAll('[data-task-action]').forEach(btn=>btn.addEventListener('click',()=>executeTaskAction(btn.dataset.taskId,btn.dataset.taskAction)));
+}
+
 function bind(){
  document.querySelectorAll('[data-detail]').forEach(el=>el.addEventListener('click',()=>{
  const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
@@ -211,6 +257,14 @@ function bind(){
  const search=$('search');if(search)search.addEventListener('input',()=>{term=search.value;render();$('search')?.focus();$('search')?.setSelectionRange(term.length,term.length)});
  const dropdown=$('filter');if(dropdown){dropdown.value=filter;dropdown.addEventListener('change',()=>{filter=dropdown.value;render()});}
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
+ document.querySelectorAll('[data-assign-agent]').forEach(btn=>btn.addEventListener('click',()=>{selectedAgentId=btn.dataset.assignAgent;location.hash='#inicio';render();$('objective')?.focus();}));
+ bindTaskActions(document);
+ const diagnosis=$('diagnose-ai');if(diagnosis)diagnosis.addEventListener('click',async()=>{
+  diagnosis.disabled=true;diagnosis.textContent='Analisando...';
+  try{const out=await api('ai/diagnose',{method:'POST',body:'{}'});
+   const target=$('diagnosis-result');target.hidden=false;target.textContent=out.response||'Sem conclusão do provedor.';
+  }catch(e){note(e.message,true);}finally{diagnosis.disabled=false;diagnosis.textContent='Investigar com IA';}
+ });
  const form=$('task-form');
  if(form){
  const project=$('project');
@@ -255,6 +309,7 @@ async function refresh(force=false){
       const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
       target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
     }));
+    bindTaskActions($('live-overview'));
     updateConn();
    }else render();
   }catch(e){online=false;updateConn();if(!snapshot)$('content').innerHTML='<div class="empty">Sem dados ao vivo: '+escapeHTML(e.message)+'. Verifique a sessão e tente novamente.</div>';}
@@ -280,7 +335,8 @@ $('close-gate').addEventListener('click',()=>showLogin(false));
 $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
- $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada. Agora pode enviar a solicitação.');await refresh(true);
+ $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada.');await refresh(true);
+ if(pendingCommand){const command=pendingCommand;pendingCommand=null;await executeTaskAction(command.id,command.action,true);}
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
