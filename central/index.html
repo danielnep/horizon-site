@@ -21,7 +21,7 @@
       <div class="heading"><span class="compact-logo">H</span><span id="page-label">Central de Agentes</span></div>
       <div class="top-actions"><span id="connection" class="connection"><i></i><span>Conectando…</span></span>
       <button id="refresh" class="icon-button" title="Atualizar dados" aria-label="Atualizar dados">↻</button>
-      <button id="logout" class="icon-button" title="Sair" aria-label="Sair">⇥</button></div>
+      <button id="logout" class="icon-button" title="Encerrar administração" aria-label="Encerrar administração" hidden>⇥</button></div>
     </header>
     <main id="content" tabindex="-1"><div class="empty">Carregando a central...</div></main>
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -35,10 +35,11 @@
     <a data-page="sistema" href="#sistema"><span>⚙</span>Sistema</a>
   </nav>
 </div>
-<section id="gate" class="gate" hidden><div class="login">
-  <span class="brand-mark large">H</span><h1>Central Horizon</h1>
-  <p>Área administrativa privada. Use a chave de acesso administrativo já configurada no Horizon Site.</p>
-  <form id="login-form"><label for="password">Chave de acesso</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit" class="primary full">Entrar na central</button></form>
+<section id="gate" class="gate" hidden role="dialog" aria-modal="true" aria-label="Autorizar comandos"><div class="login">
+  <button type="button" id="close-gate" class="gate-close" aria-label="Voltar ao acompanhamento">✕</button>
+  <span class="brand-mark large">H</span><h1>Autorizar comandos</h1>
+  <p>O acompanhamento é livre, sem senha. Somente comandos que modificam os agentes exigem autorização para proteger a Horizon.</p>
+  <form id="login-form"><label for="password">Credencial administrativa</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit" class="primary full">Entrar na central</button></form>
   <p id="login-error" class="error" role="alert"></p>
 </div></section>
 </body></html>

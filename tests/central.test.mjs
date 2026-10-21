@@ -34,7 +34,7 @@ test('panel refuses traversal, modification of static files, and unauthenticated
   assert.equal((await fetch(url+'/central/unknown')).status,404);
   assert.equal((await fetch(url+'/central/..%2Fserver.mjs')).status,404);
   assert.equal((await fetch(url+'/central/app.js',{method:'POST'})).status,405);
-  assert.equal((await fetch(url+'/central/api/overview')).status,401);
+  assert.equal((await fetch(url+'/central/api/overview')).status,200);
   assert.equal((await fetch(url+'/central/api/tasks',{method:'POST',headers:{origin:'https://malicious.example','content-type':'application/json'},body:'{}'})).status,401);
   const sw=await fetch(url+'/central/sw.js');assert.equal(sw.status,200);
   assert.doesNotMatch(await sw.text(),/cache\.put\([^)]*\/api/);
@@ -99,5 +99,29 @@ test('SSE immediately streams actual worker state, never needs an AI call',async
   assert.match(found,/"rc":"0"/);
   abort.abort();
   await reader.cancel().catch(()=>{});
+ });
+});
+
+test('monitoring and live events do not require a password; modifying tasks still does',async()=>{
+ await withServer(async({url})=>{
+  assert.equal((await fetch(url+'/central/api/agents')).status,200);
+  assert.equal((await fetch(url+'/central/api/history')).status,200);
+  const ctrl=new AbortController();
+  const stream=await fetch(url+'/central/api/events',{signal:ctrl.signal});
+  assert.equal(stream.status,200);
+  assert.match(stream.headers.get('content-type'),/text\/event-stream/);
+  await stream.body.cancel();
+  ctrl.abort();
+  assert.equal((await fetch(url+'/central/api/tasks',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status,401);
+ });
+});
+test('PWA dashboard does not block visitors behind the login overlay',async()=>{
+ await withServer(async({url})=>{
+  const [html,script]=await Promise.all([fetch(url+'/central/').then(x=>x.text()),fetch(url+'/central/app.js').then(x=>x.text())]);
+  assert.match(html,/id="gate"[^>]*hidden/);
+  assert.match(html,/Voltar ao acompanhamento/);
+  assert.match(script,/async function boot\(\)\{\s*showLogin\(false\)/);
+  assert.match(script,/Resultados armazenados/);
+  assert.match(script,/t\.stages/);
  });
 });

@@ -39,6 +39,7 @@ const PROJECTS={
 'novo-projeto':{name:'Outro projeto',repository:'danielnep/'}};
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
+let adminAuthorized=false;
 function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function time(x){if(!x)return 'Não informado';const d=new Date(x);return Number.isNaN(d.getTime())?'Não informado':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);}
 function label(id){return AGENT_NAMES[id]||id||'Não atribuído';}
@@ -54,32 +55,50 @@ async function api(path,options={}){
  if(PAGES_MODE){if(path==='session')return {authenticated:true,configured:false};if(path==='overview')return pagesOverview();throw Error('Comando indisponível no modo leitura');}
  const response=await fetch('/central/api/'+path,{credentials:'same-origin',cache:'no-store',headers:options.body?{'content-type':'application/json'}:{},...options});
  let data;try{data=await response.json();}catch{data={error:'resposta_invalida'};}
- if(response.status===401){showLogin(true);throw Error('Sessão expirada. Entre novamente.');}
+ if(response.status===401){if(options.method==='POST')showLogin(true);throw Error('A consulta é livre. Para enviar comandos, é necessária autorização administrativa.');}
  if(!response.ok)throw Error(String(data.error||'Falha de comunicação').replaceAll('_',' '));
  return data;
 }
-function showLogin(show){$('gate').hidden=!show;$('shell').style.visibility=show?'hidden':'visible';if(show)$('password')?.focus();}
+function showLogin(show){$('gate').hidden=!show;if(show)$('password')?.focus();}
 function active(){const x=(location.hash||'#inicio').replace(/^#/,'');return LABELS[x]?x:'inicio';}
 function updateMenu(){
  const page=active();$('page-label').textContent=LABELS[page];
  document.querySelectorAll('[data-page]').forEach(x=>{x.classList.toggle('active',x.dataset.page===page);if(x.dataset.page===page)x.setAttribute('aria-current','page');else x.removeAttribute('aria-current');});
 }
 function heading(title,subtitle=''){return '<div class="page-head"><div><p class="eyebrow">HORIZON / OPERAÇÕES</p><h1>'+escapeHTML(title)+'</h1>'+(subtitle?'<p class="subtitle">'+escapeHTML(subtitle)+'</p>':'')+'</div><span class="time-label">'+(snapshot?'Atualizado '+time(snapshot.at):'Aguardando dados')+'</span></div>';}
-function counts(){const t=snapshot?.tasks||[];return {total:t.length,active:t.filter(x=>x.status==='em execução').length,waiting:t.filter(x=>['aguardando','na fila','aguardando validação'].includes(x.status)).length,blocked:t.filter(x=>x.status==='bloqueada').length};}
-function summary(){const c=counts();return '<div class="summary"><span class="working"><b>'+c.active+'</b> em execução</span><span><b>'+c.waiting+'</b> aguardando</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas</span><span><b>17</b> especialistas cadastrados</span></div>';}
+function counts(){
+ const t=snapshot?.tasks||[],q=t.filter(x=>x.inQueue);
+ return {total:t.length,active:q.filter(x=>x.status==='em execução').length,
+ waiting:q.filter(x=>['aguardando','na fila','aguardando validação'].includes(x.status)).length,
+ blocked:q.filter(x=>x.status==='bloqueada').length,
+ queue:q.length,offQueue:t.filter(x=>!x.inQueue&&!x.published).length};
+}
+function summary(){const c=counts();return '<div class="summary" aria-label="Situação geral"><span class="working"><b>'+c.active+'</b> trabalhando</span><span><b>'+c.queue+'</b> na fila</span><span><b>'+c.offQueue+'</b> pendências fora da fila</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas na fila</span><span><b>17</b> agentes</span></div>';}
 function taskRow(t){
- const detail=['Projeto: '+t.project,'Especialista: '+label(t.agent),'Prioridade: '+(t.priority||'não identificada'),
- 'Situação do resultado: '+(t.rawStatus||'nenhum resultado registrado'),
- 'QA aprovado: '+(t.approved?'sim':'não comprovado'),'Publicado: '+(t.published?'sim':'não comprovado'),
- 'Registro: '+t.id].join('\n');
- return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+'</div><div class="details">'+escapeHTML(t.title)+'</div></div>'+chip(t.status)+
+ const progress=t.progress||null;
+ const progressLine=progress?'<div class="task-progress"><div class="row-between"><span>Etapas relatadas: '+progress.done+' de '+progress.total+'</span><span>'+progress.verified+' com evidências registradas</span></div><div class="progress-track"><div style="width:'+Math.min(100,progress.done/Math.max(1,progress.total)*100)+'%"></div></div></div>':'';
+ const steps=Array.isArray(t.stages)&&t.stages.length?
+  '<div class="task-stages">'+t.stages.map((stage,i)=>'<div class="stage-line"><span class="stage-icon">'+(stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent||'Especialista'))+'</b> '+chip(stage.state)+
+  (stage.summary?'<p>'+escapeHTML(stage.summary)+'</p>':'')+(stage.blocker?'<p class="error">Bloqueio: '+escapeHTML(stage.blocker)+'</p>':'')+'</div></div>').join('')+'</div>':'<p class="smallprint">Sem etapas individuais registradas.</p>';
+ const detail='<div class="task-detail">'+
+ '<p class="smallprint">'+(t.inQueue?'Solicitação presente na fila atual.':'Fora da fila atual. O resultado histórico continua preservado; isso NÃO significa conclusão.')+'</p>'+
+ progressLine+steps+
+ '<div class="detail-grid"><div><small>Responsável principal</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
+ '<div><small>Estado do registro</small><b>'+escapeHTML(t.rawStatus||'indisponível')+'</b></div>'+
+ '<div><small>QA</small><b>'+(t.approved?'Aprovado':'Não comprovado')+'</b></div>'+
+ '<div><small>Publicação</small><b>'+(t.published?'Confirmada':'Não confirmada')+'</b></div></div>'+
+ (t.blocker?'<p class="error">'+escapeHTML(t.blocker)+'</p>':'')+
+ (t.evidenceUrl&&/^https:\/\/github\.com\/danielnep\//.test(t.evidenceUrl)?'<a class="linkrow" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(t.evidenceUrl)+'">Ver resultado preservado ↗</a>':'')+
+ '<p class="smallprint">ID: '+escapeHTML(t.id)+'</p></div>';
+ return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
+ (t.progress?'<div class="tiny-progress">'+t.progress.done+'/'+t.progress.total+' etapas registradas</div>':'')+'</div>'+chip(t.status)+
  '<button class="linkrow" data-detail="'+escapeHTML(t.id)+'" aria-expanded="false">Detalhes ▾</button>'+
- '<div class="inline-detail" id="detail-'+escapeHTML(t.id)+'" hidden>'+escapeHTML(detail)+'</div></div>';
+ '<div class="inline-detail" id="detail-'+escapeHTML(t.id)+'" hidden>'+detail+'</div></div>';
 }
 function listTasks(tasks,limit=0){
  const list=limit?tasks.slice(0,limit):tasks;
  return list.length?'<div class="list">'+list.map(taskRow).join('')+'</div>':
- '<div class="empty">Nenhuma tarefa registrada na fila consultada. Pronto para receber uma nova solicitação.</div>';
+ '<div class="empty">Nenhuma tarefa encontrada nos registros consultados. Se não houver fila ativa, o painel preserva resultados históricos separadamente.</div>';
 }
 function projectOptions(){return Object.entries(PROJECTS).map(([id,p])=>'<option value="'+id+'">'+escapeHTML(p.name)+'</option>').join('');}
 function agentOptions(){return '<option value="may-maestro">Distribuição automática (Maestro)</option>'+Object.keys(AGENT_NAMES).filter(x=>x!=='may-maestro').map(id=>'<option value="'+id+'">'+escapeHTML(label(id))+'</option>').join('');}
@@ -99,9 +118,14 @@ function requestForm(){
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
 function overviewMarkup(){
- return summary()+'<div class="section-heading"><h2>Em acompanhamento</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
+ return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
  listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do GitHub indisponível: não é possível confirmar que está vazia.</p>':'')+
- (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'');
+ (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'')+
+ '<div class="section-heading"><h2>Agentes</h2><a class="linkrow" href="#agentes">Ver os 17 →</a></div>'+
+ '<div class="compact-agent-list">'+(snapshot?.agents||[]).slice(0,5).map(a=>'<div><span>'+escapeHTML(label(a.id))+'</span>'+chip(a.status)+'</div>').join('')+'</div>'+
+ '<div class="section-heading"><h2>Consumo de IA</h2><a class="linkrow" href="#consumo">Detalhar →</a></div>'+
+ '<p class="smallprint">Tokens dos agentes: '+(snapshot?.usage?.total===null||snapshot?.usage?.total===undefined?'ainda não informados pelo executor':escapeHTML(snapshot.usage.total))+
+ '. Atualizações desta tela não gastam tokens.</p>';
 }
 function pageInicio(){
  return heading('Central de agentes','Solicite, acompanhe e intervenha sem abrir outra conversa.')+(PAGES_MODE?'<section class="panel request"><h2>Modo acompanhamento</h2><p class="subtitle">Informações públicas do GitHub. Comandos e IA aguardam o serviço protegido do Horizon Site.</p></section>':requestForm())+
@@ -109,10 +133,10 @@ function pageInicio(){
 }
 function pageTarefas(){
  const tasks=snapshot?.tasks||[];const text=term.toLocaleLowerCase('pt-BR');
- const filtered=tasks.filter(t=>(filter==='todos'||t.status===filter)&&(!text||[t.project,t.id,t.title,t.agent].join(' ').toLocaleLowerCase('pt-BR').includes(text)));
+ const filtered=tasks.filter(t=>(filter==='todos'||(filter==='fora'?!t.inQueue:t.status===filter))&&(!text||[t.project,t.id,t.title,t.agent].join(' ').toLocaleLowerCase('pt-BR').includes(text)));
  return heading('Tarefas','Solicitações registradas na fila e os respectivos resultados verificáveis.')+
  '<div class="searchbar"><input id="search" placeholder="Buscar por projeto ou tarefa…" aria-label="Buscar tarefas" value="'+escapeHTML(term)+'">'+
- '<select id="filter"><option value="todos">Todos os estados</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
+ '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
  '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do GitHub</span></div>'+listTasks(filtered);
 }
 function agentRow(a){
@@ -128,7 +152,9 @@ function pageAgentes(){
 }
 function pageHistorico(){
  const events=snapshot?.events||[];
- return heading('Histórico de eventos','Registros recebidos por esta instância desde a última inicialização.')+
+ return heading('Histórico','Resultados preservados no GitHub e eventos recentes do Railway.')+
+ '<div class="section-heading"><h2>Resultados armazenados</h2><span class="meta">Mesmo após sair da fila</span></div>'+listTasks((snapshot?.tasks||[]).filter(x=>x.hasResult))+
+ '<div class="section-heading"><h2>Atividade recente do servidor</h2></div>'+
  (!events.length?'<div class="empty">Ainda não há eventos recentes da equipe nesta instância. O histórico técnico permanente fica no GitHub.</div>':
  '<div class="list">'+[...events].reverse().map(e=>
  '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(e.kind==='worker'?'Worker: '+e.event:'Tarefa: '+e.event)+'</strong>'+
@@ -161,7 +187,7 @@ function pageSistema(){
 }
 function render(){
  updateMenu();const page=active();const template={inicio:pageInicio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
- const content=$('content');content.innerHTML=template();if(PAGES_MODE)$('logout').hidden=true;
+ const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
  bind();updateConn();
 }
 function bind(){
@@ -231,23 +257,24 @@ function connectEvents(){
  stream.onerror=()=>{if(!navigator.onLine)online=false;updateConn();};
 }
 async function boot(){
- try{const s=await api('session');showLogin(!s.authenticated);
-  if(s.authenticated){await refresh(true);connectEvents();}
-  else if(!s.configured)$('login-error').textContent='Credencial administrativa não configurada no servidor.';
- }catch{showLogin(true);}
+ showLogin(false);
+ try{const session=await api('session');adminAuthorized=Boolean(session.authenticated);}catch{}
+ await refresh(true);
+ connectEvents();
 }
+$('close-gate').addEventListener('click',()=>showLogin(false));
 $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
- $('password').value='';showLogin(false);await refresh(true);connectEvents();
+ $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada. Agora pode enviar a solicitação.');await refresh(true);
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
 $('logout').addEventListener('click',async()=>{if(PAGES_MODE)return;try{await api('logout',{method:'POST'});}catch{}
- if(stream)stream.close();snapshot=null;showLogin(true);});
+ adminAuthorized=false;showLogin(false);note('Acesso administrativo encerrado. Acompanhamento continua livre.');render();});
 window.addEventListener('hashchange',render);
 window.addEventListener('online',()=>refresh(true));
 window.addEventListener('offline',()=>{online=false;updateConn()});
-setInterval(()=>{if(!$('gate').hidden)return;refresh();},PAGES_MODE?120000:30000);
+setInterval(()=>refresh(),PAGES_MODE?120000:30000);
 if('serviceWorker'in navigator)window.addEventListener('load',()=>{const url=new URL('./sw.js',location.href);navigator.serviceWorker.register(url.pathname,{scope:new URL('./',url).pathname}).catch(()=>{});});
 boot();
