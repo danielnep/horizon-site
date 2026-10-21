@@ -240,9 +240,13 @@ function limit(key,cap=6,window=900000){
 }
 async function interpret(payload){
  if(!limit('ai',8,60000))return {error:'limite_de_consultas',status:429};
- const message=String(payload?.message||'').trim();
- if(message.length<12||message.length>1600)return {error:'mensagem_deve_ter_12_a_1600_caracteres',status:400};
- const prompt='Você auxilia a central dos 17 agentes Horizon. Responda em português simples, com no máximo 100 palavras. Entenda a intenção, identifique projeto e agentes sugeridos, risco e próximo passo. Não invente estados, percentuais, logs, acessos ou conclusão. Não execute comandos nem inclua segredos.\nPedido: '+message;
+ const diagnosing=payload?.mode==='diagnose';
+ const recent=events.slice(-12).filter(x=>x.kind==='worker'||x.kind==='system').map(x=>({at:x.at,event:x.event,rc:x.rc,errorClass:x.errorClass,reason:x.reason,state:x.state}));
+ const message=diagnosing?JSON.stringify({workerStatus:workerState,lastCycle,events:recent}):String(payload?.message||'').trim();
+ if(!diagnosing&&(message.length<12||message.length>1600))return {error:'mensagem_deve_ter_12_a_1600_caracteres',status:400};
+ const prompt=diagnosing?
+  'Analise estes eventos técnicos da Horizon com cuidado. Explique em português popular: O que foi observado, o que significa, causas possíveis (não invente uma causa exata sem prova), próximos passos e se já há uma solução automática segura. Seja sucinto, até 110 palavras. Nunca alegue execução de correção. Dados: '+message:
+  'Você auxilia a central dos 17 agentes Horizon. Responda em português simples, com no máximo 100 palavras. Entenda a intenção, identifique projeto e agentes sugeridos, risco e próximo passo. Não invente estados, percentuais, logs, acessos ou conclusão. Não execute comandos nem inclua segredos.\nPedido: '+message;
  const groqKey=process.env.GROQ_API_KEY||process.env.API_IA_GROQ;
  if(!groqKey)return {error:'provedor_ia_nao_configurado',status:503};
  const response=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
@@ -349,6 +353,11 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{const value=await body(req);const output=await createTask(value);send(res,201,output);}
   catch(e){send(res,400,{error:String(e?.message||'falha_de_envio').slice(0,100)});}return true;
+ }
+ if(req.method==='POST'&&raw==='/central/api/ai/diagnose'){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{const output=await interpret({mode:'diagnose'});send(res,output.status,{response:output.response||null,error:output.error||null,usage:output.usage||null});}
+  catch{send(res,502,{error:'provedor_indisponivel'});}return true;
  }
  if(req.method==='POST'&&raw==='/central/api/ai/interpret'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
