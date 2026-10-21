@@ -1,6 +1,6 @@
 // Railway-local durable owner inbox. GitHub is never the task transport.
 import {randomUUID} from 'node:crypto';
-import {mkdir,open,link,unlink,readFile,readdir,lstat} from 'node:fs/promises';
+import {mkdir,open,link,unlink,readFile,readdir,lstat,rename} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 
 const ID=/^[a-z0-9][a-z0-9-]{2,69}$/;
@@ -53,7 +53,7 @@ function validated(v){
 }
 async function ensure(){
  const root=directRoot();
- for(const p of [root,join(root,'requests'),join(root,'results')]){
+ for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'cancelled')]){
   await mkdir(p,{recursive:true,mode:0o700});
   const st=await lstat(p);if(!st.isDirectory()||st.isSymbolicLink())throw Error('diretorio_unsafe');
  }
@@ -118,7 +118,37 @@ export async function directTasks(){
      ['succeeded','completed','failed','blocked'].includes(x.status)).length,
      verified:stages.filter(x=>x.quality?.approved===true).length}:null});
  }
+ const canceled=await readdir(join(root,'cancelled'));
+ for(const name of canceled.filter(x=>x.endsWith('.json')).slice(0,120)){
+  if(!ID.test(name.slice(0,-5)))continue;
+  const obj=JSON.parse(await readFile(join(root,'cancelled',name),'utf8'));
+  tasks.push({id:obj.task_id,project:obj.project,repository:obj.repository,agent:obj.agent,
+   title:String(obj.objective||'').slice(0,180),inQueue:false,status:'retirada da fila',
+   rawStatus:'cancelamento solicitado',approved:false,published:false,hasResult:false,
+   stages:[],progress:null,explanation:'Retirada da fila. Execução já iniciada pode continuar.'});
+ }
  return tasks;
+}
+async function exists(path){
+ try{await lstat(path);return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}
+}
+export async function cancelPendingRequest(id){
+ if(!ID.test(id))throw Error('identificador_invalido');
+ const root=await ensure(),src=join(root,'requests',id+'.json'),dest=join(root,'cancelled',id+'.json');
+ if(await exists(join(root,'results',id+'.json')))throw Error('tarefa_ja_tem_execucao_registrada');
+ if(!await exists(src))throw Error('tarefa_nao_esta_na_fila');
+ if(await exists(dest))throw Error('ja_cancelada');
+ try{await rename(src,dest);}catch(e){if(e.code==='ENOENT')throw Error('tarefa_mudou_de_estado');throw e;}
+ return {id,status:'retirada_da_fila',warning:'A execução iniciada pode continuar até um ponto seguro.'};
+}
+export async function restorePendingRequest(id){
+ if(!ID.test(id))throw Error('identificador_invalido');
+ const root=await ensure(),src=join(root,'cancelled',id+'.json'),dest=join(root,'requests',id+'.json');
+ if(!await exists(src))throw Error('pedido_cancelado_nao_encontrado');
+ if(await exists(dest))throw Error('pedido_ja_esta_na_fila');
+ if(await exists(join(root,'results',id+'.json')))throw Error('tarefa_ja_tem_resultado');
+ try{await rename(src,dest);}catch(e){if(e.code==='ENOENT')throw Error('tarefa_mudou_de_estado');throw e;}
+ return {id,status:'recolocada_na_fila'};
 }
 export async function directStatus(taskId){
  if(!ID.test(taskId))throw Error('task_id_invalido');
