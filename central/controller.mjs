@@ -151,13 +151,14 @@ export function deriveCodePaths(items,repo){
 async function resolveTaskDefaults(value){
  if(!value||typeof value!=='object')throw Error('solicitacao_invalida');
  const repo=String(value.repository||'');
+ const paths=Array.isArray(value.allowed_paths)&&value.allowed_paths.length?value.allowed_paths:null;
+ // Preserve explicit scoped submissions without a redundant remote lookup.
+ if(paths&&REPO.test(repo))return {...value,project:String(value.project||repo.split('/')[1]).toLowerCase()};
  const repositories=await ownerRepositories();
  const selected=repositories.find(x=>x.repository===repo);
  if(!selected)throw Error('selecione_um_repositorio_da_lista');
  const valueProject=String(value.project||selected.name).toLowerCase();
- const paths=Array.isArray(value.allowed_paths)&&value.allowed_paths.length?value.allowed_paths:null;
- if(value.delivery_type==='new_product')return {...value,project:valueProject,repository:repo,allowed_paths:paths||[]};
- if(paths)return {...value,project:valueProject,repository:repo};
+ if(value.delivery_type==='new_product')return {...value,project:valueProject,repository:repo,allowed_paths:[]};
  const root=await githubOwner('repos/'+repo+'/contents?ref='+encodeURIComponent(selected.defaultBranch));
  const resolved=deriveCodePaths(root,repo);
  if(!resolved.length)throw Error('nao_encontrei_arquivos_editaveis_nesse_projeto');
