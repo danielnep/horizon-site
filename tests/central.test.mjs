@@ -181,3 +181,46 @@ test('automatic scope identifies existing project source files and does not sele
  const paths=deriveCodePaths(items,'danielnep/romaneio-digital');
  assert.deepEqual(paths,['src/**','css/**','index.html','server.mjs']);
 });
+
+test('explicações operacionais não inventam avanço ou causa do erro',()=>{
+ assert.match(explainOperation({status:'na fila',inQueue:true}),/aguardando/);
+ assert.match(explainOperation({status:'bloqueada',inQueue:true}),/bloqueada/);
+ assert.match(explainOperation({status:'retirada da fila',inQueue:false}),/não comprova conclusão/);
+});
+test('somente o proprietário autenticado pode retirar e recolocar pedido ainda não iniciado',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'horizon-control-actions-'));
+ const previous=process.env.HORIZON_DIRECT_INBOX_DIR;
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{await withServer(async({url,origin})=>{
+  const login=await fetch(url+'/central/api/login',{method:'POST',
+   headers:{origin,'content-type':'application/json'},
+   body:JSON.stringify({password:'local-test-only-strong-secret-value'})});
+  assert.equal(login.status,200);
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const headers={origin,cookie,'content-type':'application/json'};
+  const task={project:'romaneio-digital',repository:'danielnep/romaneio-digital',
+   objective:'Melhorar elementos de interface sem alterar o fluxo existente',
+   agent:'may-maestro',priority:'P2',public_data_confirmed:true,
+   delivery_type:'existing_product',allowed_paths:['index.html']};
+  const created=await fetch(url+'/central/api/tasks',{method:'POST',headers,body:JSON.stringify(task)});
+  assert.equal(created.status,201);
+  const id=(await created.json()).id;
+  assert.equal((await fetch(url+'/central/api/tasks/'+id+'/cancel',{method:'POST',headers:{origin,'content-type':'application/json'},body:'{}'})).status,401);
+  const cancel=await fetch(url+'/central/api/tasks/'+id+'/cancel',{method:'POST',headers,body:'{}'});
+  assert.equal(cancel.status,200);
+  assert.equal((await cancel.json()).status,'retirada_da_fila');
+  let view=await fetch(url+'/central/api/tasks').then(r=>r.json());
+  assert.ok(view.tasks.some(t=>t.id===id&&t.status==='retirada da fila'&&!t.inQueue));
+  const restore=await fetch(url+'/central/api/tasks/'+id+'/restore',{method:'POST',headers,body:'{}'});
+  assert.equal(restore.status,200);
+  view=await fetch(url+'/central/api/tasks').then(r=>r.json());
+  assert.ok(view.tasks.some(t=>t.id===id&&t.inQueue));
+  const cancelAgain=await fetch(url+'/central/api/tasks/'+id+'/cancel',{method:'POST',headers,body:'{}'});
+  assert.equal(cancelAgain.status,200);
+ });
+ }finally{
+  if(previous===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;
+  else process.env.HORIZON_DIRECT_INBOX_DIR=previous;
+  await rm(root,{recursive:true,force:true});
+ }
+});
