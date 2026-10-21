@@ -1,0 +1,19 @@
+{
+  "name": "Horizon | Central de Agentes",
+  "short_name": "Horizon Central",
+  "id": "/central/",
+  "start_url": "/central/",
+  "scope": "/central/",
+  "display": "standalone",
+  "background_color": "#191e26",
+  "theme_color": "#191e26",
+  "description": "Gerenciamento dos agentes e tarefas Horizon.",
+  "icons": [
+    {
+      "src": "/central/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
