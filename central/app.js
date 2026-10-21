@@ -155,8 +155,8 @@ function pageTarefas(){
 }
 function agentRow(a){
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
- chip(a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Ver agente →</button>'+
- (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa a este agente</button></div></div>':'')+'</div>';
+ chip(a.held?'novas tarefas pausadas':a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Ver agente →</button>'+
+ (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa</button><button class="secondary" data-agent-action="'+(a.held?'resume':'pause')+'" data-agent-id="'+escapeHTML(a.id)+'">'+(a.held?'Liberar novas tarefas':'Pausar novas tarefas')+'</button></div><p class="smallprint">A pausa suspende novos trabalhos. Uma etapa iniciada pode continuar.</p></div>':'')+'</div>';
 }
 function pageAgentes(){
  const a=snapshot?.agents||[];
@@ -231,6 +231,17 @@ function render(){
  bind();updateConn();
 }
 
+async function executeAgentAction(id,action,skipConfirm=false){
+ if(!skipConfirm&&!confirm(action==='pause'?'Pausar novas tarefas deste agente? Um trabalho já iniciado pode continuar.':'Liberar novas tarefas deste agente?'))return;
+ try{
+  const result=await api('agents/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
+  note(result.note||'Estado do agente atualizado.');
+  pendingCommand=null;await refresh(true);
+ }catch(e){
+  if(e.message.includes('autorização')||e.message.includes('autorizacao')){pendingCommand={id,action,type:'agent'};note('Autorize o dispositivo para acionar o agente.',true);}
+  else note(e.message,true);
+ }
+}
 async function executeTaskAction(id,action,skipConfirm=false){
  if(!skipConfirm&&!confirm(action==='cancel'?'Cancelar esta tarefa na fila do Railway?':'Aplicar '+(action==='pause'?'pausa': 'retomada')+' à tarefa?'))return;
  try{
@@ -239,13 +250,14 @@ async function executeTaskAction(id,action,skipConfirm=false){
   await refresh(true);
  }catch(e){
   if(e.message.includes('autorização')||e.message.includes('autorizacao')){
-   pendingCommand={id,action};
+   pendingCommand={id,action,type:'task'};
    note('Para controlar execuções, autorize o dispositivo uma vez.',true);
   }else note(e.message,true);
  }
 }
 function bindTaskActions(root=document){
  root.querySelectorAll('[data-task-action]').forEach(btn=>btn.addEventListener('click',()=>executeTaskAction(btn.dataset.taskId,btn.dataset.taskAction)));
+ root.querySelectorAll('[data-agent-action]').forEach(btn=>btn.addEventListener('click',()=>executeAgentAction(btn.dataset.agentId,btn.dataset.agentAction)));
 }
 
 function bind(){
@@ -336,7 +348,7 @@ $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
  $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada.');await refresh(true);
- if(pendingCommand){const command=pendingCommand;pendingCommand=null;await executeTaskAction(command.id,command.action,true);}
+ if(pendingCommand){const command=pendingCommand;pendingCommand=null;if(command.type==='agent')await executeAgentAction(command.id,command.action,true);else await executeTaskAction(command.id,command.action,true);}
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
