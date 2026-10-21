@@ -1,4 +1,29 @@
 const $=id=>document.getElementById(id);
+const PAGES_MODE=location.hostname.endsWith('.github.io');
+
+async function pagesOverview(){
+ const BASE='https://api.github.com/repos/danielnep/May-Maestro-Executor/contents/';
+ const load=async path=>{const r=await fetch(BASE+path+'?ref=main',{cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw Error('GitHub HTTP '+r.status);return r.json();};
+ const decode=o=>{try{return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob((o?.content||'').replace(/\s/g,'')),c=>c.charCodeAt(0))));}catch{return null;}};
+ const [record,files]=await Promise.all([load('tasks/attendance/equipe.json'),load('tasks/chat')]);
+ const data=decode(record);
+ const agents=Object.keys(AGENT_NAMES).map(id=>{const entry=Array.isArray(data?.agents)?data.agents.find(x=>x.agent===id):null;return {id,status:entry?.status||'sem telemetria individual',currentTask:entry?.task_ref||null,updatedAt:null};});
+ const names=Array.isArray(files)?files.filter(x=>x.type==='file'&&/^[a-z0-9-]+\.json$/.test(x.name)).slice(0,20):[];
+ const tasks=await Promise.all(names.map(async x=>{
+  const [task,output]=await Promise.all([load('tasks/chat/'+x.name).catch(()=>null),load('tasks/results/'+x.name).catch(()=>null)]);
+  const t=decode(task),r=decode(output);
+  if(!t)return null;
+  return {id:x.name.slice(0,-5),project:String(t.project||''),repository:String(t.repository||''),title:String(t.objective||'').slice(0,180),
+   agent:t.agent,priority:t.priority||null,status:r?'aguardando validação':'sem confirmação',
+   rawStatus:r?.status||'sem resultado',approved:r?.quality?.approved===true,published:r?.publication?.published===true};
+ }));
+ return {at:new Date().toISOString(),agents,tasks:tasks.filter(Boolean),source:'GitHub Pages: leitura pública',
+ worker:{status:'Railway não acessível neste modo',lastCycle:null},
+ issues:['Apenas leitura: comandos e IA exigem servidor protegido'],
+ available:{queue:Array.isArray(files),results:true,attendance:Boolean(data)},
+ usage:{input:null,output:null,total:null},events:[]};
+}
+
 const AGENT_NAMES={
 'may-maestro':'May Maestro','horizon-project-studio':'Estúdio Horizon','software-architect':'Arquitetura',
 'frontend-engineer':'Frontend','backend-engineer':'Backend','mobile-app-builder':'Aplicativos Mobile',
@@ -26,6 +51,7 @@ function note(txt,isError=false){
  const el=$('notice');clearTimeout(noticeTimeout);el.textContent=txt;el.hidden=false;el.style.borderColor=isError?'#ff867c':'#536273';noticeTimeout=setTimeout(()=>el.hidden=true,7500);
 }
 async function api(path,options={}){
+ if(PAGES_MODE){if(path==='session')return {authenticated:true,configured:false};if(path==='overview')return pagesOverview();throw Error('Comando indisponível no modo leitura');}
  const response=await fetch('/central/api/'+path,{credentials:'same-origin',cache:'no-store',headers:options.body?{'content-type':'application/json'}:{},...options});
  let data;try{data=await response.json();}catch{data={error:'resposta_invalida'};}
  if(response.status===401){showLogin(true);throw Error('Sessão expirada. Entre novamente.');}
@@ -73,7 +99,7 @@ function requestForm(){
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
 function pageInicio(){
- return heading('Central de agentes','Solicite, acompanhe e intervenha sem abrir outra conversa.')+requestForm()+
+ return heading('Central de agentes','Solicite, acompanhe e intervenha sem abrir outra conversa.')+(PAGES_MODE?'<section class="panel request"><h2>Modo acompanhamento</h2><p class="subtitle">Informações públicas do GitHub. Comandos e IA aguardam o serviço protegido do Horizon Site.</p></section>':requestForm())+
  summary()+'<div class="section-heading"><h2>Em acompanhamento</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
  listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do GitHub indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'');
@@ -132,7 +158,7 @@ function pageSistema(){
 }
 function render(){
  updateMenu();const page=active();const template={inicio:pageInicio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
- const content=$('content');content.innerHTML=template();
+ const content=$('content');content.innerHTML=template();if(PAGES_MODE)$('logout').hidden=true;
  bind();updateConn();
 }
 function bind(){
@@ -170,7 +196,7 @@ function bind(){
 }
 function updateConn(){
  const el=$('connection');el.className='connection '+(online?'ok':'off');
- el.querySelector('span').textContent=online?'Conectado':'Sem conexão';
+ el.querySelector('span').textContent=online?(PAGES_MODE?'GitHub (leitura)':'Conectado'):'Sem conexão';
 }
 async function refresh(force=false){
  if(refreshing)return refreshing;
@@ -184,6 +210,7 @@ async function refresh(force=false){
  return refreshing;
 }
 function connectEvents(){
+ if(PAGES_MODE)return;
  if(stream){stream.close();stream=null;}
  stream=new EventSource('/central/api/events');
  stream.addEventListener('update',()=>{setTimeout(()=>refresh(),450)});
@@ -202,11 +229,11 @@ $('login-form').addEventListener('submit',async e=>{
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
-$('logout').addEventListener('click',async()=>{try{await api('logout',{method:'POST'});}catch{}
+$('logout').addEventListener('click',async()=>{if(PAGES_MODE)return;try{await api('logout',{method:'POST'});}catch{}
  if(stream)stream.close();snapshot=null;showLogin(true);});
 window.addEventListener('hashchange',render);
 window.addEventListener('online',()=>refresh(true));
 window.addEventListener('offline',()=>{online=false;updateConn()});
-setInterval(()=>{if(!$('gate').hidden)return;refresh();},30000);
-if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/central/sw.js',{scope:'/central/'}).catch(()=>{}));
+setInterval(()=>{if(!$('gate').hidden)return;refresh();},PAGES_MODE?120000:30000);
+if('serviceWorker'in navigator)window.addEventListener('load',()=>{const url=new URL('./sw.js',location.href);navigator.serviceWorker.register(url.pathname,{scope:new URL('./',url).pathname}).catch(()=>{});});
 boot();

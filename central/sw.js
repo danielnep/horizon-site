@@ -1,13 +1,1 @@
-const CACHE='horizon-control-ui-v1';
-const FILES=['/central/','/central/index.html','/central/style.css','/central/app.js','/central/manifest.webmanifest','/central/icon.svg','/central/icon-192.png','/central/icon-512.png'];
-self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',event=>{
- if(event.request.method!=='GET')return;
- const url=new URL(event.request.url);
- if(url.origin!==self.location.origin||!FILES.includes(url.pathname))return;
- event.respondWith(fetch(event.request).then(response=>{
-   if(response.ok){const copy=response.clone();void caches.open(CACHE).then(c=>c.put(event.request,copy));}
-   return response;
- }).catch(()=>caches.match(event.request)));
-});
+const CACHE='horizon-central-ui-v2';const BASE=new URL('./',self.location.href).pathname;const FILES=['','index.html','style.css','app.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png'].map(x=>BASE+x);self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;const u=new URL(e.request.url);if(u.origin!==self.location.origin||!FILES.includes(u.pathname))return;e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();void caches.open(CACHE).then(c=>c.put(e.request,copy));}return r;}).catch(()=>caches.match(e.request)));});
