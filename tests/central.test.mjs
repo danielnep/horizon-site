@@ -5,7 +5,7 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {startServer} from '../server.mjs';
-import {SPECIALISTS,operationalDigest,teamLog} from '../central/controller.mjs';
+import {SPECIALISTS,operationalDigest,teamLog,deriveCodePaths} from '../central/controller.mjs';
 
 async function withServer(fn){
  const old=process.env.HORIZON_MCP_TOKEN;
@@ -161,4 +161,23 @@ test('PWA dashboard does not block visitors behind the login overlay',async()=>{
   assert.match(script,/Resultados armazenados/);
   assert.match(script,/t\.stages/);
  });
+});
+
+test('all repository selections come from API, never three fixed projects or manual repository input',async()=>{
+ await withServer(async({url})=>{
+  const script=await fetch(url+'/central/app.js').then(r=>r.text());
+  assert.doesNotMatch(script,/const PROJECTS\s*=/);
+  assert.doesNotMatch(script,/id="repo"/);
+  assert.match(script,/await api\('repositories'\)/);
+  assert.match(script,/repository:repository/);
+ });
+});
+test('automatic scope identifies existing project source files and does not select secrets',()=>{
+ const items=[
+  {name:'src',type:'dir'},{name:'css',type:'dir'},
+  {name:'index.html',type:'file'},{name:'server.mjs',type:'file'},
+  {name:'.env',type:'file'},{name:'package-lock.json',type:'file'},
+  {name:'token.js',type:'file'},{name:'README.md',type:'file'}];
+ const paths=deriveCodePaths(items,'danielnep/romaneio-digital');
+ assert.deepEqual(paths,['src/**','css/**','index.html','server.mjs']);
 });
