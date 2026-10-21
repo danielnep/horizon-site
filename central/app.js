@@ -110,13 +110,20 @@ function taskRow(t){
  const live='<div class="live-operation"><div class="live-operation-title">'+(active?'<i class="pulse" aria-hidden="true"></i>':'')+
   escapeHTML(active?'Atividade atual':'Última atividade conhecida')+'</div><p class="live-operation-message">'+escapeHTML(activity)+'</p>'+
   '<span class="live-operation-time">'+escapeHTML(subtitle)+'</span>'+track+'</div>';
- const planItems=splitTaskPlan(t.description||t.title);
- const statuses=taskPlanStatus(planItems,t.stages||[]);
+ const writtenPlan=splitTaskPlan(t.description||t.title);
+ const recordedStages=Array.isArray(t.stages)?t.stages:[];
+ // Some task contracts are a single paragraph. Present actual worker stages
+ // instead of hiding the checklist just because the prose had no line breaks.
+ const planItems=writtenPlan.length>1?writtenPlan:recordedStages.length>1?
+  recordedStages.map((stage,i)=>String(stage.summary||'Etapa '+(i+1)+' · '+label(stage.agent)).slice(0,600)):writtenPlan;
+ const statuses=taskPlanStatus(planItems,recordedStages);
  const checklist=statuses.length>1?'<section class="task-plan"><h3>Etapas previstas</h3><ol>'+
   statuses.map((item,i)=>'<li class="'+(item.verified?'task-step-done':'task-step-pending')+'"><span class="task-step-marker">'+
-  (item.verified?'✓':i+1)+'</span><div><span>'+escapeHTML(item.text)+'</span><small>'+
+  (item.verified?'✓':i+1)+'</span><div><span>'+escapeHTML(item.text.length>155?item.text.slice(0,152)+'…':item.text)+'</span><small>'+
   (item.verified?'Concluída com registro':item.grounded?emPortugues(item.state):'Aguardando confirmação individual')+
-  (item.agent?' · '+escapeHTML(label(item.agent)):'')+'</small></div></li>').join('')+'</ol></section>':'';
+  (item.agent?' · '+escapeHTML(label(item.agent)):'')+'</small>'+
+  (item.text.length>155?'<details class="task-step-full"><summary>Ver descrição completa</summary><p>'+escapeHTML(item.text)+'</p></details>':'')+
+  '</div></li>').join('')+'</ol></section>':'';
  const steps=Array.isArray(t.stages)&&t.stages.length?
   '<div class="task-stages">'+t.stages.map(stage=>'<div class="stage-line"><span class="stage-icon">'+
   (stage.state==='succeeded'||stage.state==='completed'?'✓':'○')+'</span><div><b>'+escapeHTML(label(stage.agent))+'</b> '+
