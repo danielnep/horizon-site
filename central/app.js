@@ -112,14 +112,14 @@ function requestForm(){
  '<div class="field"><label for="repo">Repositório GitHub</label><input id="repo" name="repo" autocomplete="off" value="danielnep/app-hondas-maxvel"></div>'+
  '<div class="field"><label for="delivery">Tipo de projeto</label><select id="delivery" name="delivery"><option value="existing_product">Projeto existente</option><option value="new_product">Novo projeto</option></select></div>'+
  '<div class="field"><label for="paths">Arquivos permitidos, separados por vírgula</label><input id="paths" name="paths" placeholder="src/**, index.html"></div></div>'+
- '<div class="request-actions"><label class="checkbox"><input type="checkbox" id="public-confirm" required>Confirmo que a solicitação não contém segredos ou dados privados (fila pública no GitHub).</label>'+
+ '<div class="request-actions"><label class="checkbox"><input type="checkbox" id="public-confirm" required>Confirmo que a solicitação não contém segredos ou dados privados (fila privada no Railway).</label>'+
  '<div class="actions-right"><button type="button" class="secondary" id="ai-action">Analisar com IA</button><button type="submit" class="primary" id="task-submit">Enviar solicitação ↑</button></div></div>'+
  '<button type="button" class="quiet" id="advanced-toggle" aria-expanded="false">Mostrar configuração da tarefa ▾</button>'+
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
 function overviewMarkup(){
  return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
- listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do GitHub indisponível: não é possível confirmar que está vazia.</p>':'')+
+ listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do Railway indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'')+
  '<div class="section-heading"><h2>Agentes</h2><a class="linkrow" href="#agentes">Ver os 17 →</a></div>'+
  '<div class="compact-agent-list">'+(snapshot?.agents||[]).slice(0,5).map(a=>'<div><span>'+escapeHTML(label(a.id))+'</span>'+chip(a.status)+'</div>').join('')+'</div>'+
@@ -137,7 +137,7 @@ function pageTarefas(){
  return heading('Tarefas','Solicitações registradas na fila e os respectivos resultados verificáveis.')+
  '<div class="searchbar"><input id="search" placeholder="Buscar por projeto ou tarefa…" aria-label="Buscar tarefas" value="'+escapeHTML(term)+'">'+
  '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
- '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do GitHub</span></div>'+listTasks(filtered);
+ '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do Railway</span></div>'+listTasks(filtered);
 }
 function agentRow(a){
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
@@ -152,10 +152,10 @@ function pageAgentes(){
 }
 function pageHistorico(){
  const events=snapshot?.events||[];
- return heading('Histórico','Resultados preservados no GitHub e eventos recentes do Railway.')+
+ return heading('Histórico','Resultados operacionais no Railway e eventos recentes da equipe.')+
  '<div class="section-heading"><h2>Resultados armazenados</h2><span class="meta">Mesmo após sair da fila</span></div>'+listTasks((snapshot?.tasks||[]).filter(x=>x.hasResult))+
  '<div class="section-heading"><h2>Atividade recente do servidor</h2></div>'+
- (!events.length?'<div class="empty">Ainda não há eventos recentes da equipe nesta instância. O histórico técnico permanente fica no GitHub.</div>':
+ (!events.length?'<div class="empty">Ainda não há eventos recentes da equipe nesta instância.</div>':
  '<div class="list">'+[...events].reverse().map(e=>
  '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(e.kind==='worker'?'Worker: '+e.event:'Tarefa: '+e.event)+'</strong>'+
  '<p>'+escapeHTML(Object.entries(e).filter(([k])=>!['id','at','kind','event'].includes(k)).map(([k,v])=>k+': '+v).join(' • ')||'Evento recebido')+'</p></div></div>').join('')+'</div>')+
@@ -180,7 +180,7 @@ function pageSistema(){
  '<div><small>Worker</small><b>'+escapeHTML(w.status||'não verificado')+'</b></div>'+
  '<div><small>Último ciclo visto</small><b>'+escapeHTML(time(last.at))+'</b></div>'+
  '<div><small>Resultado do último ciclo</small><b>'+escapeHTML(last.rc??last.code??'não informado')+'</b></div>'+
- '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'GitHub consultado':'GitHub indisponível')+'</b></div>'+
+ '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'Railway consultado':'Railway indisponível')+'</b></div>'+
  '<div><small>Presença dos agentes</small><b>'+escapeHTML(snapshot?.available?.attendance?'Registros consultados':'Sem confirmação individual')+'</b></div></div>'+
  '<p class="smallprint">Os erros completos do processo permanecem nos logs do Railway. Este painel não tem acesso direto à API administrativa do Railway.</p></section>'+
  '<div class="section-heading"><h2>Conexão</h2></div><div class="smallprint">Atualizações por SSE, com reconexão e atualização periódica de segurança. Nada de IA para sincronizar estados.</div>';
