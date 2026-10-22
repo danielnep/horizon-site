@@ -1,3 +1,4 @@
+import {enrollOwner,loginOwner} from './passkey-client.mjs';
 import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
 import {studioMarkup,mountStudio,notifyStudioChanged,stopStudio} from './studio.mjs';
 const $=id=>document.getElementById(id);
@@ -61,6 +62,12 @@ async function runAnalysis(key,path,body){
  finally{state.busy=false;persistAnalysis();repaintAnalysis();}
 }
 let adminAuthorized=false;
+let usePasskey=false;
+let enrollmentLinkKey=null;
+if(location.hash.startsWith('#cadastrar=')){
+ enrollmentLinkKey=decodeURIComponent(location.hash.slice('#cadastrar='.length));
+ history.replaceState(null,'',location.pathname+location.search+'#inicio');
+}
 let pendingCommand=null;
 let actionTimer=null;
 const helpHistory=[];
@@ -129,11 +136,19 @@ async function api(path,options={}){
  if(PAGES_MODE){if(path==='session')return {authenticated:true,configured:false};if(path==='overview')return pagesOverview();throw Error('Comando indisponível no modo leitura');}
  const response=await fetch('/central/api/'+path,{credentials:'same-origin',cache:'no-store',headers:options.body?{'content-type':'application/json'}:{},...options});
  let data;try{data=await response.json();}catch{data={error:'resposta_invalida'};}
- if(response.status===401){if(options.method==='POST')showLogin(true);throw Error('A consulta é livre. Para enviar comandos, é necessária autorização administrativa.');}
+ if(response.status===401){if(options.method==='POST')showLogin(true);throw Error('Autorize no celular para gerenciar seus agentes.');}
  if(!response.ok)throw Error(String(data.error||'Falha de comunicação').replaceAll('_',' '));
  return data;
 }
-function showLogin(show){$('gate').hidden=!show;if(show)$('password')?.focus();}
+function showLogin(show){
+ $('gate').hidden=!show;
+ $('login-form').hidden=usePasskey;
+ $('passkey-button').hidden=!usePasskey;
+ if(usePasskey){
+  $('passkey-button').textContent=enrollmentLinkKey?'Cadastrar digital neste celular':'Entrar com digital';
+  $('passkey-button').focus();
+ }else if(show)$('password')?.focus();
+}
 function active(){const x=(location.hash||'#inicio').replace(/^#/,'');return LABELS[x]?x:'inicio';}
 function updateMenu(){
  const page=active();$('page-label').textContent=LABELS[page];
@@ -616,12 +631,28 @@ function connectEvents(){
 }
 async function boot(){
  showLogin(false);
- try{const session=await api('session');adminAuthorized=Boolean(session.authenticated);}catch{}
+ try{const session=await api('session');adminAuthorized=Boolean(session.authenticated);usePasskey=Boolean(session.passkey?.enabled);}catch{}
+ if(enrollmentLinkKey&&usePasskey&&!adminAuthorized)showLogin(true);
  await refresh(true);
  await loadRepositories();
  connectEvents();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));
+$('passkey-button').addEventListener('click',async()=>{
+ const button=$('passkey-button');button.disabled=true;$('login-error').textContent='';
+ try{
+  if(enrollmentLinkKey){
+   await enrollOwner(enrollmentLinkKey);enrollmentLinkKey=null;
+  }else await loginOwner();
+  adminAuthorized=true;showLogin(false);note('Acesso autorizado neste aparelho.');await refresh(true);
+  if(pendingCommand){
+   const command=pendingCommand;pendingCommand=null;
+   if(command.type==='agent')await executeAgentAction(command.id,command.action,true);
+   else await executeTaskAction(command.id,command.action,true,command.settings||{});
+  }
+ }catch(error){$('login-error').textContent=error?.name==='NotAllowedError'?'Autenticação cancelada no aparelho.':String(error.message||'Não foi possível autenticar.');}
+ finally{button.disabled=false;}
+});
 
 function mensagemAjuda(role,text){
  const element=document.createElement('p');
