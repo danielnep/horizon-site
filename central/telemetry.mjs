@@ -53,8 +53,8 @@ export async function recordCentralUsage(model,usage,providerName='groq'){
  const input=number(usage?.prompt_tokens),output=number(usage?.completion_tokens),total=number(usage?.total_tokens);
  if(input===null&&output===null&&total===null)return false;
  const date=new Date().toISOString().slice(0,10);
- const dir=join(directRoot(),'telemetry');
  try{
+  const dir=join(directRoot(),'telemetry');
   await mkdir(dir,{recursive:true,mode:0o700});
   await appendFile(join(dir,'usage-'+date+'.jsonl'),JSON.stringify({
    at:new Date().toISOString(),agent:'central-horizon',provider:providerName==='gemini'?'gemini':'central-groq',model,
