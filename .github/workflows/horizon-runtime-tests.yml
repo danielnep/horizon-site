@@ -35,6 +35,8 @@ jobs:
         run: |
           node --check server.mjs
           node --check maestro/embedded-postgres.mjs
+      - name: Validate real-time SQLite notifications
+        run: python3 -m unittest discover -s tests -p test_vps_sqlite_live.py -v
       - name: Run application and supervisor regression tests
         run: npm test
       - name: Build and smoke-test the Coolify image
