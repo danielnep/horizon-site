@@ -1,7 +1,7 @@
 // Horizonte MCP: stateless Streamable HTTP server for ChatGPT.
 // Never returns secrets, never accepts raw commands or arbitrary GitHub API requests.
 import { timingSafeEqual } from 'node:crypto';
-import {submitDirectTask,directStatus} from './direct-queue.mjs';
+import {vpsRequest} from '../central/vps-client.mjs';
 
 const CONTROL_REPO='danielnep/May-Maestro-Executor';
 const AGENTS=Object.freeze([
@@ -30,9 +30,10 @@ const submitInput={type:'object',properties:{
  additionalProperties:false};
 const TOOLS=Object.freeze([
  {name:'horizon_list_agents',description:'Retorna os 17 agentes do executor Horizon com nomes verificaveis. Nao inicia agentes.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}},
- {name:'horizon_task_status',description:'Consulta recebimento e resultados da fila interna da VPS Horizon, sem consultar GitHub.',inputSchema:taskIdInput,annotations:{readOnlyHint:true,openWorldHint:false}},
- {name:'horizon_submit_task',description:'Entrega ao Maestro na VPS em fila local persistente, sem GitHub Actions. Nao confunde aceite com conclusao.',inputSchema:submitInput,annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
- {name:'horizon_sync_status',description:'Consulta politica de sincronizacao agentes↔plugins no repositorio publico, sem fazer publicacao.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}}
+ {name:'horizon_task_status',description:'Consulta estado do trabalho diretamente no SQLite ativo da VPS sem consultar GitHub.',inputSchema:taskIdInput,annotations:{readOnlyHint:true,openWorldHint:false}},
+ {name:'horizon_submit_task',description:'Registra tarefa no SQLite vivo do Maestro na VPS, sem fila paralela ou GitHub Actions. Aceite nao e conclusao.',inputSchema:submitInput,annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
+ {name:'horizon_sync_status',description:'Consulta politica de sincronizacao agentes↔plugins no repositorio publico, sem fazer publicacao.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}},
+ {name:'horizon_vps_health',description:'Confere conectividade real do supervisor Python, agentes e banco SQLite na VPS sem revelar dados privados.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}}
 ]);
 function safeEqual(a,b){if(typeof a!=='string'||typeof b!=='string'||!a||!b)return false;const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length && timingSafeEqual(x,y);}
 const reply=(res,status,body,headers={})=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...headers});res.end(JSON.stringify(body));};
@@ -50,23 +51,53 @@ async function gh(path,{method='GET',body,token=process.env.HORIZON_MCP_GITHUB_T
 }
 function decodeFile(body){const content=body?.content;if(typeof content!=='string')return null;const raw=Buffer.from(content.replace(/\s/g,''),'base64').toString('utf8');if(Buffer.byteLength(raw)>65000)throw Error('Arquivo acima do limite');return JSON.parse(raw);}
 async function handleTool(name,a,options={}){
-  if(name==='horizon_list_agents')return toolResponse({agents:AGENTS,source:CONTROL_REPO,count:AGENTS.length});
-  if(name==='horizon_task_status'){
-    try{return toolResponse(await directStatus(a?.task_id));}
-    catch(error){return toolResponse({error:String(error.message||'unavailable').slice(0,80)},true);}
+  const vpsCall=options.vpsRequester||vpsRequest;
+  if(name==='horizon_list_agents'){
+    try{
+      const snapshot=await vpsCall('/v1/snapshot');
+      const names=Array.isArray(snapshot.agents)?snapshot.agents.map(x=>x.id).filter(x=>AGENTS.includes(x)):[];
+      return toolResponse({agents:names,count:names.length,worker:snapshot.worker?.status||'unknown',source:'vps_sqlite'});
+    }catch(error){return toolResponse({error:'vps_desconectada',detail:String(error.message||'').slice(0,70)},true);}
   }
+  if(name==='horizon_task_status'){
+    if(typeof a?.task_id!=='string'||!ID.test(a.task_id))return toolResponse({error:'task_id_invalido'},true);
+    try{
+      const snapshot=await vpsCall('/v1/snapshot');
+      const task=Array.isArray(snapshot.tasks)?snapshot.tasks.find(x=>x.id===a.task_id):null;
+      if(!task)return toolResponse({id:a.task_id,status:'nao_encontrada_no_recorte',source:'vps_sqlite'});
+      return toolResponse({id:task.id,status:task.status,agent:task.agent,hasResult:task.hasResult===true,source:'vps_sqlite'});
+    }catch(error){return toolResponse({error:String(error.message||'vps_indisponivel').slice(0,100)},true);}
+  }
+  if(name==='horizon_vps_health'){
+    try{
+      const snapshot=await vpsCall('/v1/snapshot');
+      return toolResponse({source:'vps_sqlite',connected:true,worker:snapshot.worker?.status||'unknown',agents:Array.isArray(snapshot.agents)?snapshot.agents.length:0,queueSize:Array.isArray(snapshot.tasks)?snapshot.tasks.filter(t=>t.inQueue===true).length:0});
+    }catch(error){return toolResponse({connected:false,error:String(error.message||'vps_indisponivel').slice(0,100)},true);}
+  }
+
   if(name==='horizon_sync_status'){
     const r=await gh('contents/docs/plugin-sync.json?ref=main',options);
     if(r.status===404)return toolResponse({configured:false});
     return toolResponse({configured:true,policy:decodeFile(r.body)});
   }
   if(name==='horizon_submit_task'){
-    try{return toolResponse(await submitDirectTask(a));}
-    catch(error){return toolResponse({error:String(error.message||'submit_failed').slice(0,100)},true);}
+    if(!a||typeof a!=='object'||!AGENTS.includes(a.agent)||
+      typeof a.objective!=='string'||a.objective.length<12||a.objective.length>2800||
+      typeof a.repository!=='string'||!/^danielnep\/[A-Za-z0-9_.-]{2,90}$/.test(a.repository)||
+      !Array.isArray(a.allowed_paths)||a.allowed_paths.length>35||
+      a.allowed_paths.some(p=>typeof p!=='string'||!p||p.length>150)||
+      a.public_data_confirmed!==true)return toolResponse({error:'solicitacao_invalida_ou_nao_confirmada'},true);
+    try{
+      const answer=await vpsCall('/v1/tasks',{method:'POST',data:{
+        agent:a.agent,repository:a.repository,objective:a.objective,
+        allowed_paths:a.allowed_paths,priority:a.priority||'P2',
+        public_data_confirmed:true,delivery_type:a.delivery_type||'existing_product'}});
+      return toolResponse({...answer,source:'vps_sqlite',note:'Aceite nao representa execucao. Acompanhe com horizon_task_status.'});
+    }catch(error){return toolResponse({error:String(error.message||'vps_indisponivel').slice(0,100)},true);}
   }
   throw Error('Unknown tool');
 }
-export async function handleHorizonMcp(req,res,{fetcher=fetch,token=process.env.HORIZON_MCP_TOKEN,githubToken=process.env.HORIZON_MCP_GITHUB_TOKEN}={}){
+export async function handleHorizonMcp(req,res,{fetcher=fetch,token=process.env.HORIZON_MCP_TOKEN,githubToken=process.env.HORIZON_MCP_GITHUB_TOKEN,vpsRequester=vpsRequest}={}){
   if(req.method!=='POST'){reply(res,405,{error:'Only POST supported'},{allow:'POST'});return;}
   const origin=req.headers.origin;
   if(origin&&!['https://chatgpt.com','https://chat.openai.com'].includes(origin)){reply(res,403,{error:'Origin not permitted'});return;}
@@ -90,8 +121,10 @@ export async function handleHorizonMcp(req,res,{fetcher=fetch,token=process.env.
     else if(input.method==='tools/call'){
       const name=input.params?.name; const args=input.params?.arguments??{};
       if(!TOOLS.some(t=>t.name===name)){output=err(id,-32602,'Unknown tool');}
-      else output=result(id,await handleTool(name,args,{fetcher,token:githubToken}));
+      else output=result(id,await handleTool(name,args,{fetcher,token:githubToken,vpsRequester}));
     }else output=err(id,-32601,'Method not found');
   }catch(e){output=result(id,toolResponse({error:'upstream_error',message:String(e?.message||e).slice(0,160)},true));}
   reply(res,200,output,{'mcp-protocol-version':VERSION});
 }
+
+[executed on device: srv2085016 (56be333d-f9c8-4f1e-8334-abe11feefac3)]
