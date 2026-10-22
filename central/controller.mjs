@@ -450,6 +450,11 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   try{const repositories=await ownerRepositories();send(res,200,{repositories,count:repositories.length});}
   catch{send(res,503,{error:'nao_foi_possivel_consultar_repositorios'});}return true;
  }
+ if(req.method==='GET'&&raw==='/central/api/tasks/archived'){
+  try{const tasks=await directTasks({includeArchived:true});send(res,200,{tasks:tasks.filter(t=>t.status==='arquivada')});}
+  catch{send(res,503,{error:'arquivo_indisponivel'});}
+  return true;
+ }
  if(req.method==='GET'&&['/central/api/overview','/central/api/agents','/central/api/tasks','/central/api/usage','/central/api/history'].includes(raw)){
   try{const overview=await loadOverview();
    const answer=raw.endsWith('/agents')?{agents:overview.agents,at:overview.at}:
@@ -480,7 +485,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{
    const data=await body(req,600);
-   const result=await directTaskAction(actionPath[1],data.action);
+   const result=await directTaskAction(actionPath[1],data.action,{agent:data.agent,priority:data.priority});
    githubCache.expires=0;
    notify('task',{event:'control',taskId:result.id,action:data.action});
    send(res,200,result);
