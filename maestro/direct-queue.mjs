@@ -140,7 +140,7 @@ export async function directTasks({includeArchived=false}={}){
     /fail|error|block|reject/.test(rawStatus)?'bloqueada':
     /running|in_progress/.test(rawStatus)?'em execução':waiting?'aguardando':'na fila';
   tasks.push({id:task.task_id,project:task.project,repository:task.repository,
-   agent:task.agent,priority:/^P[0-3]\\b/.exec(String(task.objective))?.[0]||'P2',queuePosition:positions.has(task.task_id)?positions.get(task.task_id)+1:null,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
+   agent:task.agent,priority:/^P[0-3]\b/.exec(String(task.objective))?.[0]||'P2',queuePosition:positions.has(task.task_id)?positions.get(task.task_id)+1:null,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
    status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':group.state==='archived'?'arquivada':status,
    rawStatus,hasResult:!!outcome,
    stages:stages.map(x=>({taskId:x.task_id||null,agent:x.agent,state:x.status,
@@ -202,7 +202,7 @@ export async function directTaskAction(taskId,action,options={}){
    input.agent=options.agent;
   }else{
    if(!/^P[0-3]$/.test(options.priority||''))throw Error('prioridade_invalida');
-   input.objective=options.priority+' | '+String(input.objective).replace(/^P[0-3]\\s*\\|\\s*/,'');
+   input.objective=options.priority+' | '+String(input.objective).replace(/^P[0-3]\s*\|\s*/,'');
   }
   const staging=join(root,state,'.'+taskId+'.'+randomUUID()+'.tmp');
   const fd=await open(staging,'wx',0o600);
