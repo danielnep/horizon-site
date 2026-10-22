@@ -338,3 +338,6 @@
   #content:has(.task-checkbox:checked) .bulk-toolbar [data-bulk]{display:block}
   body:has(.task-row>.inline-detail:not([hidden])) .help-fab{display:none}
 }
+
+/* The owner enters with a platform passkey; obsolete form stays unavailable. */
+#login-form[hidden],#passkey-button[hidden]{display:none!important}
