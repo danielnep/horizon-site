@@ -169,7 +169,7 @@ export async function directTasks({includeArchived=false}={}){
 
 export async function directTaskAction(taskId,action,options={}){
 
- if(!ID.test(taskId)||!['pause','cancel','resume','archive','restore','up','down','assign','priority'].includes(action))throw Error('comando_invalido');
+ if(!ID.test(taskId)||!['pause','cancel','resume','archive','restore','up','down','move','assign','priority','edit'].includes(action))throw Error('comando_invalido');
  const root=await ensure();
  const name=taskId+'.json';
  let state;
@@ -179,18 +179,21 @@ export async function directTaskAction(taskId,action,options={}){
   catch(e){if(e.code!=='ENOENT')throw e;}
  }
  if(!state)throw Error('tarefa_nao_encontrada_no_railway');
- if(['up','down'].includes(action)){
+ if(['up','down','move'].includes(action)){
   if(state!=='requests')throw Error('tarefa_fora_da_fila');
-  const order=await queueOrder(root),index=order.indexOf(taskId),next=index+(action==='up'?-1:1);
+  const order=await queueOrder(root),index=order.indexOf(taskId);
+  const next=action==='move'?Number(options.position)-1:index+(action==='up'?-1:1);
+  if(action==='move'&&(!Number.isInteger(next)||next<0||next>=order.length))throw Error('posicao_invalida');
   if(index<0||next<0||next>=order.length)return {id:taskId,status:'na fila',already:true};
-  [order[index],order[next]]=[order[next],order[index]];
+  if(action==='move'){order.splice(index,1);order.splice(next,0,taskId);}
+  else [order[index],order[next]]=[order[next],order[index]];
   await saveQueueOrder(root,order);
   // Wake the current worker even if only the order metadata changed.
   const now=new Date();await utimes(join(root,'requests',name),now,now);
   await audit(root,taskId,action,{position:next+1});
   return {id:taskId,status:'na fila',queuePosition:next+1,note:'Ordem de execução atualizada na fila do Railway.'};
  }
- if(['assign','priority'].includes(action)){
+ if(['assign','priority','edit'].includes(action)){
   if(state!=='requests'&&state!=='paused')throw Error('tarefa_nao_editavel');
   try{await lstat(join(root,'results',name));throw Error('tarefa_ja_iniciada');}
   catch(e){if(e.code!=='ENOENT')throw e;}
@@ -200,6 +203,11 @@ export async function directTaskAction(taskId,action,options={}){
    try{await lstat(join(root,'agent-holds',options.agent+'.json'));throw Error('agente_pausado');}
    catch(e){if(e.code!=='ENOENT')throw e;}
    input.agent=options.agent;
+  }else if(action==='edit'){
+   const objective=String(options.objective||'').trim();
+   if(objective.length<12||objective.length>2800)throw Error('objetivo_invalido');
+   const prefix=/^P[0-3]\s*\|\s*/.exec(String(input.objective))?.[0]||'P2 | ';
+   input.objective=prefix+objective.replace(/^P[0-3]\s*\|\s*/,'');
   }else{
    if(!/^P[0-3]$/.test(options.priority||''))throw Error('prioridade_invalida');
    input.objective=options.priority+' | '+String(input.objective).replace(/^P[0-3]\s*\|\s*/,'');
@@ -210,8 +218,8 @@ export async function directTaskAction(taskId,action,options={}){
   finally{await fd.close();}
   try{await rename(staging,path);}
   finally{await unlink(staging).catch(()=>{});}
-  await audit(root,taskId,action,{value:action==='assign'?input.agent:options.priority});
-  return {id:taskId,status:state==='requests'?'na fila':'pausada',note:'Configuração alterada na solicitação durável.'};
+  await audit(root,taskId,action,{value:action==='assign'?input.agent:action==='edit'?'updated':options.priority});
+  return {id:taskId,status:state==='requests'?'na fila':'pausada',note:'Alteração registrada na solicitação durável.'};
  }
  const target=action==='pause'?'paused':action==='cancel'?'cancelled':action==='archive'?'archived':action==='restore'?'paused':'requests';
  if(action==='archive'&&state==='archived')return {id:taskId,status:'arquivada',already:true};
