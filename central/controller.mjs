@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
+import {passkeyEnabled,ownerPasskeyStatus,beginEnrollment,completeEnrollment,beginAuthentication,completeAuthentication} from './passkey-auth.mjs';
 import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,disconnectedVps,subscribeVpsChanges} from './vps-client.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
@@ -33,7 +34,7 @@ function send(res,status,value,headers={}){
   'x-content-type-options':'nosniff',...headers});
   res.end(JSON.stringify(value));
 }
-function sec(){return process.env.HORIZON_CONTROL_PASSWORD||process.env.HORIZON_MCP_TOKEN||'';}
+function sec(){return process.env.HORIZON_OWNER_SESSION_SECRET||process.env.HORIZON_CONTROL_PASSWORD||process.env.HORIZON_MCP_TOKEN||'';}
 function same(a,b){if(!a||!b)return false;const aa=Buffer.from(a),bb=Buffer.from(b);return aa.length===bb.length&&timingSafeEqual(aa,bb);}
 function signature(message){return createHmac('sha256',sec()).update('horizon-control:v1:'+message).digest('base64url');}
 function authenticated(req){
@@ -41,7 +42,7 @@ function authenticated(req){
  if(!sec()||!match)return false;
  const [stamp,sig]=decodeURIComponent(match[1]).split('.');
  const timestamp=Number(stamp);
- return Number.isSafeInteger(timestamp)&&timestamp<=Date.now()+30000&&timestamp>Date.now()-43200000&&same(signature(stamp),sig);
+ return Number.isSafeInteger(timestamp)&&timestamp<=Date.now()+30000&&timestamp>Date.now()-(passkeyEnabled()?15552000000:43200000)&&same(signature(stamp),sig);
 }
 function sameOrigin(req){
  const origin=req.headers.origin;if(!origin)return false;
@@ -457,9 +458,39 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   }catch{send(res,503,{error:'painel_indisponivel'});}return true;
  }
  if(raw==='/central/api/session'&&req.method==='GET'){
-  send(res,200,{authenticated:authenticated(req),configured:Boolean(sec())});return true;
+  const status=await ownerPasskeyStatus();
+  send(res,200,{authenticated:authenticated(req),configured:Boolean(sec()),passkey:status});return true;
+ }
+ if(raw.startsWith('/central/api/passkey/')){
+  if(!passkeyEnabled()){send(res,404,{error:'passkey_not_configured'});return true;}
+  if(req.method!=='POST'||!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  const ip=String(req.socket.remoteAddress||'unknown').slice(0,80);
+  if(!limit('passkey:'+ip,50,900000)){send(res,429,{error:'tentativas_excedidas'});return true;}
+  try{
+   const input=await body(req,35000);
+   const origin=String(req.headers.origin||'');
+   if(raw==='/central/api/passkey/register/options'){
+    send(res,200,await beginEnrollment({origin,key:input.key,authorized:authenticated(req)}));return true;
+   }
+   if(raw==='/central/api/passkey/register/verify'){
+    const result=await completeEnrollment({origin,key:input.key,authorized:authenticated(req),ceremony:input.ceremony,response:input.response});
+    const stamp=String(Date.now()),session=stamp+'.'+signature(stamp);
+    send(res,200,result,{'set-cookie':'horizon_session='+session+'; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=15552000'});return true;
+   }
+   if(raw==='/central/api/passkey/login/options'){
+    send(res,200,await beginAuthentication({origin}));return true;
+   }
+   if(raw==='/central/api/passkey/login/verify'){
+    const result=await completeAuthentication({origin,ceremony:input.ceremony,response:input.response});
+    const stamp=String(Date.now()),session=stamp+'.'+signature(stamp);
+    send(res,200,result,{'set-cookie':'horizon_session='+session+'; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=15552000'});return true;
+   }
+   send(res,404,{error:'not_found'});
+  }catch(e){send(res,403,{error:String(e?.message||'passkey_failed').slice(0,110)});}
+  return true;
  }
  if(raw==='/central/api/login'&&req.method==='POST'){
+  if(passkeyEnabled()){send(res,410,{error:'senha_desativada_use_digital'});return true;}
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   const ip=String(req.socket.remoteAddress||'unknown').slice(0,80);
   if(!limit('login:'+ip,8)){send(res,429,{error:'tentativas_excedidas'});return true;}
