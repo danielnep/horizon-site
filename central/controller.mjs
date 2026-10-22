@@ -1,6 +1,7 @@
 import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
+import {join} from 'node:path';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
 import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,disconnectedVps} from './vps-client.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
@@ -229,6 +230,18 @@ async function projectPreview(repoName){
 }
 
 function hasSharedVpsQueue(){return Boolean(String(process.env.HORIZON_DIRECT_INBOX_DIR||'').trim());}
+async function verifiedWorkerSnapshot(){
+ const root=String(process.env.HORIZON_DIRECT_INBOX_DIR||'').trim();
+ if(!root)return null;
+ try{
+  const raw=await readFile(join(root,'.worker-state.json'),'utf8');
+  if(raw.length>100000)return null;
+  const snapshot=JSON.parse(raw);
+  if(snapshot?.source!=='horizon-worker-sqlite'||!Array.isArray(snapshot.tasks))return null;
+  const age=Date.now()-Date.parse(snapshot.at);
+  return Number.isFinite(age)&&age>=-5000&&age<=90000?snapshot:null;
+ }catch{return null;}
+}
 async function loadOverview(){
  if(!hasSharedVpsQueue()){
   try{return await vpsSnapshot(SPECIALISTS);}
@@ -242,39 +255,38 @@ async function loadOverview(){
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
  githubCache.promise=(async()=>{
-  const [queued,attendance,holds,telemetryRead]=await Promise.allSettled([
-   directTasks(),file('tasks/attendance/equipe.json'),agentHolds(),operationalTelemetry(7)]);
+  const [queued,workerSnapshot,holds,telemetryRead]=await Promise.allSettled([
+   directTasks(),verifiedWorkerSnapshot(),agentHolds(),operationalTelemetry(7)]);
   if(queued.status!=='fulfilled')return disconnectedVps('Fila compartilhada da VPS indisponível');
    const q=queued.value;
   const telemetry=telemetryRead.status==='fulfilled'?telemetryRead.value:{usage:{available:false},activity:{lastByTask:{},recent:[]}};
   const queueResults=q.map(t=>({...t,lastActivity:telemetry.activity.lastByTask[t.id]||null,
    recentActivity:telemetry.activity.recent.filter(x=>x.taskId===t.id).slice(-10)}));
-  const members=attendance.status==='fulfilled'&&attendance.value&&typeof attendance.value==='object'?attendance.value:null;
+  const workerInfo=workerSnapshot.status==='fulfilled'?workerSnapshot.value:null;
+  const memberTasks=workerInfo?.tasks||[];
   const heldSet=new Set(holds.status==='fulfilled'?holds.value:[]);
   const agents=SPECIALISTS.map(id=>{
-   let rec=null;
-   if(Array.isArray(members?.agents))rec=members.agents.find(x=>x.id===id||x.agent===id);
-   else if(members?.agents&&typeof members.agents==='object')rec=members.agents[id]||null;
-   return {id,status:typeof rec?.status==='string'?rec.status:'sem telemetria individual',held:heldSet.has(id),
-   currentTask:typeof rec?.current_task==='string'?rec.current_task:(typeof rec?.task_ref==='string'?rec.task_ref:null),
-   updatedAt:typeof rec?.updated_at==='string'?rec.updated_at:null};
+   const current=memberTasks.find(x=>x.agent===id&&x.status==='running')||
+    memberTasks.find(x=>x.agent===id&&x.status==='queued')||null;
+   return {id,status:current?.status==='running'?'Trabalhando':
+    current?.status==='queued'?'Aguardando':'sem telemetria individual',
+    held:heldSet.has(id),currentTask:current?.id||null,updatedAt:current?workerInfo?.at:null};
   });
   const issues=[];
   if(queued.status==='rejected')issues.push('Fila compartilhada da VPS indisponível');
-  if(attendance.status==='rejected')issues.push('Presença individual indisponível');
+  if(!workerInfo)issues.push('Sem sinal recente do executor SQLite na VPS');
   if(holds.status==='rejected')issues.push('Estado de pausa dos agentes indisponível');
   return {at:new Date().toISOString(),source:'VPS Hostinger (fila compartilhada)',
-    connection:{state:'connected',message:'Fila configurada no serviço VPS'},
-   tasks:queueResults.filter(Boolean),agents,worker:{status:workerState,lastCycle},issues,
-   available:{vps:true,queue:true,results:true,attendance:attendance.status==='fulfilled'},
+    connection:{state:workerInfo?'connected':'degraded',message:workerInfo?'Fila e executor SQLite verificados':'Fila montada; executor sem confirmação recente'},
+   tasks:queueResults.filter(Boolean),agents,worker:{status:workerInfo?'Sincronizando fila e SQLite na VPS':'Sem sinal recente do executor',lastCycle:workerInfo?{at:workerInfo.at,kind:'sqlite_sync'}:null},issues,
+   available:{vps:true,queue:true,results:true,attendance:Boolean(workerInfo)},
    usage:telemetry.usage,activity:telemetry.activity.recent,};
  })().then(v=>{githubCache.value=v;githubCache.expires=Date.now()+16000;return v}).finally(()=>{githubCache.promise=null});
  return githubCache.promise;
 }
 
-// The live stream receives worker events immediately. GitHub is the durable
-// source for queues/attendance, so reconcile it at most every 20 seconds while
-// a dashboard is connected, then push only real changes via SSE.
+// The private VPS queue and SQLite heartbeat are the operational sources.
+// Reconcile them every 20 seconds while the dashboard is connected.
 export function operationalDigest(data){
  if(!data||typeof data!=='object')return '';
  return JSON.stringify({
