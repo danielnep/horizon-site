@@ -65,3 +65,16 @@
 .wait-diagnosis small{color:var(--muted);font-size:10px;overflow-wrap:anywhere}
 .stages-heading{font-size:12px;margin:17px 0 6px;color:var(--white)}
 .stage-reason{color:#f0ca86;font-size:11px;line-height:1.55;margin:5px 0}
+
+/* Operational queue controls: compact and touch-friendly, without decorative cards. */
+.task-controls .task-setting{display:flex;align-items:center;gap:7px;min-width:0;color:#b5c7d9;font-size:12px;font-weight:600}
+.task-controls .task-setting select{min-height:40px;max-width:190px;min-width:110px;border:1px solid #536273;border-radius:6px;background:#1c2936;color:#e5edf5;padding:0 9px;font:inherit}
+.task-controls [data-task-action="archive"]{border-color:#8d5d61;color:#ffd5d0}
+.task-controls [data-task-action="archive"]:hover{background:#482d34}
+.assist-result[role="alert"]{color:#ffb1a7}
+@media(max-width:600px){
+ .task-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .task-controls button{width:100%;min-width:0}
+ .task-controls .task-setting{grid-column:1/-1;justify-content:space-between}
+ .task-controls .task-setting select{flex:1;max-width:68%}
+}
