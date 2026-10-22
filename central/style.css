@@ -65,3 +65,9 @@
 .wait-diagnosis small{color:var(--muted);font-size:10px;overflow-wrap:anywhere}
 .stages-heading{font-size:12px;margin:17px 0 6px;color:var(--white)}
 .stage-reason{color:#f0ca86;font-size:11px;line-height:1.55;margin:5px 0}
+
+
+/* A ausência da conexão com os agentes NÃO é um painel vazio. */
+.central-vps-offline{padding:17px 20px;margin:12px 0 16px;border:1px solid #94684f;border-left:3px solid #f0bc68;border-radius:6px;background:#312b2b}
+.central-vps-offline strong{font-size:13px;color:#f4cb82}
+.central-vps-offline p{margin:8px 0 0;font-size:12px;line-height:1.6;color:#e3cfbf}
