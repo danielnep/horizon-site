@@ -1,0 +1,22 @@
+# Copie para /data/coolify/proxy/dynamic/horizon-site.yaml na VPS.
+# A rota usa o Traefik já existente do Coolify, sem recriar o serviço ou alterar DNS.
+http:
+  routers:
+    horizon-site-http:
+      entryPoints: [http]
+      rule: "Host(`horizonsolucoes.com`) || Host(`www.horizonsolucoes.com`)"
+      middlewares: [redirect-to-https]
+      service: horizon-site-web
+    horizon-site-https:
+      entryPoints: [https]
+      rule: "Host(`horizonsolucoes.com`) || Host(`www.horizonsolucoes.com`)"
+      middlewares: [gzip]
+      service: horizon-site-web
+      tls:
+        certResolver: letsencrypt
+  services:
+    horizon-site-web:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://horizon-site-web:3000"
