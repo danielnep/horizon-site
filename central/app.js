@@ -220,7 +220,8 @@ function taskRow(t){
   (t.supervision.firstPendingTask?'<small>Primeira etapa: '+escapeHTML(t.supervision.firstPendingTask)+'</small>':'')+
   (t.supervision.checkedAt?'<small> · Conferido: '+escapeHTML(time(t.supervision.checkedAt))+'</small>':'')+
   '</section>':'';
- const detail='<div class="task-detail"><button type="button" class="mobile-detail-close" data-detail-close="'+taskId+'">← Voltar às tarefas</button>'+live+diagnosis+controls+
+ const detail='<div class="task-detail"><button type="button" class="mobile-detail-close" data-detail-close="'+taskId+'">← Voltar às tarefas</button>'+
+ '<div class="mobile-detail-summary"><strong>'+escapeHTML(t.project)+'</strong><p>'+escapeHTML(t.title)+'</p>'+chip(t.status)+'</div>'+live+diagnosis+controls+
  '<p class="smallprint">'+(t.inQueue?'Esta tarefa está na fila do servidor.':
  'Esta tarefa não está na fila atual. O registro anterior pode ser consultado no histórico.')+'</p>'+
  (t.blocker?'<p class="error">Problema: '+escapeHTML(t.blocker)+'</p>':'')+
