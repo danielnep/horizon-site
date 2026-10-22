@@ -1,3 +1,4 @@
+name: horizon-site
 services:
   horizon-site:
     container_name: horizon-site-web
