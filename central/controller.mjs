@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
 import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,disconnectedVps} from './vps-client.mjs';
+import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
@@ -227,25 +228,47 @@ async function projectPreview(repoName){
  return result;
 }
 
+function hasSharedVpsQueue(){return Boolean(String(process.env.HORIZON_DIRECT_INBOX_DIR||'').trim());}
 async function loadOverview(){
+ if(!hasSharedVpsQueue()){
+  try{return await vpsSnapshot(SPECIALISTS);}
+  catch(error){
+   const code=String(error?.message||'vps_indisponivel');
+   return disconnectedVps(code==='endereco_ou_credencial_vps_nao_configurados'?
+    'Sem conexão com a fila compartilhada ou API de controle da VPS':
+    /vps_http_40[13]/.test(code)?'Autorização da VPS recusada':'Sem comunicação com a VPS');
+  }
+ }
  if(githubCache.value&&Date.now()<githubCache.expires)return githubCache.value;
  if(githubCache.promise)return githubCache.promise;
  githubCache.promise=(async()=>{
-  try{return await vpsSnapshot(SPECIALISTS);}
-  catch(e){
-   const code=String(e?.message||'vps_indisponivel');
-   const reason=code==='endereco_ou_credencial_vps_nao_configurados'?
-    'Conexão da Central com a VPS ainda não configurada':
-    code==='vps_http_401'||code==='vps_http_403'?
-    'Credenciais da VPS rejeitadas':
-    'Sem comunicação com o Maestro na VPS';
-   return disconnectedVps(reason);
-  }
- })().then(v=>{
-  githubCache.value=v;
-  githubCache.expires=Date.now()+(v.available?.vps?2300:5000);
-  return v;
- }).finally(()=>{githubCache.promise=null});
+  const [queued,attendance,holds,telemetryRead]=await Promise.allSettled([
+   directTasks(),file('tasks/attendance/equipe.json'),agentHolds(),operationalTelemetry(7)]);
+  if(queued.status!=='fulfilled')return disconnectedVps('Fila compartilhada da VPS indisponível');
+   const q=queued.value;
+  const telemetry=telemetryRead.status==='fulfilled'?telemetryRead.value:{usage:{available:false},activity:{lastByTask:{},recent:[]}};
+  const queueResults=q.map(t=>({...t,lastActivity:telemetry.activity.lastByTask[t.id]||null,
+   recentActivity:telemetry.activity.recent.filter(x=>x.taskId===t.id).slice(-10)}));
+  const members=attendance.status==='fulfilled'&&attendance.value&&typeof attendance.value==='object'?attendance.value:null;
+  const heldSet=new Set(holds.status==='fulfilled'?holds.value:[]);
+  const agents=SPECIALISTS.map(id=>{
+   let rec=null;
+   if(Array.isArray(members?.agents))rec=members.agents.find(x=>x.id===id||x.agent===id);
+   else if(members?.agents&&typeof members.agents==='object')rec=members.agents[id]||null;
+   return {id,status:typeof rec?.status==='string'?rec.status:'sem telemetria individual',held:heldSet.has(id),
+   currentTask:typeof rec?.current_task==='string'?rec.current_task:(typeof rec?.task_ref==='string'?rec.task_ref:null),
+   updatedAt:typeof rec?.updated_at==='string'?rec.updated_at:null};
+  });
+  const issues=[];
+  if(queued.status==='rejected')issues.push('Fila compartilhada da VPS indisponível');
+  if(attendance.status==='rejected')issues.push('Presença individual indisponível');
+  if(holds.status==='rejected')issues.push('Estado de pausa dos agentes indisponível');
+  return {at:new Date().toISOString(),source:'VPS Hostinger (fila compartilhada)',
+    connection:{state:'connected',message:'Fila configurada no serviço VPS'},
+   tasks:queueResults.filter(Boolean),agents,worker:{status:workerState,lastCycle},issues,
+   available:{vps:true,queue:true,results:true,attendance:attendance.status==='fulfilled'},
+   usage:telemetry.usage,activity:telemetry.activity.recent,};
+ })().then(v=>{githubCache.value=v;githubCache.expires=Date.now()+16000;return v}).finally(()=>{githubCache.promise=null});
  return githubCache.promise;
 }
 
@@ -276,7 +299,7 @@ async function pollLiveState(){
 function startLiveMonitor(){
  if(monitorTimer!==null)return;
  monitorDigest=null;
- monitorTimer=setInterval(()=>void pollLiveState(),5000);
+ monitorTimer=setInterval(()=>void pollLiveState(),20000);
  monitorTimer.unref?.();
  void pollLiveState();
 }
@@ -300,7 +323,7 @@ export function conciseProjectFacts(view,question){
  const agents=(view.agents||[]).map(x=>({especialista:x.id,estado:x.status,
   tarefaAtual:x.currentTask||null,pausado:Boolean(x.held)}));
  const tasks=(view.tasks||[]).filter(t=>q.includes(String(t.project||'').toLowerCase())||q.includes(String(t.id||'').toLowerCase())||/tarefas?|fazendo|andamento|progresso/.test(q)).slice(0,9);
- return {fonte:'Central Horizon, dados comprovados da VPS',
+ return {fonte:'Central Horizon, fila local do servidor',
   verificacao:view.at,agentes:agents,numeroTarefas:view.tasks?.length||0,
   tarefas:tasks.map(t=>({projeto:t.project,objetivo:t.title,estado:t.status,responsavel:t.agent,
     etapas:t.progress,acao:t.lastActivity?.action||null,arquivo:t.lastActivity?.path||null})),
@@ -311,7 +334,6 @@ export function conciseProjectFacts(view,question){
 export function quickAnswer(question,view){
  const q=String(question||'').toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
  const tasks=view.tasks||[];
- if(view.available?.vps!==true)return 'A conexão com a VPS ainda não foi estabelecida. Não consigo confirmar tarefas, agentes em execução nem consumo de tokens neste momento.';
  if(/quantos (agentes|especialistas)/.test(q))
   return 'A Horizon tem 17 especialistas cadastrados. Isso não significa que todos estejam trabalhando agora. Consulte a área Agentes para verificar a atividade de cada um.';
  if(/(quanto|quantos|total).{0,25}(token|consumo)/.test(q)){
@@ -320,7 +342,7 @@ export function quickAnswer(question,view){
    'Ainda não recebi consumo dos modelos neste período. O contador registra as respostas reais do Gemini e da Groq quando os agentes utilizam os modelos.';
  }
  if(/(quantas|quais|quantos).{0,25}(tarefa|fila)/.test(q))
-  return 'Há '+tasks.filter(x=>x.inQueue).length+' tarefas na fila da VPS e '+tasks.filter(x=>!x.inQueue).length+' registros fora dela. Abra Tarefas para acompanhar.';
+  return 'Há '+tasks.filter(x=>x.inQueue).length+' tarefas na fila local do servidor e '+tasks.filter(x=>!x.inQueue).length+' registros fora dela. Abra Tarefas para acompanhar.';
  if(/(o que|como).{0,16}(senha|digital)/.test(q))
   return 'A consulta do painel não exige senha. Para controlar tarefas pela internet, o servidor ainda exige uma sessão administrativa. A autenticação por digital poderá usar o próprio Android quando a chave de acesso do aparelho estiver cadastrada.';
  return null;
@@ -328,7 +350,7 @@ export function quickAnswer(question,view){
 
 async function chatContextPrompt(question){
  const [view,repositories]=await Promise.all([loadOverview(),ownerRepositories().catch(()=>[])]);
- const context=conciseProjectFacts({...view,events:view.events||[]},question);
+ const context=conciseProjectFacts({...view,events:events.slice(-20)},question);
  context.projetos=repositories.map(r=>({nome:r.label,repositorio:r.repository}));
  const normalized=question.toLocaleLowerCase('pt-BR');
  const specialist=SPECIALISTS.find(id=>normalized.includes(id)||
@@ -351,9 +373,8 @@ async function interpret(payload){
  if(!limit('ai',8,60000))return {error:'limite_de_consultas',status:429};
  const diagnosing=payload?.mode==='diagnose';
  const chatting=payload?.mode==='chat';
- const overview=diagnosing?await loadOverview():null;
- const recent=(overview?.events||[]).slice(-12).map(x=>({at:x.at,event:x.event,rc:x.rc,errorClass:x.errorClass,reason:x.reason,state:x.state}));
- const message=diagnosing?JSON.stringify({workerStatus:overview?.worker?.status||'sem ligação',lastCycle:overview?.worker?.lastCycle||null,events:recent}):String(payload?.message||'').trim();
+ const recent=events.slice(-12).filter(x=>x.kind==='worker'||x.kind==='system').map(x=>({at:x.at,event:x.event,rc:x.rc,errorClass:x.errorClass,reason:x.reason,state:x.state}));
+ const message=diagnosing?JSON.stringify({workerStatus:workerState,lastCycle,events:recent}):String(payload?.message||'').trim();
  if(!diagnosing&&(message.length<(chatting?3:12)||message.length>(chatting?700:1600)))return {error:'mensagem_deve_ter_12_a_1600_caracteres',status:400};
  const prompt=chatting?await chatContextPrompt(message):diagnosing?
   'Analise estes eventos técnicos da Horizon com cuidado. Explique em português popular: O que foi observado, o que significa, causas possíveis (não invente uma causa exata sem prova), próximos passos e se já há uma solução automática segura. Seja sucinto, até 110 palavras. Nunca alegue execução de correção. Dados: '+message:
@@ -375,10 +396,10 @@ async function interpret(payload){
 }
 async function createTask(value){
  const normalized=await resolveTaskDefaults(value);
- const result=await vpsSubmitTask(normalized);
+ const result=hasSharedVpsQueue()?await submitDirectTask(normalized):await vpsSubmitTask(normalized);
  githubCache.expires=0;
  notify('task',{event:'submitted',taskId:result.id,project:String(value.project||'')});
- return {...result,note:'Pedido recebido pela VPS; execução aguardando confirmação do Maestro.'};
+ return {...result,note:'Maestro recebeu a solicitação no servidor; execução será confirmada pelo worker.'};
 }
 export async function handleCentral(req,res,{reader=readFile}={}){
  const raw=(req.url||'/central/').split('?')[0];
@@ -442,24 +463,43 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   try{const repositories=await ownerRepositories();send(res,200,{repositories,count:repositories.length});}
   catch{send(res,503,{error:'nao_foi_possivel_consultar_repositorios'});}return true;
  }
+ if(req.method==='GET'&&raw==='/central/api/tasks/archived'){
+  if(!hasSharedVpsQueue()){send(res,503,{error:'arquivo_vps_exige_fila_compartilhada'});return true;}
+  try{const tasks=await directTasks({includeArchived:true});send(res,200,{tasks:tasks.filter(t=>t.status==='arquivada')});}
+  catch{send(res,503,{error:'arquivo_indisponivel'});}
+  return true;
+ }
  if(req.method==='GET'&&['/central/api/overview','/central/api/agents','/central/api/tasks','/central/api/usage','/central/api/history'].includes(raw)){
   try{const overview=await loadOverview();
    const answer=raw.endsWith('/agents')?{agents:overview.agents,at:overview.at}:
     raw.endsWith('/tasks')?{tasks:overview.tasks,at:overview.at}:
     raw.endsWith('/usage')?{...overview.usage,at:overview.at}:
-    raw.endsWith('/history')?{events:overview.events||[],activity:overview.activity,at:overview.at}:
+    raw.endsWith('/history')?{events:events.slice(-100),activity:overview.activity,at:overview.at}:
     {...overview,events:events.slice(-25)};
    send(res,200,answer);
   }catch{send(res,503,{error:'dados_temporariamente_indisponiveis'});}return true;
  }
 
 
+ const agentConfig=raw.match(/^\/central\/api\/agents\/([a-z0-9-]{3,70})\/config$/);
+ if(agentConfig&&(req.method==='GET'||req.method==='POST')){
+  if(!hasSharedVpsQueue()){send(res,503,{error:'configuracao_exige_fila_compartilhada'});return true;}
+  if(req.method==='POST'&&!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const result=req.method==='GET'?await agentSettings(agentConfig[1]):await setAgentSettings(agentConfig[1],await body(req,2200));
+   githubCache.expires=0;
+   if(req.method==='POST')notify('agent',{event:'config',agent:agentConfig[1]});
+   send(res,200,result);
+  }catch(e){send(res,400,{error:String(e?.message||'configuracao_invalida').slice(0,110)});}
+  return true;
+ }
+
  const agentAction=raw.match(/^\/central\/api\/agents\/([a-z0-9-]{3,70})\/action$/);
  if(req.method==='POST'&&agentAction){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{
    const data=await body(req,600);
-   const result=await vpsAgentAction(agentAction[1],data.action);
+   const result=hasSharedVpsQueue()?await directAgentAction(agentAction[1],data.action):await vpsAgentAction(agentAction[1],data.action);
    githubCache.expires=0;
    notify('agent',{event:'control',agent:result.agent,action:data.action});
    send(res,200,result);
@@ -471,8 +511,13 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  if(req.method==='POST'&&actionPath){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{
-   const data=await body(req,600);
-   const result=await vpsTaskAction(actionPath[1],data.action);
+   const data=await body(req,5000);
+   if(!hasSharedVpsQueue()&&!['pause','resume','cancel','retry'].includes(data.action)){
+     send(res,503,{error:'controle_avancado_exige_fila_compartilhada_na_vps'});return true;
+    }
+    const result=hasSharedVpsQueue()?
+      await directTaskAction(actionPath[1],data.action,{agent:data.agent,priority:data.priority,position:data.position,objective:data.objective}):
+      await vpsTaskAction(actionPath[1],data.action);
    githubCache.expires=0;
    notify('task',{event:'control',taskId:result.id,action:data.action});
    send(res,200,result);
