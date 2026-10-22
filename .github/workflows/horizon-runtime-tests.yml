@@ -10,6 +10,9 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'Dockerfile'
+      - 'central/**'
+      - 'maestro/direct-queue.mjs'
+      - 'maestro/mcp-server.mjs'
       - '.github/workflows/horizon-runtime-tests.yml'
   pull_request:
     branches: [main]
