@@ -95,9 +95,15 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
  }:{available:false,input:null,output:null,total:null,calls:0,byAgent:{},byProvider:{},byModel:{}};
  const worker=data.worker&&typeof data.worker==='object'?data.worker:{};
  const activity=Array.isArray(data.activity)?data.activity.slice(-100):[];
+ const events=Array.isArray(data.events)?data.events.slice(-80).filter(e=>e&&typeof e==='object').map(e=>({
+  id:e.id||null,kind:String(e.kind||'vps').slice(0,40),
+  event:String(e.event||'atualizacao').slice(0,80),
+  at:typeof e.at==='string'?e.at:null,
+  rc:e.rc??null,reason:e.reason?String(e.reason).slice(0,200):null,
+ })):[];
  return {at:new Date().toISOString(),source:'VPS Hostinger',
   connection:{state:'connected',message:'Dados da VPS recebidos',verifiedAt:new Date().toISOString()},
-  agents,tasks,activity,worker:{status:String(worker.status||'sem telemetria').slice(0,100),
+  agents,tasks,activity,events,worker:{status:String(worker.status||'sem telemetria').slice(0,100),
     lastCycle:worker.lastCycle||null},
   available:{vps:true,queue:data.available?.queue===true,
    results:data.available?.results===true,attendance:data.available?.attendance===true},
