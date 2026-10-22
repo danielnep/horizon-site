@@ -1,6 +1,6 @@
 // Railway-local durable owner inbox. GitHub is never the task transport.
 import {randomUUID} from 'node:crypto';
-import {mkdir,open,link,unlink,readFile,readdir,lstat,appendFile} from 'node:fs/promises';
+import {mkdir,open,link,unlink,readFile,readdir,lstat,appendFile,rename,utimes} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 
 const ID=/^[a-z0-9][a-z0-9-]{2,69}$/;
@@ -53,7 +53,7 @@ function validated(v){
 }
 async function ensure(){
  const root=directRoot();
- for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'agent-holds')]){
+ for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'archived'),join(root,'agent-holds')]){
   await mkdir(p,{recursive:true,mode:0o700});
   const st=await lstat(p);if(!st.isDirectory()||st.isSymbolicLink())throw Error('diretorio_unsafe');
  }
@@ -87,9 +87,34 @@ export async function submitDirectTask(value){
   await unlink(staging).catch(()=>{});
  }
 }
-export async function directTasks(){
+// The order file is metadata, not a second request transport. The executor uses
+// it to choose the next Railway-local task; unknown IDs are discarded.
+async function queueOrder(root){
+ const names=(await readdir(join(root,'requests'))).filter(n=>n.endsWith('.json')&&ID.test(n.slice(0,-5))).map(n=>n.slice(0,-5)).sort();
+ let stored=[];
+ try{
+  const data=JSON.parse(await readFile(join(root,'queue-order.json'),'utf8'));
+  if(Array.isArray(data)&&data.length<=160)stored=data.filter(id=>typeof id==='string'&&ID.test(id));
+ }catch(e){if(e.code!=='ENOENT')throw Error('ordem_da_fila_invalida');}
+ const eligible=new Set(names);
+ return [...new Set([...stored.filter(id=>eligible.has(id)),...names])];
+}
+async function saveQueueOrder(root,ids){
+ const staging=join(root,'.queue-order-'+randomUUID()+'.tmp');
+ const fd=await open(staging,'wx',0o600);
+ try{await fd.writeFile(JSON.stringify(ids)+'\n');await fd.sync();}
+ finally{await fd.close();}
+ try{await rename(staging,join(root,'queue-order.json'));}
+ finally{await unlink(staging).catch(()=>{});}
+}
+async function audit(root,taskId,action,detail={}){
+ await appendFile(join(root,'control-actions.jsonl'),JSON.stringify({taskId,action,at:new Date().toISOString(),...detail})+'\n',{mode:0o600});
+}
+export async function directTasks({includeArchived=false}={}){
+
  const root=await ensure();
- const groups=await Promise.all(['requests','paused','cancelled'].map(async state=>({state,names:await readdir(join(root,state))})));
+ const order=await queueOrder(root),positions=new Map(order.map((id,index)=>[id,index]));
+ const groups=await Promise.all(['requests','paused','cancelled',...(includeArchived?['archived']:[])].map(async state=>({state,names:await readdir(join(root,state))})));
  if(groups.reduce((n,x)=>n+x.names.length,0)>160)throw Error('fila_oversized');
  const tasks=[];
  for(const group of groups){
@@ -115,8 +140,8 @@ export async function directTasks(){
     /fail|error|block|reject/.test(rawStatus)?'bloqueada':
     /running|in_progress/.test(rawStatus)?'em execução':waiting?'aguardando':'na fila';
   tasks.push({id:task.task_id,project:task.project,repository:task.repository,
-   agent:task.agent,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
-   status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':status,
+   agent:task.agent,priority:/^P[0-3]\\b/.exec(String(task.objective))?.[0]||'P2',queuePosition:positions.has(task.task_id)?positions.get(task.task_id)+1:null,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
+   status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':group.state==='archived'?'arquivada':status,
    rawStatus,hasResult:!!outcome,
    stages:stages.map(x=>({taskId:x.task_id||null,agent:x.agent,state:x.status,
     summary:x.summary||null,blocker:x.blocker||null,
@@ -139,21 +164,59 @@ export async function directTasks(){
      verified:stages.filter(x=>x.quality?.approved===true).length}:null});
  }
  }
- return tasks;
+ return tasks.sort((a,b)=>a.inQueue&&b.inQueue?(a.queuePosition??999)-(b.queuePosition??999):a.inQueue?-1:b.inQueue?1:0);
 }
 
-export async function directTaskAction(taskId,action){
- if(!ID.test(taskId)||!['pause','cancel','resume'].includes(action))throw Error('comando_invalido');
+export async function directTaskAction(taskId,action,options={}){
+
+ if(!ID.test(taskId)||!['pause','cancel','resume','archive','restore','up','down','assign','priority'].includes(action))throw Error('comando_invalido');
  const root=await ensure();
  const name=taskId+'.json';
  let state;
- for(const dir of ['requests','paused','cancelled']){
+ for(const dir of ['requests','paused','cancelled','archived']){
   const path=join(root,dir,name);
   try{const file=await lstat(path);if(file.isFile()&&!file.isSymbolicLink()){state=dir;break;}}
   catch(e){if(e.code!=='ENOENT')throw e;}
  }
  if(!state)throw Error('tarefa_nao_encontrada_no_railway');
- const target=action==='pause'?'paused':action==='cancel'?'cancelled':'requests';
+ if(['up','down'].includes(action)){
+  if(state!=='requests')throw Error('tarefa_fora_da_fila');
+  const order=await queueOrder(root),index=order.indexOf(taskId),next=index+(action==='up'?-1:1);
+  if(index<0||next<0||next>=order.length)return {id:taskId,status:'na fila',already:true};
+  [order[index],order[next]]=[order[next],order[index]];
+  await saveQueueOrder(root,order);
+  // Wake the current worker even if only the order metadata changed.
+  const now=new Date();await utimes(join(root,'requests',name),now,now);
+  await audit(root,taskId,action,{position:next+1});
+  return {id:taskId,status:'na fila',queuePosition:next+1,note:'Ordem de execução atualizada na fila do Railway.'};
+ }
+ if(['assign','priority'].includes(action)){
+  if(state!=='requests'&&state!=='paused')throw Error('tarefa_nao_editavel');
+  try{await lstat(join(root,'results',name));throw Error('tarefa_ja_iniciada');}
+  catch(e){if(e.code!=='ENOENT')throw e;}
+  const path=join(root,state,name),input=JSON.parse(await readFile(path,'utf8'));
+  if(action==='assign'){
+   if(!AGENTS.has(options.agent))throw Error('agente_invalido');
+   try{await lstat(join(root,'agent-holds',options.agent+'.json'));throw Error('agente_pausado');}
+   catch(e){if(e.code!=='ENOENT')throw e;}
+   input.agent=options.agent;
+  }else{
+   if(!/^P[0-3]$/.test(options.priority||''))throw Error('prioridade_invalida');
+   input.objective=options.priority+' | '+String(input.objective).replace(/^P[0-3]\\s*\\|\\s*/,'');
+  }
+  const staging=join(root,state,'.'+taskId+'.'+randomUUID()+'.tmp');
+  const fd=await open(staging,'wx',0o600);
+  try{await fd.writeFile(JSON.stringify(input,null,2)+'\n');await fd.sync();}
+  finally{await fd.close();}
+  try{await rename(staging,path);}
+  finally{await unlink(staging).catch(()=>{});}
+  await audit(root,taskId,action,{value:action==='assign'?input.agent:options.priority});
+  return {id:taskId,status:state==='requests'?'na fila':'pausada',note:'Configuração alterada na solicitação durável.'};
+ }
+ const target=action==='pause'?'paused':action==='cancel'?'cancelled':action==='archive'?'archived':action==='restore'?'paused':'requests';
+ if(action==='archive'&&state==='archived')return {id:taskId,status:'arquivada',already:true};
+ if(action==='restore'&&state!=='archived')throw Error('tarefa_nao_arquivada');
+ if(state==='archived'&&action!=='restore')throw Error('tarefa_arquivada');
  if(action==='resume'&&state==='requests')throw Error('tarefa_ja_esta_na_fila');
  if(action==='pause'&&state!=='requests')throw Error('so_pode_pausar_uma_tarefa_na_fila');
  if(action==='resume'&&state!=='paused'&&state!=='cancelled')throw Error('tarefa_nao_estava_suspensa');
@@ -163,9 +226,8 @@ export async function directTaskAction(taskId,action){
  catch(e){if(e.code==='EEXIST')throw Error('tarefa_duplicada_no_destino');throw e;}
  try{await unlink(sourcePath);}
  catch(e){await unlink(targetPath).catch(()=>{});throw e;}
- await appendFile(join(root,'control-actions.jsonl'),JSON.stringify({taskId,action,at:new Date().toISOString(),
-  note:'Comando aplicado à fila local; não interrompe processos já carregados pelo executor.'})+'\n',{mode:0o600});
- return {id:taskId,status:target==='requests'?'na fila':target==='paused'?'pausada':'cancelada',
+ await audit(root,taskId,action,{note:'Comando aplicado à fila local; não interrompe processos já carregados pelo executor.'});
+ return {id:taskId,status:target==='requests'?'na fila':target==='paused'?'pausada':target==='archived'?'arquivada':'cancelada',
   note:'Aplicado na fila do Railway. Se o agente já estava executando, essa etapa pode continuar até encerrar.'};
 }
 
