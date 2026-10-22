@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
-import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,disconnectedVps} from './vps-client.mjs';
+import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,disconnectedVps,subscribeVpsChanges} from './vps-client.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
@@ -22,6 +22,7 @@ const events=[];
 let sequence=0, lastCycle=null, workerState='não verificado';
 let lastCycleSummary=null;
 let monitorTimer=null,monitorDigest=null,monitorPending=false;
+let vpsStreamClose=null,vpsStreamRetry=null;
 let githubCache={expires:0,value:null,promise:null};
 const taskDocumentCache=new Map();
 let repoCache={expires:0,value:null,promise:null};
@@ -308,18 +309,42 @@ async function pollLiveState(){
   notify('system',{event:'snapshot_unavailable'});
  }finally{monitorPending=false;}
 }
+function startVpsChangeStream(){
+ if(hasSharedVpsQueue()||live.size===0||vpsStreamClose)return;
+ if(vpsStreamRetry!==null){clearTimeout(vpsStreamRetry);vpsStreamRetry=null;}
+ const retry=()=>{
+  vpsStreamClose=null;
+  if(live.size===0||vpsStreamRetry!==null)return;
+  vpsStreamRetry=setTimeout(()=>{vpsStreamRetry=null;startVpsChangeStream();},1800);
+  vpsStreamRetry.unref?.();
+ };
+ try{
+  vpsStreamClose=subscribeVpsChanges(()=>{
+   githubCache.expires=0;
+   notify('state',{event:'sqlite_changed',source:'vps'});
+  },retry);
+ }catch{retry();}
+}
 function startLiveMonitor(){
  if(monitorTimer!==null)return;
  monitorDigest=null;
- monitorTimer=setInterval(()=>void pollLiveState(),20000);
+ // Fallback check only: the primary update path is the SQLite push stream.
+ monitorTimer=setInterval(()=>{
+  if(!vpsStreamClose)void pollLiveState();
+ },20000);
  monitorTimer.unref?.();
  void pollLiveState();
+ startVpsChangeStream();
 }
 function stopLiveMonitorIfUnused(){
- if(live.size!==0||monitorTimer===null)return;
- clearInterval(monitorTimer);
+ if(live.size!==0)return;
+ if(monitorTimer!==null)clearInterval(monitorTimer);
  monitorTimer=null;
  monitorDigest=null;
+ if(vpsStreamRetry!==null)clearTimeout(vpsStreamRetry);
+ vpsStreamRetry=null;
+ if(vpsStreamClose)vpsStreamClose();
+ vpsStreamClose=null;
 }
 
 const authAttempts=new Map();

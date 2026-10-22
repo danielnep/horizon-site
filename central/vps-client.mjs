@@ -180,3 +180,46 @@ export async function vpsAgentAction(id,action,options={}){
  if(!ID.test(id)||!AGENT_ACTIONS.has(action))throw new Error('comando_invalido');
  return vpsRequest('/v1/agents/'+id+'/actions',{...options,method:'POST',data:{action}});
 }
+
+
+/** Receive push signals from the same SQLite database used by the VPS worker.
+ * This connects only to the local authenticated Unix socket. It never polls
+ * SQLite, opens network ports or transfers database rows to the browser.
+ */
+export function subscribeVpsChanges(onChange,onDisconnect=()=>{},{env=process.env}={}){
+ const cfg=vpsConnectionConfig(env);
+ if(!cfg.ok||!cfg.socket)throw Error('stream_vps_socket_indisponivel');
+ let active=true,buffer='',response=null;
+ const disconnected=()=>{
+  if(!active)return;
+  active=false;
+  try{onDisconnect();}catch{}
+ };
+ const request=httpRequest({
+  socketPath:cfg.socket,path:'/v1/events',method:'GET',
+  headers:{authorization:'Bearer '+cfg.token,accept:'text/event-stream'}
+ },res=>{
+  response=res;
+  if(res.statusCode!==200){res.resume();disconnected();return;}
+  res.setEncoding('utf8');
+  res.on('data',chunk=>{
+   if(!active)return;
+   buffer+=chunk;
+   if(buffer.length>65536){request.destroy();disconnected();return;}
+   let cut;
+   while((cut=buffer.indexOf('\n\n'))>=0){
+    const frame=buffer.slice(0,cut).replace(/\r/g,'');
+    buffer=buffer.slice(cut+2);
+    if(frame.split('\n').some(line=>line.trim()==='event: change')){
+     try{onChange();}catch{}
+    }
+   }
+  });
+  res.on('end',disconnected);
+  res.on('error',disconnected);
+  res.on('close',disconnected);
+ });
+ request.on('error',disconnected);
+ request.end();
+ return ()=>{active=false;response?.destroy();request.destroy();};
+}
