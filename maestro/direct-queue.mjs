@@ -53,7 +53,7 @@ function validated(v){
 }
 async function ensure(){
  const root=directRoot();
- for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'archived'),join(root,'agent-holds')]){
+ for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'archived'),join(root,'agent-holds'),join(root,'agent-settings')]){
   await mkdir(p,{recursive:true,mode:0o700});
   const st=await lstat(p);if(!st.isDirectory()||st.isSymbolicLink())throw Error('diretorio_unsafe');
  }
@@ -64,6 +64,12 @@ export async function submitDirectTask(value){
  const root=await ensure(),id=request.task_id;
  try{await lstat(join(root,'agent-holds',request.agent+'.json'));throw Error('agente_tem_novas_tarefas_pausadas');}
  catch(e){if(e.code!=='ENOENT')throw e;}
+ const settings=await agentSettings(request.agent);
+ if(settings.allowedRepositories.length&&!settings.allowedRepositories.includes(request.repository))throw Error('agente_nao_habilitado_no_projeto');
+ if(settings.maxPending>0){
+  const existing=(await directTasks()).filter(x=>x.inQueue&&x.agent===request.agent);
+  if(existing.length>=settings.maxPending)throw Error('limite_da_fila_do_agente');
+ }
  const target=join(root,'requests',id+'.json');
  const bytes=JSON.stringify(request,null,2)+'\n';
  if(Buffer.byteLength(bytes)>65536)throw Error('tarefa_grande_demais');
@@ -240,34 +246,72 @@ export async function directTaskAction(taskId,action,options={}){
 }
 
 
+export async function agentSettings(agent){
+ if(!AGENTS.has(agent))throw Error('agente_invalido');
+ const root=await ensure();
+ try{
+  const value=JSON.parse(await readFile(join(root,'agent-settings',agent+'.json'),'utf8'));
+  return validateAgentSettings(value);
+ }catch(e){if(e.code==='ENOENT')return {maxPending:0,allowedRepositories:[],notes:''};throw e;}
+}
+function validateAgentSettings(data){
+ const maxPending=data?.maxPending??0,allowedRepositories=data?.allowedRepositories??[],notes=data?.notes??'';
+ if(!Number.isInteger(maxPending)||maxPending<0||maxPending>50||
+  !Array.isArray(allowedRepositories)||allowedRepositories.length>20||
+  allowedRepositories.some(x=>typeof x!=='string'||!REPO.test(x))||
+  new Set(allowedRepositories).size!==allowedRepositories.length||
+  typeof notes!=='string'||notes.length>240)throw Error('configuracao_invalida');
+ return {maxPending,allowedRepositories,notes:notes.trim()};
+}
+export async function setAgentSettings(agent,data){
+ if(!AGENTS.has(agent))throw Error('agente_invalido');
+ const root=await ensure(),config=validateAgentSettings(data);
+ const destination=join(root,'agent-settings',agent+'.json');
+ const temp=destination+'.'+randomUUID()+'.tmp';
+ const fd=await open(temp,'wx',0o600);
+ try{await fd.writeFile(JSON.stringify(config)+'\n');await fd.sync();}
+ finally{await fd.close();}
+ try{await rename(temp,destination);}
+ finally{await unlink(temp).catch(()=>{});}
+ await audit(root,agent,'config',{maxPending:config.maxPending,allowedRepositories:config.allowedRepositories});
+ return {agent,...config};
+}
+
 export async function agentHolds(){
  const root=await ensure(),names=await readdir(join(root,'agent-holds'));
  return names.filter(name=>name.endsWith('.json')&&AGENTS.has(name.slice(0,-5))).map(name=>name.slice(0,-5));
 }
 export async function directAgentAction(agent,action){
  if(!AGENTS.has(agent)||!['pause','resume'].includes(action))throw Error('comando_invalido');
- const root=await ensure();
- const file=join(root,'agent-holds',agent+'.json');
- if(action==='pause'){
-  try{
-   const fd=await open(file,'wx',0o600);
-   try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString()})+'\n');await fd.sync();}
-   finally{await fd.close();}
-  }catch(e){if(e.code!=='EEXIST')throw e;}
- }else{
-  await unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});
- }
+ const root=await ensure(),file=join(root,'agent-holds',agent+'.json');
+ let previous=null;
+ try{previous=JSON.parse(await readFile(file,'utf8'));}
+ catch(e){if(e.code!=='ENOENT')throw e;}
+ if(action==='pause'&&previous)return {agent,status:'novas tarefas suspensas',affected:0,already:true};
  const tasks=await directTasks();
- let moved=0;
+ if(action==='pause'){
+  const fd=await open(file,'wx',0o600);
+  try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString(),autoPaused:[]})+'\n');await fd.sync();}
+  finally{await fd.close();}
+ }
+ const resumed=Array.isArray(previous?.autoPaused)?new Set(previous.autoPaused):new Set();
+ let moved=0,autoPaused=[];
  for(const t of tasks){
   if(t.agent!==agent)continue;
   if(action==='pause'&&!t.inQueue)continue;
-  if(action==='resume'&&t.status!=='pausada')continue;
-  try{await directTaskAction(t.id,action==='pause'?'pause':'resume');moved++;}
+  if(action==='resume'&&!(t.status==='pausada'&&resumed.has(t.id)))continue;
+  try{await directTaskAction(t.id,action==='pause'?'pause':'resume');moved++;if(action==='pause')autoPaused.push(t.id);}
   catch(e){if(!/ja_esta|nao_estava|so_pode/.test(e.message))throw e;}
  }
+ if(action==='pause'){
+  const temp=file+'.'+randomUUID()+'.tmp';
+  const fd=await open(temp,'wx',0o600);
+  try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString(),autoPaused})+'\n');await fd.sync();}
+  finally{await fd.close();}
+  try{await rename(temp,file);}finally{await unlink(temp).catch(()=>{});}
+ }else await unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});
  return {agent,status:action==='pause'?'novas tarefas suspensas':'novas tarefas liberadas',
-  affected:moved,note:'Este comando controla novas tarefas no Railway. Um processamento já iniciado pode continuar até terminar.'};
+  affected:moved,note:'Ações pendentes atualizadas. Tarefas pausadas manualmente permanecem pausadas.'};
 }
 
 export async function directStatus(taskId){
