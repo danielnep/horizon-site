@@ -138,7 +138,9 @@ test('SSE immediately streams actual worker state, never needs an AI call',async
   assert.match(found,/"event":"cycle"/);
   assert.match(found,/"rc":"0"/);
   const overview=await (await fetch(url+'/central/api/overview')).json();
-  assert.equal(overview.worker.status,'aguardando tarefas adiadas');
+  // SSE may report local process events; without an authenticated VPS source, overview stays offline.
+  assert.equal(overview.available.vps,false);
+  assert.equal(overview.worker.status,'Sem ligação com a VPS');
   abort.abort();
   await reader.cancel().catch(()=>{});
  });
