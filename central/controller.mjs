@@ -310,7 +310,7 @@ export function conciseProjectFacts(view,question){
  const agents=(view.agents||[]).map(x=>({especialista:x.id,estado:x.status,
   tarefaAtual:x.currentTask||null,pausado:Boolean(x.held)}));
  const tasks=(view.tasks||[]).filter(t=>q.includes(String(t.project||'').toLowerCase())||q.includes(String(t.id||'').toLowerCase())||/tarefas?|fazendo|andamento|progresso/.test(q)).slice(0,9);
- return {fonte:'Central Horizon, registros do Railway',
+ return {fonte:'Central Horizon, fila local do servidor',
   verificacao:view.at,agentes:agents,numeroTarefas:view.tasks?.length||0,
   tarefas:tasks.map(t=>({projeto:t.project,objetivo:t.title,estado:t.status,responsavel:t.agent,
     etapas:t.progress,acao:t.lastActivity?.action||null,arquivo:t.lastActivity?.path||null})),
@@ -329,7 +329,7 @@ export function quickAnswer(question,view){
    'Ainda não recebi consumo dos modelos neste período. O contador registra as respostas reais do Gemini e da Groq quando os agentes utilizam os modelos.';
  }
  if(/(quantas|quais|quantos).{0,25}(tarefa|fila)/.test(q))
-  return 'Há '+tasks.filter(x=>x.inQueue).length+' tarefas na fila local do Railway e '+tasks.filter(x=>!x.inQueue).length+' registros fora dela. Abra Tarefas para acompanhar.';
+  return 'Há '+tasks.filter(x=>x.inQueue).length+' tarefas na fila local do servidor e '+tasks.filter(x=>!x.inQueue).length+' registros fora dela. Abra Tarefas para acompanhar.';
  if(/(o que|como).{0,16}(senha|digital)/.test(q))
   return 'A consulta do painel não exige senha. Para controlar tarefas pela internet, o servidor ainda exige uma sessão administrativa. A autenticação por digital poderá usar o próprio Android quando a chave de acesso do aparelho estiver cadastrada.';
  return null;
