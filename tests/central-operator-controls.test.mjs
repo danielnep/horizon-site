@@ -48,3 +48,72 @@ test('queue edits reject invalid identifiers and unsupported commands',async()=>
  await assert.rejects(()=>directTaskAction('../../files','archive'),/comando_invalido/);
  await assert.rejects(()=>directTaskAction('ctl-valid','destroy'),/comando_invalido/);
 });
+
+test('agent settings enforce repository and pending-task limits',async()=>{
+ const prior=process.env.HORIZON_DIRECT_INBOX_DIR;
+ const root=await mkdtemp(join(tmpdir(),'horizon-agent-config-'));
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+  const {setAgentSettings,agentSettings}=await import('../maestro/direct-queue.mjs');
+  await setAgentSettings('qa-engineer',{maxPending:1,allowedRepositories:['danielnep/romaneio-digital'],notes:'Testar regras'});
+  assert.equal((await agentSettings('qa-engineer')).maxPending,1);
+  const task={project:'romaneio-digital',repository:'danielnep/romaneio-digital',agent:'qa-engineer',
+   objective:'Inspecionar fila e proteger histórico',priority:'P2',
+   delivery_type:'existing_product',allowed_paths:['src/**'],public_data_confirmed:true};
+  await assert.rejects(()=>submitDirectTask({...task,repository:'danielnep/horizon-site'}),/agente_nao_habilitado_no_projeto/);
+  await submitDirectTask({...task,task_id:'ctl-settings-01'});
+  await assert.rejects(()=>submitDirectTask({...task,task_id:'ctl-settings-02'}),/limite_da_fila_do_agente/);
+  await assert.rejects(()=>setAgentSettings('qa-engineer',{maxPending:-2}),/configuracao_invalida/);
+ }finally{
+  if(prior===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=prior;
+  await rm(root,{recursive:true,force:true});
+ }
+});
+
+test('manual holds survive release of a different agent-level suspension',async()=>{
+ const prior=process.env.HORIZON_DIRECT_INBOX_DIR;
+ const root=await mkdtemp(join(tmpdir(),'horizon-hold-origin-'));
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+  const {directAgentAction}=await import('../maestro/direct-queue.mjs');
+  const input={project:'romaneio-digital',repository:'danielnep/romaneio-digital',agent:'qa-engineer',
+   objective:'Preservar suspensões individuais durante liberação do agente',
+   priority:'P2',delivery_type:'existing_product',allowed_paths:['src/**'],public_data_confirmed:true};
+  await submitDirectTask({...input,task_id:'ctl-held-manual'});
+  await submitDirectTask({...input,task_id:'ctl-held-automatic'});
+  await directTaskAction('ctl-held-manual','pause');
+  await directAgentAction('qa-engineer','pause');
+  const before=await directTasks();
+  assert.equal(before.find(x=>x.id==='ctl-held-manual').status,'pausada');
+  assert.equal(before.find(x=>x.id==='ctl-held-automatic').status,'pausada');
+  await directAgentAction('qa-engineer','resume');
+  const after=await directTasks();
+  assert.equal(after.find(x=>x.id==='ctl-held-manual').status,'pausada');
+  assert.equal(after.find(x=>x.id==='ctl-held-automatic').inQueue,true);
+ }finally{
+  if(prior===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=prior;
+  await rm(root,{recursive:true,force:true});
+ }
+});
+
+test('edit a not-started task and move it to an exact queue position',async()=>{
+ const prior=process.env.HORIZON_DIRECT_INBOX_DIR;
+ const root=await mkdtemp(join(tmpdir(),'horizon-task-editor-'));
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ try{
+  const input={project:'romaneio-digital',repository:'danielnep/romaneio-digital',agent:'may-maestro',
+   objective:'Inspecionar aplicativo com cobertura suficiente',priority:'P2',
+   delivery_type:'existing_product',allowed_paths:['src/**'],public_data_confirmed:true};
+  await submitDirectTask({...input,task_id:'ctl-edit-one'});
+  await submitDirectTask({...input,task_id:'ctl-edit-two'});
+  await directTaskAction('ctl-edit-two','move',{position:1});
+  assert.equal((await directTasks()).filter(x=>x.inQueue)[0].id,'ctl-edit-two');
+  await directTaskAction('ctl-edit-one','edit',{objective:'Revisar responsividade mantendo os fluxos principais'});
+  const stored=JSON.parse(await readFile(join(root,'requests','ctl-edit-one.json'),'utf8'));
+  assert.match(stored.objective,/^P2 \| Revisar responsividade/);
+  await assert.rejects(()=>directTaskAction('ctl-edit-one','move',{position:0}),/posicao_invalida/);
+ }finally{
+  if(prior===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=prior;
+  await rm(root,{recursive:true,force:true});
+ }
+});
