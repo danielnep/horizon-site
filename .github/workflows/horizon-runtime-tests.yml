@@ -2,7 +2,7 @@ name: Horizon | Runtime regression checks
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/central-operational-controls-20261022]
     paths:
       - 'server.mjs'
       - 'maestro/embedded-postgres.mjs'
@@ -35,7 +35,7 @@ jobs:
       - name: Run application and supervisor regression tests
         run: npm test
       - name: Build and smoke-test the Coolify image
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref_name == 'feat/central-operational-controls-20261022'
         run: |
           set -e
           docker build --progress=plain -t horizon-central-ci:latest .
