@@ -26,7 +26,7 @@ export const TOOL_ASSETS=Object.freeze({
   'assets/horizon-logo.png':'image/png'
 });
 
-export function startServer({listenPort=Number(process.env.PORT||3000),reader=readFile,background=true}={}) {
+export function startServer({listenPort=Number(process.env.PORT||3000),reader=readFile,background=process.env.HORIZON_LEGACY_WORKER_EXPLICIT_OPT_IN==='true'}={}) {
   // Generating or loading this key only happens under the explicit opt-in.
   const checkpointRecipient=background?migrationKey():null;
   const server=http.createServer(async(req,res)=>{
@@ -91,7 +91,7 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
     }
     res.writeHead(404,{'content-type':'text/plain'});res.end('Nao encontrado');
   });
-  // One opt-in Python specialist process; shares existing Railway service,
+  // Legacy background workers are OFF by default: the 17 specialists live on the VPS.
   // not its nearly full historical database volume.
   const stopTeam=background?startSharedAgents({log:teamLog,err:teamError}):()=>{};
   const stopMigration=background?startCheckpointImport():()=>{};
