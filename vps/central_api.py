@@ -49,7 +49,7 @@ def registry_ids():
 
 def json_or(raw, default=None):
     try:
-        return json.loads(raw) if isinstance(raw, str) else default
+        return json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else default
     except (json.JSONDecodeError, TypeError, ValueError):
         return default
 
