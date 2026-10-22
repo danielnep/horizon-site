@@ -519,7 +519,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   return true;
  }
 
- const actionPath=raw.match(/^\/central\/api\/tasks\/([a-z0-9-]{3,70})\/action$/);
+ const actionPath=raw.match(/^\/central\/api\/tasks\/([a-z0-9:-]{3,110})\/action$/);
  if(req.method==='POST'&&actionPath){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{

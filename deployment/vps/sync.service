@@ -1,0 +1,9 @@
+[Unit]
+Description=Horizon Site: fetch GitHub main, validate and deploy
+Wants=network-online.target docker.service
+After=network-online.target docker.service horizon-central-api.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/horizon-site-sync
+TimeoutStartSec=300

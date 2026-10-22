@@ -20,6 +20,16 @@ const pack={
  events:[{event:'task_started',kind:'worker',at:'2026-10-22T15:00:00Z'}],
  activity:[{action:'run_check',taskId:'ctl-12345',agent:'qa-engineer'}]
 };
+test('Unix socket mode stays local and uses a strong authenticated token',()=>{
+ const config=vpsConnectionConfig({HORIZON_VPS_API_SOCKET:'/run/horizon-central/control.sock',
+  HORIZON_VPS_API_TOKEN:'a'.repeat(64)});
+ assert.equal(config.ok,true);
+ assert.equal(config.socket,'/run/horizon-central/control.sock');
+ assert.equal(vpsConnectionConfig({HORIZON_VPS_API_SOCKET:'/tmp/control.sock',
+  HORIZON_VPS_API_TOKEN:'a'.repeat(64)}).ok,false);
+ assert.equal(vpsConnectionConfig({HORIZON_VPS_API_SOCKET:'/run/horizon-central/control.sock',
+  HORIZON_VPS_API_TOKEN:'weak'}).ok,false);
+});
 test('VPS configuration refuses missing token, plain HTTP and URL credentials',()=>{
  assert.equal(vpsConnectionConfig({}).ok,false);
  assert.equal(vpsConnectionConfig({...env,HORIZON_VPS_API_TOKEN:''}).ok,false);

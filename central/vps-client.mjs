@@ -1,3 +1,4 @@
+import {request as httpRequest} from 'node:http';
 /**
  * Central Horizon -> Hostinger VPS adapter.
  *
@@ -15,12 +16,19 @@
  * POST /v1/agents/:agentId/actions
  */
 const ID=/^[a-z0-9][a-z0-9-]{2,79}$/;
+const TASK_ID=/^[a-z0-9][a-z0-9:-]{2,109}$/;
 const ACTIONS=new Set(['pause','resume','cancel','retry']);
 const AGENT_ACTIONS=new Set(['pause','resume']);
 
 export function vpsConnectionConfig(env=process.env){
  const value=String(env.HORIZON_VPS_API_URL||'').trim();
+ const socket=String(env.HORIZON_VPS_API_SOCKET||'').trim();
  const token=String(env.HORIZON_VPS_API_TOKEN||'');
+ if(socket){
+  if(!socket.startsWith('/run/horizon-central/')||!/^\/run\/horizon-central\/[a-z0-9._-]+\.sock$/.test(socket))return {ok:false,reason:'socket_vps_invalido'};
+  if(token.length<32)return {ok:false,reason:'credencial_vps_nao_configurada'};
+  return {ok:true,socket,token};
+ }
  if(!value||!token)return {ok:false,reason:'endereco_ou_credencial_vps_nao_configurados'};
  let url;
  try{url=new URL(value);}catch{return {ok:false,reason:'endereco_vps_invalido'};}
@@ -63,7 +71,7 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
    held:found?.held===true,currentTask:typeof found?.currentTask==='string'?found.currentTask:null,
    updatedAt:typeof found?.updatedAt==='string'?found.updatedAt:null};
  });
- const tasks=(Array.isArray(data.tasks)?data.tasks:[]).filter(t=>t&&ID.test(t.id)).slice(0,200).map(t=>({
+ const tasks=(Array.isArray(data.tasks)?data.tasks:[]).filter(t=>t&&TASK_ID.test(t.id)).slice(0,200).map(t=>({
   id:t.id,project:String(t.project||'não informado').slice(0,90),
   repository:String(t.repository||'').slice(0,120),title:String(t.title||'Sem descrição').slice(0,200),
   description:String(t.description||t.title||'').slice(0,2800),
@@ -111,10 +119,35 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
   usage,
  };
 }
+
+async function unixRequest(socket,path,{method,data,token}){
+ return new Promise((resolve,reject)=>{
+  const payload=data===undefined?null:Buffer.from(JSON.stringify(data));
+  const call=httpRequest({
+   socketPath:socket,path,method,timeout:8500,
+   headers:{authorization:'Bearer '+token,accept:'application/json',
+    ...(payload?{'content-type':'application/json','content-length':payload.byteLength}:{})}
+  },res=>{
+   let value='';res.setEncoding('utf8');
+   res.on('data',chunk=>{value+=chunk;if(value.length>3_000_000)call.destroy(new Error('resposta_vps_grande'));});
+   res.on('end',()=>{
+    if(res.statusCode<200||res.statusCode>=300)return reject(new Error('vps_http_'+res.statusCode));
+    try{const parsed=JSON.parse(value);if(!parsed||typeof parsed!=='object')throw Error('resposta_vps_invalida');resolve(parsed);}
+    catch{reject(new Error('resposta_vps_invalida'));}
+   });
+  });
+  call.on('timeout',()=>call.destroy(new Error('tempo_limite_vps')));
+  call.on('error',reject);
+  if(payload)call.write(payload);
+  call.end();
+ });
+}
+
 export async function vpsRequest(path,{method='GET',data,fetcher=fetch,env=process.env}={}){
  const conn=vpsConnectionConfig(env);
  if(!conn.ok)throw new Error(conn.reason);
  if(!/^\/v1\/[a-z0-9/_-]+$/.test(path)||path.includes('//'))throw new Error('rota_vps_invalida');
+ if(conn.socket)return unixRequest(conn.socket,path,{method,data,token:conn.token});
  const ctrl=new AbortController();
  const timer=setTimeout(()=>ctrl.abort(),8500);
  try{
@@ -136,11 +169,11 @@ export async function vpsSnapshot(agentIds,options={}){
 }
 export async function vpsSubmitTask(payload,options={}){
  const result=await vpsRequest('/v1/tasks',{...options,method:'POST',data:payload});
- if(!result?.id||!ID.test(result.id))throw new Error('envio_vps_sem_confirmacao');
+ if(!result?.id||!TASK_ID.test(result.id))throw new Error('envio_vps_sem_confirmacao');
  return result;
 }
 export async function vpsTaskAction(id,action,options={}){
- if(!ID.test(id)||!ACTIONS.has(action))throw new Error('comando_invalido');
+ if(!TASK_ID.test(id)||!ACTIONS.has(action))throw new Error('comando_invalido');
  return vpsRequest('/v1/tasks/'+id+'/actions',{...options,method:'POST',data:{action}});
 }
 export async function vpsAgentAction(id,action,options={}){
