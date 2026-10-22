@@ -6,11 +6,15 @@ Uses the SAME SQLite database as the dedicated worker. It never starts or
 stops that worker, and never reveals secrets, prompts, memory or full outputs.
 """
 import datetime as dt
+import ctypes
 import hmac
 import json
 import os
 import re
+import select
+import struct
 import sqlite3
+import errno
 import subprocess
 import threading
 import time
@@ -369,6 +373,63 @@ def agent_action(agent, action):
             "affected": len(rows), "note": "Comando aplicado à fila da VPS; processos já iniciados continuam."}
 
 
+# Linux filesystem notifications: SQLite WAL writes produce change signals
+# without running a periodic watcher process or polling the database.
+_INOTIFY_HEADER = struct.Struct("iIII")
+_IN_MODIFY = 0x00000002
+_IN_ATTRIB = 0x00000004
+_IN_CLOSE_WRITE = 0x00000008
+_IN_MOVED_TO = 0x00000080
+_IN_CREATE = 0x00000100
+_IN_DELETE = 0x00000200
+_IN_EVENTS = (_IN_MODIFY | _IN_ATTRIB | _IN_CLOSE_WRITE | _IN_MOVED_TO |
+              _IN_CREATE | _IN_DELETE)
+_SQLITE_NAMES = frozenset((DB.name, DB.name + "-wal", DB.name + "-shm"))
+
+
+def listen_sqlite_changes():
+    """Yield notifications after on-disk SQLite changes, never inspect memory or secrets.
+
+    The API and worker access the same database using separate connections.
+    inotify detects writes to the DB and its WAL on the host filesystem.
+    """
+    libc = ctypes.CDLL(None, use_errno=True)
+    fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+    if fd < 0:
+        raise OSError(ctypes.get_errno(), "inotify_init1 failed")
+    directory = os.fsencode(str(DB.parent))
+    wd = libc.inotify_add_watch(fd, ctypes.c_char_p(directory), _IN_EVENTS)
+    if wd < 0:
+        error = ctypes.get_errno()
+        os.close(fd)
+        raise OSError(error, "SQLite directory watch failed")
+    try:
+        while True:
+            readable, _, _ = select.select([fd], [], [], 24)
+            if not readable:
+                yield False
+                continue
+            try:
+                packet = os.read(fd, 65536)
+            except BlockingIOError:
+                continue
+            changed = False
+            cursor = 0
+            while cursor + _INOTIFY_HEADER.size <= len(packet):
+                _, mask, _, size = _INOTIFY_HEADER.unpack_from(packet, cursor)
+                cursor += _INOTIFY_HEADER.size
+                filename = packet[cursor:cursor + size].rstrip(b"\x00")
+                cursor += size
+                if os.fsdecode(filename) in _SQLITE_NAMES and mask & _IN_EVENTS:
+                    changed = True
+            if changed:
+                # Merge bursts of WAL writes before requesting a new snapshot.
+                time.sleep(0.05)
+                yield True
+    finally:
+        os.close(fd)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     def log_message(self, fmt, *args):
@@ -384,6 +445,25 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def send_change_stream(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store, no-transform")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        self.wfile.write(b"retry: 1500\\n\\n")
+        self.wfile.flush()
+        self.close_connection = True
+        try:
+            for changed in listen_sqlite_changes():
+                frame = (b"event: change\\ndata: {\"source\":\"sqlite\"}\\n\\n"
+                         if changed else b": heartbeat\\n\\n")
+                self.wfile.write(frame)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+
     def handle_request(self):
         token = os.environ.get("HORIZON_VPS_API_TOKEN", "")
         supplied = self.headers.get("Authorization", "")
@@ -393,6 +473,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.command == "GET" and path == "/v1/snapshot":
                 return self.send_json(200, snapshot())
+            if self.command == "GET" and path == "/v1/events":
+                return self.send_change_stream()
             if self.command != "POST":
                 return self.send_json(404, {"error": "rota_nao_encontrada"})
             length = int(self.headers.get("Content-Length", "0"))
