@@ -1,0 +1,38 @@
+services:
+  horizon-site:
+    container_name: horizon-site-web
+    build:
+      context: ../..
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /etc/horizon-site-control.env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HORIZON_LEGACY_WORKER_EXPLICIT_OPT_IN: "false"
+      HORIZON_VPS_API_SOCKET: /run/horizon-central/control.sock
+    group_add:
+      - "987"
+    volumes:
+      - /run/horizon-central:/run/horizon-central:ro
+    networks:
+      coolify:
+        aliases:
+          - horizon-site-web
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/central/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+networks:
+  coolify:
+    external: true
