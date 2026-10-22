@@ -290,7 +290,7 @@ function requestForm(){
 }
 function overviewMarkup(){
  return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
- listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do Railway indisponível: não é possível confirmar que está vazia.</p>':'')+
+ listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do Fila local indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'')+
  '<div class="section-heading"><h2>Agentes</h2><a class="linkrow" href="#agentes">Ver os 17 →</a></div>'+
  '<div class="compact-agent-list">'+(snapshot?.agents||[]).slice(0,5).map(a=>'<div><span>'+escapeHTML(label(a.id))+'</span>'+chip(a.status)+'</div>').join('')+'</div>'+
@@ -403,7 +403,7 @@ function pageSistema(){
  '<div><small>Worker</small><b>'+escapeHTML(w.status||'não verificado')+'</b></div>'+
  '<div><small>Último ciclo visto</small><b>'+escapeHTML(time(last.at))+'</b></div>'+
  '<div><small>Resultado do último ciclo</small><b>'+escapeHTML(last.rc??last.code??'não informado')+'</b></div>'+
- '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'Railway consultado':'Railway indisponível')+'</b></div>'+
+ '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'Fila local consultada':'Fila local indisponível')+'</b></div>'+
  '<div><small>Presença dos agentes</small><b>'+escapeHTML(snapshot?.available?.attendance?'Registros consultados':'Sem confirmação individual')+'</b></div></div>'+
  '<p class="smallprint">Explicação baseada no último registro, sem inventar causas.</p><div class="task-controls"><button type="button" class="secondary" id="diagnose-ai">Investigar com IA</button></div><div id="diagnosis-result" class="diagnosis" hidden></div></section>'+
  '<div class="section-heading"><h2>Conexão</h2></div><div class="smallprint">Atualizações por SSE, com reconexão e atualização periódica de segurança. Nada de IA para sincronizar estados.</div>';
@@ -486,7 +486,7 @@ async function executeTaskAction(id,action,skipConfirm=false,settings={}){
  if(!skipConfirm&&!await janelaDeAcao(action==='archive'?'Excluir esta tarefa da lista?':action==='cancel'?'Cancelar esta tarefa?':action==='pause'?'Pausar esta tarefa?':'Devolver para a fila?',action==='archive'?'A tarefa será retirada da fila e colocada em Excluídas, preservando resultados e recuperação. Uma etapa já carregada pelo executor pode terminar.':action==='cancel'?'Ela sairá da fila de execução, mas seu histórico será guardado. Se um agente já tiver iniciado a etapa, a conclusão dessa execução não poderá ser interrompida por este comando.':action==='pause'?'A tarefa ficará suspensa e poderá ser retomada depois. Se o trabalho já começou, a etapa atual pode continuar.':'A tarefa voltará para a fila. Ela será assumida pelo executor conforme a disponibilidade, sem garantia de início imediato.'))return;
  try{
   const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action,...settings})});
-  note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
+  note(result.note||'Comando aplicado no servidor.');pendingCommand=null;
   if(filter==='arquivada')archivedTasks=(await api('tasks/archived')).tasks||[];
   await refresh(true);
  }catch(e){
