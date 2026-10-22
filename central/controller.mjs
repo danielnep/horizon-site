@@ -248,10 +248,10 @@ async function loadOverview(){
    updatedAt:typeof rec?.updated_at==='string'?rec.updated_at:null};
   });
   const issues=[];
-  if(queued.status==='rejected')issues.push('Fila Railway temporariamente indisponível');
+  if(queued.status==='rejected')issues.push('Fila local do servidor temporariamente indisponível');
   if(attendance.status==='rejected')issues.push('Presença individual indisponível');
   if(holds.status==='rejected')issues.push('Estado de pausa dos agentes indisponível');
-  return {at:new Date().toISOString(),source:'Fila direta Railway e telemetria deste processo',
+  return {at:new Date().toISOString(),source:'Fila local do servidor e telemetria deste processo',
    tasks:queueResults.filter(Boolean),agents,worker:{status:workerState,lastCycle},issues,
    available:{queue:queued.status==='fulfilled',results:queued.status==='fulfilled',attendance:attendance.status==='fulfilled'},
    usage:telemetry.usage,activity:telemetry.activity.recent,};
@@ -386,7 +386,7 @@ async function createTask(value){
  const result=await submitDirectTask(normalized);
  githubCache.expires=0;
  notify('task',{event:'submitted',taskId:result.id,project:String(value.project||'')});
- return {...result,note:'Maestro recebeu a solicitação no Railway; execução será confirmada pelo worker.'};
+ return {...result,note:'Maestro recebeu a solicitação no servidor; execução será confirmada pelo worker.'};
 }
 export async function handleCentral(req,res,{reader=readFile}={}){
  const raw=(req.url||'/central/').split('?')[0];
@@ -496,7 +496,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  if(req.method==='POST'&&actionPath){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{
-   const data=await body(req,600);
+   const data=await body(req,5000);
    const result=await directTaskAction(actionPath[1],data.action,{agent:data.agent,priority:data.priority,position:data.position,objective:data.objective});
    githubCache.expires=0;
    notify('task',{event:'control',taskId:result.id,action:data.action});
