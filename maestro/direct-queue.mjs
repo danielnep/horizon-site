@@ -12,7 +12,12 @@ const AGENTS=new Set([
  'database-engineer','integration-engineer','qa-engineer','security-engineer',
  'devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona'
 ]);
-export const directRoot=()=>resolve(process.env.HORIZON_DIRECT_INBOX_DIR||'/data/horizon-direct-queue');
+export const directRoot=()=>{
+ const configured=String(process.env.HORIZON_DIRECT_INBOX_DIR||'').trim();
+ if(!configured)throw Error('vps_shared_queue_not_configured');
+ if(!configured.startsWith('/'))throw Error('vps_shared_queue_path_must_be_absolute');
+ return resolve(configured);
+};
 
 function validatePath(value,repo){
  if(typeof value!=='string'||!PATH.test(value)||value.startsWith('/')||
