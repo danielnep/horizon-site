@@ -80,14 +80,14 @@ def complete_ai(prompt):
                            {"model": model, "messages": [{"role": "user", "content": prompt}],
                             "max_completion_tokens": 280, "temperature": 0.2}))
         if gemini_key:
-            model = os.getenv("HORIZON_CONTROL_GEMINI_MODEL", "gemini-3.5-flash-lite")
+            model = os.getenv("HORIZON_CONTROL_GEMINI_MODEL", "gemini-3.6-flash")
             if re.fullmatch(r"[A-Za-z0-9._-]{3,90}", model):
                 routes.append(("gemini", model,
                                "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
                                {"x-goog-api-key": gemini_key},
                                {"contents": [{"parts": [{"text": prompt}]}],
-                                "generationConfig": {"maxOutputTokens": 350, "temperature": 0.2,
-                                                     "thinkingConfig": {"thinkingLevel": "minimal"}}}))
+                                "generationConfig": {"maxOutputTokens": 1100, "temperature": 0.2,
+                                                     "thinkingConfig": {"thinkingLevel": "medium"}}}))
         for provider, model, url, headers, payload in routes:
             request = urllib.request.Request(
                 url, data=json.dumps(payload).encode("utf-8"), method="POST",
