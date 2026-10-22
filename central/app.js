@@ -198,7 +198,7 @@ function taskRow(t){
  const taskId=escapeHTML(t.id);
  const controls=PAGES_MODE?'':t.status==='arquivada'?
  '<div class="task-controls"><button class="secondary" data-task-action="restore" data-task-id="'+taskId+'">Restaurar como pausada</button></div>':
- '<div class="task-controls">'+(t.inQueue?
+ '<details class="task-actions-disclosure"><summary>Gerenciar tarefa <span aria-hidden="true">⌄</span></summary><div class="task-controls">'+(t.inQueue?
  '<button class="secondary" data-task-action="up" data-task-id="'+taskId+'" title="Adiantar na ordem de execução">↑ Subir</button>'+
  '<button class="secondary" data-task-action="down" data-task-id="'+taskId+'" title="Atrasar na ordem de execução">↓ Descer</button>'+
  '<button class="secondary" data-task-action="pause" data-task-id="'+taskId+'">Pausar</button>':
@@ -209,7 +209,7 @@ function taskRow(t){
  '<label class="task-setting">Agente <select data-task-agent="'+taskId+'" aria-label="Configurar agente responsável">'+
  Object.keys(AGENT_NAMES).map(id=>'<option value="'+id+'"'+(t.agent===id?' selected':'')+'>'+escapeHTML(label(id))+'</option>').join('')+'</select></label>':'')+
  (t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
- '</div>'+
+ '</div></details>'+
  (t.inQueue||t.status==='pausada'?'<details class="task-editor" data-editor="'+taskId+'"'+(editPanels.has(t.id)?' open':'')+'><summary>Editar solicitação e posição</summary>'+
  '<label>Instrução original<textarea data-edit-objective="'+taskId+'" maxlength="2800">'+escapeHTML(taskDrafts.get(t.id)??String(t.description||'').replace(/^P[0-3]\s*\|\s*/,''))+'</textarea></label>'+
  '<button class="secondary" data-save-objective="'+taskId+'">Salvar instrução</button>'+
@@ -220,7 +220,7 @@ function taskRow(t){
   (t.supervision.firstPendingTask?'<small>Primeira etapa: '+escapeHTML(t.supervision.firstPendingTask)+'</small>':'')+
   (t.supervision.checkedAt?'<small> · Conferido: '+escapeHTML(time(t.supervision.checkedAt))+'</small>':'')+
   '</section>':'';
- const detail='<div class="task-detail">'+live+diagnosis+controls+
+ const detail='<div class="task-detail"><button type="button" class="mobile-detail-close" data-detail-close="'+taskId+'">← Voltar às tarefas</button>'+live+diagnosis+controls+
  '<p class="smallprint">'+(t.inQueue?'Esta tarefa está na fila do servidor.':
  'Esta tarefa não está na fila atual. O registro anterior pode ser consultado no histórico.')+'</p>'+
  (t.blocker?'<p class="error">Problema: '+escapeHTML(t.blocker)+'</p>':'')+
@@ -510,7 +510,19 @@ function bindTaskActions(root=document){
  root.querySelectorAll('[data-agent-action]').forEach(btn=>btn.addEventListener('click',()=>executeAgentAction(btn.dataset.agentId,btn.dataset.agentAction)));
 }
 
+function closeTaskDetail(id){
+ const detail=document.getElementById('detail-'+id);
+ const trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
+ if(!detail||!trigger)return;
+ detail.hidden=true;openTasks.delete(id);
+ trigger.setAttribute('aria-expanded','false');trigger.textContent='Acompanhar ▾';
+ trigger.focus({preventScroll:true});
+}
+function bindTaskDetailClose(root=document){
+ root.querySelectorAll('[data-detail-close]').forEach(el=>el.addEventListener('click',()=>closeTaskDetail(el.dataset.detailClose)));
+}
 function bind(){
+ bindTaskDetailClose();
  document.querySelectorAll('[data-detail]').forEach(el=>el.addEventListener('click',()=>{
  const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
  target.hidden=!target.hidden;if(target.hidden)openTasks.delete(el.dataset.detail);else openTasks.add(el.dataset.detail);
@@ -586,6 +598,7 @@ async function refresh(force=false){
       target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
     }));
     bindTaskActions($('live-overview'));
+    bindTaskDetailClose($('live-overview'));
     updateConn();
    }else render();
   }catch(e){online=false;updateConn();if(!snapshot)$('content').innerHTML='<div class="empty">Sem dados ao vivo: '+escapeHTML(e.message)+'. Verifique a sessão e tente novamente.</div>';}
