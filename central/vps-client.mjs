@@ -120,11 +120,11 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
  };
 }
 
-async function unixRequest(socket,path,{method,data,token}){
+async function unixRequest(socket,path,{method,data,token,timeout}){
  return new Promise((resolve,reject)=>{
   const payload=data===undefined?null:Buffer.from(JSON.stringify(data));
   const call=httpRequest({
-   socketPath:socket,path,method,timeout:8500,
+   socketPath:socket,path,method,timeout,
    headers:{authorization:'Bearer '+token,accept:'application/json',
     ...(payload?{'content-type':'application/json','content-length':payload.byteLength}:{})}
   },res=>{
@@ -147,9 +147,10 @@ export async function vpsRequest(path,{method='GET',data,fetcher=fetch,env=proce
  const conn=vpsConnectionConfig(env);
  if(!conn.ok)throw new Error(conn.reason);
  if(!/^\/v1\/[a-z0-9/_-]+$/.test(path)||path.includes('//'))throw new Error('rota_vps_invalida');
- if(conn.socket)return unixRequest(conn.socket,path,{method,data,token:conn.token});
+ const timeout=path==='/v1/ai/complete'?30000:8500;
+ if(conn.socket)return unixRequest(conn.socket,path,{method,data,token:conn.token,timeout});
  const ctrl=new AbortController();
- const timer=setTimeout(()=>ctrl.abort(),8500);
+ const timer=setTimeout(()=>ctrl.abort(),timeout);
  try{
   const response=await fetcher(conn.url+path,{
    method,redirect:'error',signal:ctrl.signal,

@@ -19,6 +19,8 @@ import subprocess
 import threading
 import time
 import uuid
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingMixIn, UnixStreamServer
@@ -52,6 +54,72 @@ def json_or(raw, default=None):
         return json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else default
     except (json.JSONDecodeError, TypeError, ValueError):
         return default
+
+
+# The control API runs as the same restricted Unix user as the worker.
+# Model credentials are inherited from systemd, never transferred to the web app.
+AI_SLOTS = threading.BoundedSemaphore(2)
+
+
+def complete_ai(prompt):
+    if not isinstance(prompt, str) or not 3 <= len(prompt) <= 8500:
+        raise ValueError("prompt_invalido")
+
+    groq_key = os.getenv("GROQ_API_KEY") or os.getenv("API_IA_GROQ")
+    gemini_key = os.getenv("GEMINI_API_KEY") if os.getenv("GEMINI_REQUESTS_ENABLED", "true").lower() == "true" else None
+    if not (groq_key or gemini_key):
+        raise RuntimeError("provedor_ia_nao_configurado")
+    if not AI_SLOTS.acquire(blocking=False):
+        raise RuntimeError("ia_ocupada")
+    try:
+        routes = []
+        if groq_key:
+            model = os.getenv("HORIZON_CONTROL_AI_MODEL", "openai/gpt-oss-120b")
+            routes.append(("groq", model, "https://api.groq.com/openai/v1/chat/completions",
+                           {"Authorization": "Bearer " + groq_key},
+                           {"model": model, "messages": [{"role": "user", "content": prompt}],
+                            "max_completion_tokens": 280, "temperature": 0.2}))
+        if gemini_key:
+            model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            if re.fullmatch(r"[A-Za-z0-9._-]{3,90}", model):
+                routes.append(("gemini", model,
+                               "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+                               {"x-goog-api-key": gemini_key},
+                               {"contents": [{"parts": [{"text": prompt}]}],
+                                "generationConfig": {"maxOutputTokens": 350, "temperature": 0.2}}))
+        for provider, model, url, headers, payload in routes:
+            request = urllib.request.Request(
+                url, data=json.dumps(payload).encode("utf-8"), method="POST",
+                headers={"Content-Type": "application/json", **headers})
+            try:
+                with urllib.request.urlopen(request, timeout=11) as reply:
+                    data = json.loads(reply.read(80000))
+                if provider == "groq":
+                    choices = data.get("choices") or []
+                    response = (choices[0].get("message") or {}).get("content") if choices else None
+                    metrics = data.get("usage") or {}
+                    usage = {"prompt_tokens": metrics.get("prompt_tokens"),
+                             "completion_tokens": metrics.get("completion_tokens"),
+                             "total_tokens": metrics.get("total_tokens")}
+                else:
+                    candidates = data.get("candidates") or []
+                    parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
+                    response = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                    metrics = data.get("usageMetadata") or {}
+                    usage = {"prompt_tokens": metrics.get("promptTokenCount"),
+                             "completion_tokens": metrics.get("candidatesTokenCount"),
+                             "total_tokens": metrics.get("totalTokenCount")}
+                if isinstance(response, str) and response.strip():
+                    return {"response": response[:1300], "provider": provider,
+                            "model": model, "usage": usage}
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError,
+                    OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                # A provider failure allows the other provider to answer.
+                # Never expose error bodies or credentials to the browser.
+                continue
+        raise RuntimeError("provedores_ia_indisponiveis")
+    finally:
+        AI_SLOTS.release()
 
 
 def timestamp(value):
@@ -478,11 +546,13 @@ class Handler(BaseHTTPRequestHandler):
             if self.command != "POST":
                 return self.send_json(404, {"error": "rota_nao_encontrada"})
             length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0 or length > 8000:
+            if length <= 0 or length > (12000 if path == "/v1/ai/complete" else 8000):
                 return self.send_json(413, {"error": "tamanho_invalido"})
             value = json_or(self.rfile.read(length))
             if not isinstance(value, dict):
                 return self.send_json(400, {"error": "solicitacao_invalida"})
+            if path == "/v1/ai/complete":
+                return self.send_json(200, complete_ai(value.get("prompt")))
             if path == "/v1/tasks":
                 return self.send_json(201, submit(value))
             hit = re.fullmatch(r"/v1/tasks/([a-z0-9:-]{3,110})/actions", path)
