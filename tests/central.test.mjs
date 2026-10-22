@@ -136,7 +136,7 @@ test('SSE immediately streams actual worker state, never needs an AI call',async
   assert.match(found,/"event":"cycle"/);
   assert.match(found,/"rc":"0"/);
   const overview=await (await fetch(url+'/central/api/overview')).json();
-  assert.equal(overview.worker.status,'aguardando tarefas adiadas');
+  assert.equal(overview.worker.status,'Sem ligação com a VPS');
   abort.abort();
   await reader.cancel().catch(()=>{});
  });
@@ -223,7 +223,9 @@ test('supervisor wait and dependency proof appear in real task API',async()=>{
    assert.equal(res.status,200);
    const state=await res.json();
    assert.equal(state.tasks.find(x=>x.id===id),undefined);
-   assert.equal(state.available.vps,false);
+   assert.equal(state.tasks.length,0);
+   const overview=await fetch(url+'/central/api/overview').then(x=>x.json());
+   assert.equal(overview.available.vps,false);
    const ui=await (await fetch(url+'/central/app.js')).text();
    assert.match(ui,/function waitDescription/);
    assert.match(ui,/Primeira etapa:/);
