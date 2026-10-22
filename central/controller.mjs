@@ -578,7 +578,10 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    if(answer){send(res,200,{response:answer,usage:{input:0,output:0,total:0},source:'algoritmo'});return true;}
    const output=await interpret({mode:'chat',message});
    send(res,output.status,{response:output.response||null,error:output.error||null,usage:output.usage||null});
-  }catch{send(res,502,{error:'nao_foi_possivel_responder'});}
+  }catch(error){
+   console.warn('[central-ai] chat_failed',String(error?.name||'Error').slice(0,45),String(error?.message||'sem_detalhes').slice(0,130));
+   send(res,502,{error:'nao_foi_possivel_responder'});
+  }
   return true;
  }
 
