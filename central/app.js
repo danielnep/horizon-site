@@ -20,7 +20,7 @@ async function pagesOverview(){
    rawStatus:r?.status||'sem resultado',approved:r?.quality?.approved===true,published:r?.publication?.published===true};
  }));
  return {at:new Date().toISOString(),agents,tasks:tasks.filter(Boolean),source:'GitHub Pages: leitura pública',
- worker:{status:'Railway não acessível neste modo',lastCycle:null},
+ worker:{status:'Worker sem telemetria neste modo',lastCycle:null},
  issues:['Apenas leitura: comandos e IA exigem servidor protegido'],
  available:{queue:Array.isArray(files),results:true,attendance:Boolean(data)},
  usage:{input:null,output:null,total:null},events:[]};
@@ -355,7 +355,7 @@ function explainEvent(e){
 
 function pageHistorico(){
  const events=snapshot?.events||[];
- return heading('Histórico','Resultados operacionais no Railway e eventos recentes da equipe.')+
+ return heading('Histórico','Resultados do servidor e eventos recentes da equipe.')+
  '<div class="section-heading"><h2>Resultados armazenados</h2><span class="meta">Mesmo após sair da fila</span></div>'+listTasks((snapshot?.tasks||[]).filter(x=>x.hasResult))+
  '<div class="section-heading"><h2>Atividade recente do servidor</h2></div>'+
  (!events.length?'<div class="empty">Ainda não há eventos recentes da equipe nesta instância.</div>':
@@ -414,7 +414,7 @@ function studioProgress(){
  return '<h2>Agentes trabalhando</h2>'+
  (active.length?active.map(t=>'<div class="studio-progress-line"><strong>'+escapeHTML(String(t.title||t.project||'Tarefa').slice(0,68))+'</strong>'+
  chip(t.status)+'</div>').join(''):'<p class="smallprint">Nenhuma tarefa em execução confirmada. Envie uma solicitação para acompanhar o progresso.</p>')+
- '<p class="smallprint">Os indicadores vêm da fila real do Railway. O preview mostra a publicação do projeto, não um mockup.</p>';
+ '<p class="smallprint">Indicadores da fila local do servidor. O preview abre a publicação real do projeto.</p>';
 }
 function pageEstudio(){
  return heading('Estúdio de criação','Converse com os especialistas e veja o aplicativo no celular ou desktop.')+
