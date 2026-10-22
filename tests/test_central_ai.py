@@ -63,6 +63,7 @@ class AiBridgeTests(unittest.TestCase):
              patch.object(bridge.urllib.request, "urlopen", reply):
             result = bridge.complete_ai("Consulte a situação atual")
         self.assertEqual(result["provider"], "gemini")
+        self.assertEqual(result["model"], "gemini-3.5-flash-lite")
         self.assertEqual(result["response"], "Gemini operacional")
         self.assertEqual(result["usage"]["total_tokens"], 14)
         self.assertEqual(len(calls), 2)
