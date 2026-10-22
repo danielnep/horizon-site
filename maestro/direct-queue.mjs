@@ -197,7 +197,7 @@ export async function directTaskAction(taskId,action,options={}){
   // Wake the current worker even if only the order metadata changed.
   const now=new Date();await utimes(join(root,'requests',name),now,now);
   await audit(root,taskId,action,{position:next+1});
-  return {id:taskId,status:'na fila',queuePosition:next+1,note:'Ordem de execução atualizada na fila do Railway.'};
+  return {id:taskId,status:'na fila',queuePosition:next+1,note:'Ordem de execução atualizada na fila do servidor.'};
  }
  if(['assign','priority','edit'].includes(action)){
   if(state!=='requests'&&state!=='paused')throw Error('tarefa_nao_editavel');
@@ -242,7 +242,7 @@ export async function directTaskAction(taskId,action,options={}){
  catch(e){await unlink(targetPath).catch(()=>{});throw e;}
  await audit(root,taskId,action,{note:'Comando aplicado à fila local; não interrompe processos já carregados pelo executor.'});
  return {id:taskId,status:target==='requests'?'na fila':target==='paused'?'pausada':target==='archived'?'arquivada':'cancelada',
-  note:'Aplicado na fila do Railway. Se o agente já estava executando, essa etapa pode continuar até encerrar.'};
+  note:'Aplicado na fila do servidor. Se o agente já estava executando, essa etapa pode continuar até encerrar.'};
 }
 
 
