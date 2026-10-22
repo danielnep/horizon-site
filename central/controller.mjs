@@ -311,6 +311,7 @@ export function conciseProjectFacts(view,question){
 export function quickAnswer(question,view){
  const q=String(question||'').toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
  const tasks=view.tasks||[];
+ if(view.available?.vps!==true)return 'A conexão com a VPS ainda não foi estabelecida. Não consigo confirmar tarefas, agentes em execução nem consumo de tokens neste momento.';
  if(/quantos (agentes|especialistas)/.test(q))
   return 'A Horizon tem 17 especialistas cadastrados. Isso não significa que todos estejam trabalhando agora. Consulte a área Agentes para verificar a atividade de cada um.';
  if(/(quanto|quantos|total).{0,25}(token|consumo)/.test(q)){
@@ -327,7 +328,7 @@ export function quickAnswer(question,view){
 
 async function chatContextPrompt(question){
  const [view,repositories]=await Promise.all([loadOverview(),ownerRepositories().catch(()=>[])]);
- const context=conciseProjectFacts({...view,events:events.slice(-20)},question);
+ const context=conciseProjectFacts({...view,events:view.events||[]},question);
  context.projetos=repositories.map(r=>({nome:r.label,repositorio:r.repository}));
  const normalized=question.toLocaleLowerCase('pt-BR');
  const specialist=SPECIALISTS.find(id=>normalized.includes(id)||
@@ -350,8 +351,9 @@ async function interpret(payload){
  if(!limit('ai',8,60000))return {error:'limite_de_consultas',status:429};
  const diagnosing=payload?.mode==='diagnose';
  const chatting=payload?.mode==='chat';
- const recent=events.slice(-12).filter(x=>x.kind==='worker'||x.kind==='system').map(x=>({at:x.at,event:x.event,rc:x.rc,errorClass:x.errorClass,reason:x.reason,state:x.state}));
- const message=diagnosing?JSON.stringify({workerStatus:workerState,lastCycle,events:recent}):String(payload?.message||'').trim();
+ const overview=diagnosing?await loadOverview():null;
+ const recent=(overview?.events||[]).slice(-12).map(x=>({at:x.at,event:x.event,rc:x.rc,errorClass:x.errorClass,reason:x.reason,state:x.state}));
+ const message=diagnosing?JSON.stringify({workerStatus:overview?.worker?.status||'sem ligação',lastCycle:overview?.worker?.lastCycle||null,events:recent}):String(payload?.message||'').trim();
  if(!diagnosing&&(message.length<(chatting?3:12)||message.length>(chatting?700:1600)))return {error:'mensagem_deve_ter_12_a_1600_caracteres',status:400};
  const prompt=chatting?await chatContextPrompt(message):diagnosing?
   'Analise estes eventos técnicos da Horizon com cuidado. Explique em português popular: O que foi observado, o que significa, causas possíveis (não invente uma causa exata sem prova), próximos passos e se já há uma solução automática segura. Seja sucinto, até 110 palavras. Nunca alegue execução de correção. Dados: '+message:
@@ -445,7 +447,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    const answer=raw.endsWith('/agents')?{agents:overview.agents,at:overview.at}:
     raw.endsWith('/tasks')?{tasks:overview.tasks,at:overview.at}:
     raw.endsWith('/usage')?{...overview.usage,at:overview.at}:
-    raw.endsWith('/history')?{events:events.slice(-100),activity:overview.activity,at:overview.at}:
+    raw.endsWith('/history')?{events:overview.events||[],activity:overview.activity,at:overview.at}:
     {...overview,events:events.slice(-25)};
    send(res,200,answer);
   }catch{send(res,503,{error:'dados_temporariamente_indisponiveis'});}return true;
