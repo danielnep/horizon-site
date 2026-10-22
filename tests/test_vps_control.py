@@ -44,6 +44,12 @@ class VpsControlTests(unittest.TestCase):
            "allowed_paths":["src/**"],"priority":"P2","public_data_confirmed":True,
         })
 
+    def test_http_json_body_accepts_bytes_and_rejects_malformed(self):
+        self.assertEqual(api.json_or(b'{"agent":"qa-engineer"}'), {"agent":"qa-engineer"})
+        self.assertEqual(api.json_or(bytearray(b'{"priority":"P3"}')), {"priority":"P3"})
+        self.assertIsNone(api.json_or(b'{"broken":'))
+        self.assertIsNone(api.json_or(123))
+
     def test_snapshot_reports_only_actual_rows(self):
         empty=api.snapshot()
         self.assertEqual(empty["source"],"vps")
