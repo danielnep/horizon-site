@@ -36,7 +36,7 @@ test('MCP autenticacao e lista de 17 agentes',async()=>{
   const i=await call(s.url,'initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'test',version:'1'}});
   assert.equal(i.body.result.protocolVersion,'2025-11-25');
   const l=await call(s.url,'tools/list');assert.equal(l.body.result.tools.length,4);
-  assert.match(l.body.result.tools.find(x=>x.name==='horizon_submit_task').description,/Railway/);
+  assert.match(l.body.result.tools.find(x=>x.name==='horizon_submit_task').description,/VPS/);
  }finally{await s.close();}
 });
 test('MCP recusa submissao invalida antes de gravar',async()=>await withInbox(async()=>{
@@ -50,7 +50,7 @@ test('MCP recusa submissao invalida antes de gravar',async()=>await withInbox(as
   assert.equal(r.body.result.isError,true);
  }finally{await s.close();}
 }));
-test('MCP grava tarefa na fila do Railway, sem chamar GitHub, idempotente',async()=>await withInbox(async(dir)=>{
+test('MCP grava tarefa na fila da VPS, sem chamar GitHub, idempotente',async()=>await withInbox(async(dir)=>{
  let ghCalls=0;
  const s=await serverWith({fetcher:async()=>{ghCalls++;throw Error('GitHub should not be contacted');}});
  const args={task_id:'romaneio-ui-test',project:'romaneio-digital',repository:'danielnep/romaneio-digital',
@@ -60,7 +60,7 @@ test('MCP grava tarefa na fila do Railway, sem chamar GitHub, idempotente',async
  try{
   const r=await call(s.url,'tools/call',{name:'horizon_submit_task',arguments:args});
   const receipt=JSON.parse(r.body.result.content[0].text);
-  assert.equal(receipt.status,'aceita');assert.equal(receipt.transport,'railway_local');
+  assert.equal(receipt.status,'aceita');assert.equal(receipt.transport,'vps_local');
   const stored=JSON.parse(await readFile(join(dir,'requests',args.task_id+'.json'),'utf8'));
   assert.equal(stored.repository,args.repository);
   assert.deepEqual(stored.payload.allowed_paths,args.allowed_paths);
