@@ -11,6 +11,8 @@ EnvironmentFile=/etc/horizon-central/api.env
 WorkingDirectory=/opt/horizon-maestro/source
 RuntimeDirectory=horizon-central
 RuntimeDirectoryMode=0770
+# Keep the bind-mounted Unix socket directory stable across API restarts.
+RuntimeDirectoryPreserve=yes
 UMask=0007
 ExecStart=/usr/bin/python3 /opt/horizon-site/source/vps/central_api.py
 Restart=on-failure
