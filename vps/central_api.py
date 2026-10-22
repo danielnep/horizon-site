@@ -452,13 +452,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        self.wfile.write(b"retry: 1500\\n\\n")
+        self.wfile.write(b"retry: 1500\n\n")
         self.wfile.flush()
         self.close_connection = True
         try:
             for changed in listen_sqlite_changes():
-                frame = (b"event: change\\ndata: {\"source\":\"sqlite\"}\\n\\n"
-                         if changed else b": heartbeat\\n\\n")
+                frame = (b"event: change\ndata: {\"source\":\"sqlite\"}\n\n"
+                         if changed else b": heartbeat\n\n")
                 self.wfile.write(frame)
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
