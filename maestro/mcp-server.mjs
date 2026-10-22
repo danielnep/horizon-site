@@ -126,5 +126,3 @@ export async function handleHorizonMcp(req,res,{fetcher=fetch,token=process.env.
   }catch(e){output=result(id,toolResponse({error:'upstream_error',message:String(e?.message||e).slice(0,160)},true));}
   reply(res,200,output,{'mcp-protocol-version':VERSION});
 }
-
-[executed on device: srv2085016 (56be333d-f9c8-4f1e-8334-abe11feefac3)]
