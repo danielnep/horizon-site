@@ -37,6 +37,36 @@ const LABELS={estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Ta
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
+let archivedTasks=[];
+const openTasks=new Set();
+const ANALYSIS_KEY='horizon-analysis-v1';
+let analysisState={request:{busy:false,text:'',error:false},diagnose:{busy:false,text:'',error:false}};
+try{
+ const saved=JSON.parse(sessionStorage.getItem(ANALYSIS_KEY)||'null');
+ if(saved&&typeof saved==='object')for(const key of ['request','diagnose']){
+  if(typeof saved[key]?.text==='string')analysisState[key]={busy:false,text:saved[key].text.slice(0,2200),error:Boolean(saved[key].error)};
+ }
+}catch{}
+function persistAnalysis(){
+ try{sessionStorage.setItem(ANALYSIS_KEY,JSON.stringify(analysisState));}catch{}
+}
+function repaintAnalysis(){
+ for(const [key,resultId,buttonId,label] of [['request','ai-result','ai-action','Analisar com IA'],['diagnose','diagnosis-result','diagnose-ai','Investigar com IA']]){
+  const state=analysisState[key],result=$(resultId),button=$(buttonId);
+  if(result){result.hidden=!state.busy&&!state.text;result.textContent=state.busy?'Analisando com IA. Os dados continuam sendo atualizados sem fechar este resultado.':state.text;result.setAttribute('role',state.error?'alert':'status');}
+  if(button){button.disabled=state.busy;button.textContent=state.busy?'Analisando…':label;}
+ }
+}
+async function runAnalysis(key,path,body){
+ const state=analysisState[key];if(state.busy)return;
+ state.busy=true;state.text='';state.error=false;repaintAnalysis();
+ try{
+  const out=await api(path,{method:'POST',body:JSON.stringify(body),signal:AbortSignal.timeout(23000)});
+  state.text=(out.response||'A análise terminou sem resposta do provedor.')+
+   (key==='request'&&out.usage?.input!==null&&out.usage?.input!==undefined?'\n\nTokens: '+out.usage.input+' entrada, '+(out.usage.output??'não informado')+' saída.':'');
+ }catch(e){state.text='A análise não foi concluída: '+(e.name==='TimeoutError'?'tempo limite de 23 segundos excedido':e.message)+'. Você pode tentar novamente.';state.error=true;}
+ finally{state.busy=false;persistAnalysis();repaintAnalysis();}
+}
 let adminAuthorized=false;
 let pendingCommand=null;
 let actionTimer=null;
