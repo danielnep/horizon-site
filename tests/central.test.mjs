@@ -68,7 +68,7 @@ test('login requires same-origin, issues HttpOnly session and protects write com
  });
 });
 
-test('central envia direto ao Maestro no Railway, sem gravar solicitações no GitHub',async()=>{
+test('central envia direto ao Maestro na VPS, sem gravar solicitações no GitHub',async()=>{
  const root=await mkdtemp(join(tmpdir(),'horizon-central-'));
  const previous=process.env.HORIZON_DIRECT_INBOX_DIR;
  process.env.HORIZON_DIRECT_INBOX_DIR=root;
@@ -87,7 +87,7 @@ test('central envia direto ao Maestro no Railway, sem gravar solicitações no G
    {method:'POST',headers,body:JSON.stringify(task)});
   assert.equal(response.status,201);
   const out=await response.json();
-  assert.equal(out.transport,'railway_local');
+  assert.equal(out.transport,'vps_local');
   const body=JSON.parse(await readFile(join(root,'requests',out.id+'.json'),'utf8'));
   assert.equal(body.repository,task.repository);
   assert.deepEqual(body.payload.allowed_paths,task.allowed_paths);
@@ -328,7 +328,7 @@ test('chat answers common questions with algorithms without model calls',async()
  assert.equal(quickAnswer('O que é esta função pouco comum?',view),null);
  const context=conciseProjectFacts({...view,at:'2026-10-21T00:00:00Z'},'quantos agentes');
  assert.equal(context.numeroTarefas,1);
- assert.equal(context.fonte,'Central Horizon, registros do Railway');
+ assert.equal(context.fonte,'Central Horizon, fila local do servidor');
 });
 test('help chat uses simple Portuguese and is available without secret access',async()=>{
  await withServer(async({url,origin})=>{
