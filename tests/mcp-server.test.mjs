@@ -62,5 +62,3 @@ test('MCP mostra erro de VPS offline sem inventar disponibilidade',async()=>{
  const s=await serverWith({vpsRequester:async()=>{throw Error('vps_http_503');}});
  try{const r=await invoke(s,'horizon_vps_health');assert.equal(r.connected,false);assert.equal(r.error,'vps_http_503');}finally{await s.close();}
 });
-
-[executed on device: srv2085016 (56be333d-f9c8-4f1e-8334-abe11feefac3)]
