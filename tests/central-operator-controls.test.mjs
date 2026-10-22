@@ -117,3 +117,49 @@ test('edit a not-started task and move it to an exact queue position',async()=>{
   await rm(root,{recursive:true,force:true});
  }
 });
+
+test('authenticated central API manages agent settings and preserves archived tasks',async()=>{
+ const {startServer}=await import('../server.mjs');
+ const {once}=await import('node:events');
+ const prior={dir:process.env.HORIZON_DIRECT_INBOX_DIR,token:process.env.HORIZON_CONTROL_PASSWORD};
+ const root=await mkdtemp(join(tmpdir(),'horizon-api-admin-'));
+ process.env.HORIZON_DIRECT_INBOX_DIR=root;
+ process.env.HORIZON_CONTROL_PASSWORD='local-test-only-strong-secret-value';
+ const server=startServer({listenPort:0,background:false});
+ try{
+  await once(server,'listening');
+  const port=server.address().port,url='http://127.0.0.1:'+port,origin='https://127.0.0.1:'+port;
+  const headers={'content-type':'application/json',origin};
+  const login=await fetch(url+'/central/api/login',{method:'POST',headers,body:JSON.stringify({password:'local-test-only-strong-secret-value'})});
+  assert.equal(login.status,200);
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const protectedHeaders={...headers,cookie};
+  const id='ctl-config-api';
+  await submitDirectTask({task_id:id,project:'horizon-site',repository:'danielnep/horizon-site',
+   agent:'qa-engineer',objective:'Validar painel e permissões administrativas por API',
+   priority:'P2',delivery_type:'existing_product',allowed_paths:['central/**'],public_data_confirmed:true});
+  assert.equal((await fetch(url+'/central/api/agents/qa-engineer/config')).status,401);
+  const policy=await fetch(url+'/central/api/agents/qa-engineer/config',{method:'POST',headers:protectedHeaders,
+   body:JSON.stringify({maxPending:2,allowedRepositories:['danielnep/horizon-site'],notes:'Apenas teste'})});
+  assert.equal(policy.status,200);
+  assert.equal((await policy.json()).maxPending,2);
+  const edit=await fetch(url+'/central/api/tasks/'+id+'/action',{method:'POST',headers:protectedHeaders,
+   body:JSON.stringify({action:'edit',objective:'Revalidar visualmente os fluxos administrativos em celulares com teclado'})});
+  assert.equal(edit.status,200);
+  const archive=await fetch(url+'/central/api/tasks/'+id+'/action',{method:'POST',headers:protectedHeaders,
+   body:JSON.stringify({action:'archive'})});
+  assert.equal(archive.status,200);
+  const archived=await fetch(url+'/central/api/tasks/archived',{headers:{cookie}});
+  assert.equal(archived.status,200);
+  assert.equal((await archived.json()).tasks.find(x=>x.id===id).status,'arquivada');
+  const restore=await fetch(url+'/central/api/tasks/'+id+'/action',{method:'POST',headers:protectedHeaders,
+   body:JSON.stringify({action:'restore'})});
+  assert.equal(restore.status,200);
+ }finally{
+  server.closeAllConnections?.();
+  await new Promise(resolve=>server.close(resolve));
+  if(prior.dir===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=prior.dir;
+  if(prior.token===undefined)delete process.env.HORIZON_CONTROL_PASSWORD;else process.env.HORIZON_CONTROL_PASSWORD=prior.token;
+  await rm(root,{recursive:true,force:true});
+ }
+});
