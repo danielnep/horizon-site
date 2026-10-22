@@ -49,7 +49,7 @@ export async function operationalTelemetry(days=7){
   origin:'Respostas reais dos provedores, registradas na fila privada da VPS'},
   activity:{lastByTask:byTask,recent:latest.slice(-80),available:latest.length>0,partial:activity.incomplete}};
 }
-export async function recordCentralUsage(model,usage){
+export async function recordCentralUsage(model,usage,providerName='groq'){
  const input=number(usage?.prompt_tokens),output=number(usage?.completion_tokens),total=number(usage?.total_tokens);
  if(input===null&&output===null&&total===null)return false;
  const date=new Date().toISOString().slice(0,10);
@@ -57,7 +57,7 @@ export async function recordCentralUsage(model,usage){
  try{
   await mkdir(dir,{recursive:true,mode:0o700});
   await appendFile(join(dir,'usage-'+date+'.jsonl'),JSON.stringify({
-   at:new Date().toISOString(),agent:'central-horizon',provider:'central-groq',model,
+   at:new Date().toISOString(),agent:'central-horizon',provider:providerName==='gemini'?'gemini':'central-groq',model,
    input,output,total,source:'provider_response'})+'\n',{mode:0o600});
   return true;
  }catch{return false;}

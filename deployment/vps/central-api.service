@@ -8,6 +8,8 @@ Type=simple
 User=horizon-worker
 Group=horizon-worker
 EnvironmentFile=/etc/horizon-central/api.env
+# The bridge reads existing worker AI keys; none are copied into the web container.
+EnvironmentFile=/etc/horizon-worker/runtime.env
 WorkingDirectory=/opt/horizon-maestro/source
 RuntimeDirectory=horizon-central
 RuntimeDirectoryMode=0770

@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
-import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,disconnectedVps,subscribeVpsChanges} from './vps-client.mjs';
+import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,vpsRequest,disconnectedVps,subscribeVpsChanges} from './vps-client.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
@@ -416,18 +416,13 @@ async function interpret(payload){
  const prompt=chatting?await chatContextPrompt(message):diagnosing?
   'Analise estes eventos técnicos da Horizon com cuidado. Explique em português popular: O que foi observado, o que significa, causas possíveis (não invente uma causa exata sem prova), próximos passos e se já há uma solução automática segura. Seja sucinto, até 110 palavras. Nunca alegue execução de correção. Dados: '+message:
   'Você auxilia a central dos 17 agentes Horizon. Responda em português simples, com no máximo 100 palavras. Entenda a intenção, identifique projeto e agentes sugeridos, risco e próximo passo. Não invente estados, percentuais, logs, acessos ou conclusão. Não execute comandos nem inclua segredos.\nPedido: '+message;
- const groqKey=process.env.GROQ_API_KEY||process.env.API_IA_GROQ;
- if(!groqKey)return {error:'provedor_ia_nao_configurado',status:503};
- const response=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
-  headers:{'authorization':'Bearer '+groqKey,'content-type':'application/json'},
-  body:JSON.stringify({model:process.env.HORIZON_CONTROL_AI_MODEL||'openai/gpt-oss-120b',messages:[{role:'user',content:prompt}],max_completion_tokens:260,temperature:0.2}),
-  signal:AbortSignal.timeout(17000)});
- if(!response.ok)return {error:'provedor_http_'+response.status,status:502};
- const data=await response.json();
- await recordCentralUsage(process.env.HORIZON_CONTROL_AI_MODEL||'openai/gpt-oss-120b',data.usage);
- const content=data.choices?.[0]?.message?.content;
+ // A IA vive na VPS: o painel envia apenas o prompt pelo socket autenticado.
+ // Nenhuma credencial de modelo deve ser entregue ao container ou navegador.
+ const data=await vpsRequest('/v1/ai/complete',{method:'POST',data:{prompt}});
+ const content=data?.response;
  if(typeof content!=='string'||!content.trim())return {error:'resposta_ia_indisponivel',status:502};
  const usage=data.usage||{};
+ await recordCentralUsage(data.model||'modelo_ia',usage,data.provider);
  return {response:content.slice(0,1300),usage:{input:Number.isFinite(usage.prompt_tokens)?usage.prompt_tokens:null,
  output:Number.isFinite(usage.completion_tokens)?usage.completion_tokens:null},status:200};
 }
