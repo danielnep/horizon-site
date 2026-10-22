@@ -2,7 +2,7 @@ import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
-import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds} from '../maestro/direct-queue.mjs';
+import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
@@ -467,6 +467,18 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  }
 
 
+ const agentConfig=raw.match(/^\/central\/api\/agents\/([a-z0-9-]{3,70})\/config$/);
+ if(agentConfig&&(req.method==='GET'||req.method==='POST')){
+  if(req.method==='POST'&&!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   const result=req.method==='GET'?await agentSettings(agentConfig[1]):await setAgentSettings(agentConfig[1],await body(req,2200));
+   githubCache.expires=0;
+   if(req.method==='POST')notify('agent',{event:'config',agent:agentConfig[1]});
+   send(res,200,result);
+  }catch(e){send(res,400,{error:String(e?.message||'configuracao_invalida').slice(0,110)});}
+  return true;
+ }
+
  const agentAction=raw.match(/^\/central\/api\/agents\/([a-z0-9-]{3,70})\/action$/);
  if(req.method==='POST'&&agentAction){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
@@ -485,7 +497,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{
    const data=await body(req,600);
-   const result=await directTaskAction(actionPath[1],data.action,{agent:data.agent,priority:data.priority});
+   const result=await directTaskAction(actionPath[1],data.action,{agent:data.agent,priority:data.priority,position:data.position,objective:data.objective});
    githubCache.expires=0;
    notify('task',{event:'control',taskId:result.id,action:data.action});
    send(res,200,result);
