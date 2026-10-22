@@ -38,6 +38,11 @@ let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digita
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
 let archivedTasks=[];
+const agentConfigs=new Map();
+const agentDrafts=new Map();
+const taskDrafts=new Map();
+const editPanels=new Set();
+const taskSelections=new Set();
 const openTasks=new Set();
 const ANALYSIS_KEY='horizon-analysis-v1';
 let analysisState={request:{busy:false,text:'',error:false},diagnose:{busy:false,text:'',error:false}};
@@ -216,7 +221,12 @@ function taskRow(t){
  '<label class="task-setting">Agente <select data-task-agent="'+taskId+'" aria-label="Configurar agente responsável">'+
  Object.keys(AGENT_NAMES).map(id=>'<option value="'+id+'"'+(t.agent===id?' selected':'')+'>'+escapeHTML(label(id))+'</option>').join('')+'</select></label>':'')+
  (t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
- '</div>';
+ '</div>'+
+ (t.inQueue||t.status==='pausada'?'<details class="task-editor" data-editor="'+taskId+'"'+(editPanels.has(t.id)?' open':'')+'><summary>Editar solicitação e posição</summary>'+
+ '<label>Instrução original<textarea data-edit-objective="'+taskId+'" maxlength="2800">'+escapeHTML(taskDrafts.get(t.id)??String(t.description||'').replace(/^P[0-3]\\s*\\|\\s*/,''))+'</textarea></label>'+
+ '<button class="secondary" data-save-objective="'+taskId+'">Salvar instrução</button>'+
+ (t.inQueue?'<div class="task-move"><label>Posição na fila <input data-move-position="'+taskId+'" type="number" min="1" max="'+Math.max(1,(snapshot?.tasks||[]).filter(x=>x.inQueue).length)+'" value="'+(t.queuePosition||1)+'"></label>'+
+ '<button class="secondary" data-move-task="'+taskId+'">Mover para posição</button></div>':'')+'</details>':'');
  const diagnosis=t.supervision?'<section class="wait-diagnosis" aria-label="Diagnóstico do supervisor"><b>Supervisor · Situação real</b>'+
   '<p>'+escapeHTML(pendingDiagnosis||waitDescription(t.supervision.reason,t.supervision.retryReason))+'</p>'+
   (t.supervision.firstPendingTask?'<small>Primeira etapa: '+escapeHTML(t.supervision.firstPendingTask)+'</small>':'')+
@@ -233,7 +243,7 @@ function taskRow(t){
  '<div><small>Testes</small><b>'+(t.approved?'Aprovados':'Sem aprovação comprovada')+'</b></div>'+
  '<div><small>Publicação</small><b>'+(t.published?'Confirmada':'Não confirmada')+'</b></div></div></details>'+
  '<a class="linkrow" href="#historico">Abrir histórico completo →</a></div>';
- return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+(t.queuePosition?' · #'+t.queuePosition+' na fila':'')+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
+ return '<div class="task-row">'+(!PAGES_MODE&&t.status!=='arquivada'?'<input class="task-checkbox" type="checkbox" data-select-task="'+escapeHTML(t.id)+'" aria-label="Selecionar tarefa '+escapeHTML(t.id)+'"'+(taskSelections.has(t.id)?' checked':'')+'>':'')+'<div><div class="name">'+escapeHTML(t.project)+(t.queuePosition?' · #'+t.queuePosition+' na fila':'')+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
  (latest?'<div class="recent-action">'+escapeHTML(acaoEmPortugues(latest.action,latest.path))+'</div>':'')+
  (pendingDiagnosis?'<div class="pending-reason">'+escapeHTML(pendingDiagnosis)+'</div>':'')+
  (validProgress?'<div class="tiny-progress">'+progress.done+'/'+progress.total+' etapas com resultado</div>':'')+'</div>'+
@@ -298,12 +308,27 @@ function pageTarefas(){
  return heading('Tarefas','Solicitações registradas na fila e os respectivos resultados verificáveis.')+
  '<div class="searchbar"><input id="search" placeholder="Buscar por projeto ou tarefa…" aria-label="Buscar tarefas" value="'+escapeHTML(term)+'">'+
  '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="arquivada">Excluídas (recuperáveis)</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
- '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do Railway</span></div>'+listTasks(filtered);
+ '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do servidor</span></div>'+
+ (filter==='arquivada'?'':'<div class="bulk-toolbar"><label><input type="checkbox" id="select-visible" aria-label="Selecionar tarefas visíveis"> Selecionar visíveis</label>'+
+ '<span id="selected-count">'+taskSelections.size+' selecionadas</span>'+
+ '<button class="secondary" data-bulk="pause">Pausar</button><button class="secondary" data-bulk="cancel">Cancelar</button><button class="secondary" data-bulk="archive">Excluir da lista</button></div>')+
+ listTasks(filtered);
 }
 function agentRow(a){
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
  chip(a.held?'novas tarefas pausadas':a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Ver agente →</button>'+
- (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa</button><button class="secondary" data-agent-action="'+(a.held?'resume':'pause')+'" data-agent-id="'+escapeHTML(a.id)+'">'+(a.held?'Liberar novas tarefas':'Pausar novas tarefas')+'</button></div><p class="smallprint">A pausa suspende novos trabalhos. Uma etapa iniciada pode continuar.</p></div>':'')+'</div>';
+ (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa</button><button class="secondary" data-agent-action="'+(a.held?'resume':'pause')+'" data-agent-id="'+escapeHTML(a.id)+'">'+(a.held?'Liberar novas tarefas':'Pausar novas tarefas')+'</button></div>'+
+ agentConfigMarkup(a.id)+'<p class="smallprint">As configurações limitam as novas tarefas aceitas. Uma etapa iniciada pode continuar.</p></div>':'')+'</div>';
+}
+function agentConfigMarkup(id){
+ if(PAGES_MODE)return '';
+ const cfg=agentDrafts.get(id)||agentConfigs.get(id);
+ if(!cfg)return '<p class="smallprint">Carregando configurações do agente...</p>';
+ return '<form class="agent-config" data-agent-config="'+escapeHTML(id)+'">'+
+ '<label>Limite de tarefas na fila (0 = sem limite) <input type="number" min="0" max="50" name="maxPending" value="'+cfg.maxPending+'"></label>'+
+ '<label>Repositórios permitidos, separados por vírgula (vazio = todos) <textarea name="allowedRepositories" rows="2">'+escapeHTML(cfg.allowedRepositories.join(', '))+'</textarea></label>'+
+ '<label>Observações administrativas <textarea name="notes" rows="2" maxlength="240">'+escapeHTML(cfg.notes)+'</textarea></label>'+
+ '<button class="primary" type="submit">Salvar configuração do agente</button></form>';
 }
 function pageAgentes(){
  const a=snapshot?.agents||[];
@@ -478,6 +503,22 @@ function bindTaskActions(root=document){
  }));
  root.querySelectorAll('[data-task-priority]').forEach(select=>select.addEventListener('change',()=>void executeTaskAction(select.dataset.taskPriority,'priority',true,{priority:select.value})));
  root.querySelectorAll('[data-task-agent]').forEach(select=>select.addEventListener('change',()=>void executeTaskAction(select.dataset.taskAgent,'assign',true,{agent:select.value})));
+ root.querySelectorAll('[data-editor]').forEach(panel=>panel.addEventListener('toggle',()=>{if(panel.open)editPanels.add(panel.dataset.editor);else editPanels.delete(panel.dataset.editor)}));
+ root.querySelectorAll('[data-edit-objective]').forEach(field=>field.addEventListener('input',()=>taskDrafts.set(field.dataset.editObjective,field.value)));
+ root.querySelectorAll('[data-save-objective]').forEach(btn=>btn.addEventListener('click',()=>void executeTaskAction(btn.dataset.saveObjective,'edit',true,{objective:root.querySelector('[data-edit-objective="'+btn.dataset.saveObjective+'"]').value})));
+ root.querySelectorAll('[data-move-task]').forEach(btn=>btn.addEventListener('click',()=>void executeTaskAction(btn.dataset.moveTask,'move',true,{position:Number(root.querySelector('[data-move-position="'+btn.dataset.moveTask+'"]').value)})));
+ root.querySelectorAll('[data-select-task]').forEach(check=>check.addEventListener('change',()=>{if(check.checked)taskSelections.add(check.dataset.selectTask);else taskSelections.delete(check.dataset.selectTask);const count=$('selected-count');if(count)count.textContent=taskSelections.size+' selecionadas';}));
+ const all=$('select-visible');if(all)all.addEventListener('change',()=>{root.querySelectorAll('[data-select-task]').forEach(check=>{check.checked=all.checked;if(all.checked)taskSelections.add(check.dataset.selectTask);else taskSelections.delete(check.dataset.selectTask)});const count=$('selected-count');if(count)count.textContent=taskSelections.size+' selecionadas';});
+ root.querySelectorAll('[data-bulk]').forEach(btn=>btn.addEventListener('click',async()=>{
+  const ids=[...taskSelections];if(!ids.length){note('Selecione as tarefas primeiro.',true);return;}
+  const action=btn.dataset.bulk;
+  const yes=await janelaDeAcao('Aplicar ação a '+ids.length+' tarefas?',action==='archive'?'As tarefas selecionadas sairão da lista ativa e poderão ser restauradas.':'As tarefas selecionadas serão alteradas na fila do servidor.');
+  if(!yes)return;
+  btn.disabled=true;let done=0,failed=0;
+  for(const id of ids){try{await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});done++;taskSelections.delete(id);}
+   catch{failed++;}}
+  btn.disabled=false;note(done+' tarefas atualizadas; '+failed+' sem alteração.',failed>0);await refresh(true);
+ }));
  root.querySelectorAll('[data-agent-action]').forEach(btn=>btn.addEventListener('click',()=>executeAgentAction(btn.dataset.agentId,btn.dataset.agentAction)));
 }
 
@@ -487,7 +528,24 @@ function bind(){
  target.hidden=!target.hidden;if(target.hidden)openTasks.delete(el.dataset.detail);else openTasks.add(el.dataset.detail);
  el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
  }));
- document.querySelectorAll('[data-agent]').forEach(el=>el.addEventListener('click',()=>{selectedAgent=selectedAgent===el.dataset.agent?null:el.dataset.agent;render()}));
+ document.querySelectorAll('[data-agent]').forEach(el=>el.addEventListener('click',async()=>{
+ selectedAgent=selectedAgent===el.dataset.agent?null:el.dataset.agent;
+ if(selectedAgent&&!agentConfigs.has(selectedAgent))try{agentConfigs.set(selectedAgent,await api('agents/'+selectedAgent+'/config'));}
+ catch(e){note(e.message,true);}
+ render();
+ }));
+ document.querySelectorAll('[data-agent-config]').forEach(form=>form.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const id=form.dataset.agentConfig,input=new FormData(form);
+  const data={maxPending:Number(input.get('maxPending')),allowedRepositories:String(input.get('allowedRepositories')||'').split(',').map(x=>x.trim()).filter(Boolean),notes:String(input.get('notes')||'')};
+  const button=form.querySelector('button[type=submit]');button.disabled=true;
+  try{agentConfigs.set(id,await api('agents/'+id+'/config',{method:'POST',body:JSON.stringify(data)}));agentDrafts.delete(id);note('Configuração do agente salva no servidor.');}
+  catch(error){note(error.message,true);}finally{button.disabled=false;}
+ }));
+ document.querySelectorAll('[data-agent-config] textarea,[data-agent-config] input').forEach(field=>field.addEventListener('input',()=>{
+  const form=field.closest('form[data-agent-config]'),fd=new FormData(form),id=form.dataset.agentConfig;
+  agentDrafts.set(id,{maxPending:Number(fd.get('maxPending')),allowedRepositories:String(fd.get('allowedRepositories')||'').split(',').map(x=>x.trim()).filter(Boolean),notes:String(fd.get('notes')||'')});
+ }));
  const search=$('search');if(search)search.addEventListener('input',()=>{term=search.value;render();$('search')?.focus();$('search')?.setSelectionRange(term.length,term.length)});
  const dropdown=$('filter');if(dropdown){dropdown.value=filter;dropdown.addEventListener('change',async()=>{filter=dropdown.value;
   if(filter==='arquivada')try{archivedTasks=(await api('tasks/archived')).tasks||[];}
