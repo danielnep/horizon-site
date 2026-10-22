@@ -1,0 +1,25 @@
+[Unit]
+Description=Horizon Central local authenticated bridge to the VPS worker
+Wants=network-online.target
+After=network-online.target horizon-worker.service
+
+[Service]
+Type=simple
+User=horizon-worker
+Group=horizon-worker
+EnvironmentFile=/etc/horizon-central/api.env
+WorkingDirectory=/opt/horizon-maestro/source
+RuntimeDirectory=horizon-central
+RuntimeDirectoryMode=0770
+UMask=0007
+ExecStart=/usr/bin/python3 /opt/horizon-site/source/vps/central_api.py
+Restart=on-failure
+RestartSec=4
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/horizon-worker/state /run/horizon-central
+TimeoutStartSec=10
+
+[Install]
+WantedBy=multi-user.target
