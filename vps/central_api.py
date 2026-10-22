@@ -165,7 +165,7 @@ def snapshot():
     usage, latest, activity = activity_data()
     with database() as db:
         tasks = db.execute(
-            """SELECT seq,task_id,agent,project,objective,status,priority,attempts,
+            """SELECT seq,task_id,agent,project,objective,payload,status,priority,attempts,
                       max_attempts,not_before,lease_until,depends_on,result,error
                FROM tasks ORDER BY seq DESC LIMIT ?""", (BATCH,)
         ).fetchall()
@@ -201,9 +201,13 @@ def snapshot():
             if ev:
                 last = {"at": timestamp(ev["created_at"]), "agent": item["agent"],
                         "action": ev["kind"], "step": None, "path": None}
+        payload = json_or(item["payload"], {}) or {}
+        repo = payload.get("repository") if isinstance(payload, dict) else None
+        repo = repo if isinstance(repo, str) and re.fullmatch(r"danielnep/[A-Za-z0-9._-]{2,90}", repo) else ""
+        display_project = repo.split("/", 1)[1] if repo else item["project"]
         rows.append({
-            "id": tid, "project": item["project"][:90],
-            "repository": "", "title": item["objective"][:180],
+            "id": tid, "project": display_project[:90],
+            "repository": repo, "title": item["objective"][:180],
             "description": item["objective"][:2800],
             "agent": item["agent"], "priority": "P1" if item["priority"] > 0 else "P2",
             "status": visible_status, "rawStatus": status,
