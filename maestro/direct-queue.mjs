@@ -1,4 +1,4 @@
-// Railway-local durable owner inbox. GitHub is never the task transport.
+// Private durable owner inbox on the Horizon worker host. GitHub is never the task transport.
 import {randomUUID} from 'node:crypto';
 import {mkdir,open,link,unlink,readFile,readdir,lstat,appendFile,rename,utimes} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
@@ -83,18 +83,18 @@ export async function submitDirectTask(value){
    if(error.code!=='EEXIST')throw error;
    const current=await readFile(target,'utf8');
    if(current!==bytes)throw Error('task_id_ja_existe');
-   return {id,status:'aceita_previamente',transport:'railway_local',wake:'sem_duplicacao'};
+   return {id,status:'aceita_previamente',transport:'vps_local',wake:'sem_duplicacao'};
   }
   const dir=await open(join(root,'requests'),'r');
   try{await dir.sync();}finally{await dir.close();}
-  return {id,status:'aceita',transport:'railway_local',wake:'proximo_ciclo_imediato'};
+  return {id,status:'aceita',transport:'vps_local',wake:'aguardando_worker'};
  }finally{
   if(fd)await fd.close();
   await unlink(staging).catch(()=>{});
  }
 }
 // The order file is metadata, not a second request transport. The executor uses
-// it to choose the next Railway-local task; unknown IDs are discarded.
+// it to choose the next server-local task; unknown IDs are discarded.
 async function queueOrder(root){
  const names=(await readdir(join(root,'requests'))).filter(n=>n.endsWith('.json')&&ID.test(n.slice(0,-5))).map(n=>n.slice(0,-5)).sort();
  let stored=[];
@@ -184,7 +184,7 @@ export async function directTaskAction(taskId,action,options={}){
   try{const file=await lstat(path);if(file.isFile()&&!file.isSymbolicLink()){state=dir;break;}}
   catch(e){if(e.code!=='ENOENT')throw e;}
  }
- if(!state)throw Error('tarefa_nao_encontrada_no_railway');
+ if(!state)throw Error('tarefa_nao_encontrada_no_servidor');
  if(['up','down','move'].includes(action)){
   if(state!=='requests')throw Error('tarefa_fora_da_fila');
   const order=await queueOrder(root),index=order.indexOf(taskId);
