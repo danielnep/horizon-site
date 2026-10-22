@@ -66,8 +66,44 @@
 .stages-heading{font-size:12px;margin:17px 0 6px;color:var(--white)}
 .stage-reason{color:#f0ca86;font-size:11px;line-height:1.55;margin:5px 0}
 
+/* Operational queue controls: compact and touch-friendly, without decorative cards. */
+.task-controls .task-setting{display:flex;align-items:center;gap:7px;min-width:0;color:#b5c7d9;font-size:12px;font-weight:600}
+.task-controls .task-setting select{min-height:40px;max-width:190px;min-width:110px;border:1px solid #536273;border-radius:6px;background:#1c2936;color:#e5edf5;padding:0 9px;font:inherit}
+.task-controls [data-task-action="archive"]{border-color:#8d5d61;color:#ffd5d0}
+.task-controls [data-task-action="archive"]:hover{background:#482d34}
+.assist-result[role="alert"]{color:#ffb1a7}
+@media(max-width:600px){
+ .task-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .task-controls button{width:100%;min-width:0}
+ .task-controls .task-setting{grid-column:1/-1;justify-content:space-between}
+ .task-controls .task-setting select{flex:1;max-width:68%}
+}
 
-/* A ausência da conexão com os agentes NÃO é um painel vazio. */
-.central-vps-offline{padding:17px 20px;margin:12px 0 16px;border:1px solid #94684f;border-left:3px solid #f0bc68;border-radius:6px;background:#312b2b}
-.central-vps-offline strong{font-size:13px;color:#f4cb82}
-.central-vps-offline p{margin:8px 0 0;font-size:12px;line-height:1.6;color:#e3cfbf}
+/* Horizon Central / practical control workspace */
+.task-row:has(>.task-checkbox){grid-template-columns:22px minmax(0,1fr) minmax(95px,125px) auto}
+.task-row:has(>.task-checkbox)>.inline-detail{grid-column:2/-1}
+.task-checkbox{accent-color:var(--accent);width:18px;height:18px;margin:0;align-self:start;margin-top:5px;cursor:pointer}
+.bulk-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-block:1px solid var(--line);padding:10px 0;margin:8px 0}
+.bulk-toolbar label{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--white)}
+.bulk-toolbar input{accent-color:var(--accent);width:18px;height:18px}
+.bulk-toolbar #selected-count{font-size:11px;color:var(--muted);margin-right:auto}
+.bulk-toolbar button{min-height:36px;font-size:11px}
+.task-editor{border-top:1px solid var(--line);padding:12px 0;margin-top:10px}
+.task-editor>summary{font-weight:650;cursor:pointer;color:var(--white);padding:5px 0}
+.task-editor label,.agent-config label{display:grid;gap:6px;font-size:12px;color:var(--muted)}
+.task-editor textarea,.agent-config textarea,.agent-config input,.task-move input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:6px;padding:10px;background:#19232e;color:var(--white);font-family:inherit;font-size:13px;line-height:1.4}
+.task-editor textarea{min-height:100px;resize:vertical;margin:5px 0}
+.task-editor button,.agent-config button,.task-move button{min-height:40px;margin-top:8px}
+.task-move{display:flex;align-items:end;flex-wrap:wrap;gap:10px;margin-top:12px}
+.task-move label{width:155px}
+.agent-config{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:13px;margin-top:13px}
+.agent-config button{width:max-content;max-width:100%;padding-inline:16px}
+@media(max-width:700px){
+ .task-row:has(>.task-checkbox){grid-template-columns:24px minmax(0,1fr) auto}
+ .task-row:has(>.task-checkbox)>.chip{grid-column:3;grid-row:1}
+ .task-row:has(>.task-checkbox)>[data-detail]{grid-column:2/-1;justify-self:start}
+ .task-row:has(>.task-checkbox)>.inline-detail{grid-column:1/-1}
+ .bulk-toolbar{gap:8px}
+ .bulk-toolbar button{flex:1 1 31%;min-width:0}
+ .bulk-toolbar #selected-count{min-width:100px}
+}

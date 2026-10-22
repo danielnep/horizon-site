@@ -2,13 +2,17 @@ name: Horizon | Runtime regression checks
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/central-vps-unified-20261022]
     paths:
       - 'server.mjs'
       - 'maestro/embedded-postgres.mjs'
       - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'Dockerfile'
+      - 'central/**'
+      - 'maestro/direct-queue.mjs'
+      - 'maestro/mcp-server.mjs'
       - '.github/workflows/horizon-runtime-tests.yml'
   pull_request:
     branches: [main]
@@ -33,3 +37,21 @@ jobs:
           node --check maestro/embedded-postgres.mjs
       - name: Run application and supervisor regression tests
         run: npm test
+      - name: Build and smoke-test the Coolify image
+        if: github.event_name == 'pull_request' || github.ref_name == 'fix/central-vps-unified-20261022'
+        run: |
+          set -e
+          docker build --progress=plain -t horizon-central-ci:latest .
+          docker run -d --rm --name horizon-central-ci -p 127.0.0.1:33991:3000 horizon-central-ci:latest
+          trap 'docker stop horizon-central-ci >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 3 http://127.0.0.1:33991/health | grep -q '"status":"ok"'; then
+              curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:33991/central/
+              echo 'Coolify image ready: /health and /central/'
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs horizon-central-ci || true
+          echo 'Coolify image did not pass smoke test'
+          exit 1

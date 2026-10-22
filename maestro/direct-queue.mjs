@@ -1,6 +1,6 @@
-// Railway-local durable owner inbox. GitHub is never the task transport.
+// Private durable owner inbox on the Horizon worker host. GitHub is never the task transport.
 import {randomUUID} from 'node:crypto';
-import {mkdir,open,link,unlink,readFile,readdir,lstat,appendFile} from 'node:fs/promises';
+import {mkdir,open,link,unlink,readFile,readdir,lstat,appendFile,rename,utimes} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 
 const ID=/^[a-z0-9][a-z0-9-]{2,69}$/;
@@ -12,7 +12,12 @@ const AGENTS=new Set([
  'database-engineer','integration-engineer','qa-engineer','security-engineer',
  'devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona'
 ]);
-export const directRoot=()=>resolve(process.env.HORIZON_DIRECT_INBOX_DIR||'/data/horizon-direct-queue');
+export const directRoot=()=>{
+ const configured=String(process.env.HORIZON_DIRECT_INBOX_DIR||'').trim();
+ if(!configured)throw Error('vps_shared_queue_not_configured');
+ if(!configured.startsWith('/'))throw Error('vps_shared_queue_path_must_be_absolute');
+ return resolve(configured);
+};
 
 function validatePath(value,repo){
  if(typeof value!=='string'||!PATH.test(value)||value.startsWith('/')||
@@ -53,7 +58,7 @@ function validated(v){
 }
 async function ensure(){
  const root=directRoot();
- for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'agent-holds')]){
+ for(const p of [root,join(root,'requests'),join(root,'results'),join(root,'paused'),join(root,'cancelled'),join(root,'archived'),join(root,'agent-holds'),join(root,'agent-settings')]){
   await mkdir(p,{recursive:true,mode:0o700});
   const st=await lstat(p);if(!st.isDirectory()||st.isSymbolicLink())throw Error('diretorio_unsafe');
  }
@@ -64,6 +69,12 @@ export async function submitDirectTask(value){
  const root=await ensure(),id=request.task_id;
  try{await lstat(join(root,'agent-holds',request.agent+'.json'));throw Error('agente_tem_novas_tarefas_pausadas');}
  catch(e){if(e.code!=='ENOENT')throw e;}
+ const settings=await agentSettings(request.agent);
+ if(settings.allowedRepositories.length&&!settings.allowedRepositories.includes(request.repository))throw Error('agente_nao_habilitado_no_projeto');
+ if(settings.maxPending>0){
+  const existing=(await directTasks()).filter(x=>x.inQueue&&x.agent===request.agent);
+  if(existing.length>=settings.maxPending)throw Error('limite_da_fila_do_agente');
+ }
  const target=join(root,'requests',id+'.json');
  const bytes=JSON.stringify(request,null,2)+'\n';
  if(Buffer.byteLength(bytes)>65536)throw Error('tarefa_grande_demais');
@@ -77,19 +88,44 @@ export async function submitDirectTask(value){
    if(error.code!=='EEXIST')throw error;
    const current=await readFile(target,'utf8');
    if(current!==bytes)throw Error('task_id_ja_existe');
-   return {id,status:'aceita_previamente',transport:'railway_local',wake:'sem_duplicacao'};
+   return {id,status:'aceita_previamente',transport:'vps_local',wake:'sem_duplicacao'};
   }
   const dir=await open(join(root,'requests'),'r');
   try{await dir.sync();}finally{await dir.close();}
-  return {id,status:'aceita',transport:'railway_local',wake:'proximo_ciclo_imediato'};
+  return {id,status:'aceita',transport:'vps_local',wake:'aguardando_worker'};
  }finally{
   if(fd)await fd.close();
   await unlink(staging).catch(()=>{});
  }
 }
-export async function directTasks(){
+// The order file is metadata, not a second request transport. The executor uses
+// it to choose the next server-local task; unknown IDs are discarded.
+async function queueOrder(root){
+ const names=(await readdir(join(root,'requests'))).filter(n=>n.endsWith('.json')&&ID.test(n.slice(0,-5))).map(n=>n.slice(0,-5)).sort();
+ let stored=[];
+ try{
+  const data=JSON.parse(await readFile(join(root,'queue-order.json'),'utf8'));
+  if(Array.isArray(data)&&data.length<=160)stored=data.filter(id=>typeof id==='string'&&ID.test(id));
+ }catch(e){if(e.code!=='ENOENT')throw Error('ordem_da_fila_invalida');}
+ const eligible=new Set(names);
+ return [...new Set([...stored.filter(id=>eligible.has(id)),...names])];
+}
+async function saveQueueOrder(root,ids){
+ const staging=join(root,'.queue-order-'+randomUUID()+'.tmp');
+ const fd=await open(staging,'wx',0o600);
+ try{await fd.writeFile(JSON.stringify(ids)+'\n');await fd.sync();}
+ finally{await fd.close();}
+ try{await rename(staging,join(root,'queue-order.json'));}
+ finally{await unlink(staging).catch(()=>{});}
+}
+async function audit(root,taskId,action,detail={}){
+ await appendFile(join(root,'control-actions.jsonl'),JSON.stringify({taskId,action,at:new Date().toISOString(),...detail})+'\n',{mode:0o600});
+}
+export async function directTasks({includeArchived=false}={}){
+
  const root=await ensure();
- const groups=await Promise.all(['requests','paused','cancelled'].map(async state=>({state,names:await readdir(join(root,state))})));
+ const order=await queueOrder(root),positions=new Map(order.map((id,index)=>[id,index]));
+ const groups=await Promise.all(['requests','paused','cancelled',...(includeArchived?['archived']:[])].map(async state=>({state,names:await readdir(join(root,state))})));
  if(groups.reduce((n,x)=>n+x.names.length,0)>160)throw Error('fila_oversized');
  const tasks=[];
  for(const group of groups){
@@ -115,8 +151,8 @@ export async function directTasks(){
     /fail|error|block|reject/.test(rawStatus)?'bloqueada':
     /running|in_progress/.test(rawStatus)?'em execução':waiting?'aguardando':'na fila';
   tasks.push({id:task.task_id,project:task.project,repository:task.repository,
-   agent:task.agent,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
-   status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':status,
+   agent:task.agent,priority:/^P[0-3]\b/.exec(String(task.objective))?.[0]||'P2',queuePosition:positions.has(task.task_id)?positions.get(task.task_id)+1:null,title:String(task.objective).slice(0,120),description:String(task.objective).slice(0,2800),inQueue:group.state==='requests',
+   status:group.state==='paused'?'pausada':group.state==='cancelled'?'cancelada':group.state==='archived'?'arquivada':status,
    rawStatus,hasResult:!!outcome,
    stages:stages.map(x=>({taskId:x.task_id||null,agent:x.agent,state:x.status,
     summary:x.summary||null,blocker:x.blocker||null,
@@ -139,21 +175,67 @@ export async function directTasks(){
      verified:stages.filter(x=>x.quality?.approved===true).length}:null});
  }
  }
- return tasks;
+ return tasks.sort((a,b)=>a.inQueue&&b.inQueue?(a.queuePosition??999)-(b.queuePosition??999):a.inQueue?-1:b.inQueue?1:0);
 }
 
-export async function directTaskAction(taskId,action){
- if(!ID.test(taskId)||!['pause','cancel','resume'].includes(action))throw Error('comando_invalido');
+export async function directTaskAction(taskId,action,options={}){
+
+ if(!ID.test(taskId)||!['pause','cancel','resume','archive','restore','up','down','move','assign','priority','edit'].includes(action))throw Error('comando_invalido');
  const root=await ensure();
  const name=taskId+'.json';
  let state;
- for(const dir of ['requests','paused','cancelled']){
+ for(const dir of ['requests','paused','cancelled','archived']){
   const path=join(root,dir,name);
   try{const file=await lstat(path);if(file.isFile()&&!file.isSymbolicLink()){state=dir;break;}}
   catch(e){if(e.code!=='ENOENT')throw e;}
  }
- if(!state)throw Error('tarefa_nao_encontrada_no_railway');
- const target=action==='pause'?'paused':action==='cancel'?'cancelled':'requests';
+ if(!state)throw Error('tarefa_nao_encontrada_no_servidor');
+ if(['up','down','move'].includes(action)){
+  if(state!=='requests')throw Error('tarefa_fora_da_fila');
+  const order=await queueOrder(root),index=order.indexOf(taskId);
+  const next=action==='move'?Number(options.position)-1:index+(action==='up'?-1:1);
+  if(action==='move'&&(!Number.isInteger(next)||next<0||next>=order.length))throw Error('posicao_invalida');
+  if(index<0||next<0||next>=order.length)return {id:taskId,status:'na fila',already:true};
+  if(action==='move'){order.splice(index,1);order.splice(next,0,taskId);}
+  else [order[index],order[next]]=[order[next],order[index]];
+  await saveQueueOrder(root,order);
+  // Wake the current worker even if only the order metadata changed.
+  const now=new Date();await utimes(join(root,'requests',name),now,now);
+  await audit(root,taskId,action,{position:next+1});
+  return {id:taskId,status:'na fila',queuePosition:next+1,note:'Ordem de execução atualizada na fila do servidor.'};
+ }
+ if(['assign','priority','edit'].includes(action)){
+  if(state!=='requests'&&state!=='paused')throw Error('tarefa_nao_editavel');
+  try{await lstat(join(root,'results',name));throw Error('tarefa_ja_iniciada');}
+  catch(e){if(e.code!=='ENOENT')throw e;}
+  const path=join(root,state,name),input=JSON.parse(await readFile(path,'utf8'));
+  if(action==='assign'){
+   if(!AGENTS.has(options.agent))throw Error('agente_invalido');
+   try{await lstat(join(root,'agent-holds',options.agent+'.json'));throw Error('agente_pausado');}
+   catch(e){if(e.code!=='ENOENT')throw e;}
+   input.agent=options.agent;
+  }else if(action==='edit'){
+   const objective=String(options.objective||'').trim();
+   if(objective.length<12||objective.length>2800)throw Error('objetivo_invalido');
+   const prefix=/^P[0-3]\s*\|\s*/.exec(String(input.objective))?.[0]||'P2 | ';
+   input.objective=prefix+objective.replace(/^P[0-3]\s*\|\s*/,'');
+  }else{
+   if(!/^P[0-3]$/.test(options.priority||''))throw Error('prioridade_invalida');
+   input.objective=options.priority+' | '+String(input.objective).replace(/^P[0-3]\s*\|\s*/,'');
+  }
+  const staging=join(root,state,'.'+taskId+'.'+randomUUID()+'.tmp');
+  const fd=await open(staging,'wx',0o600);
+  try{await fd.writeFile(JSON.stringify(input,null,2)+'\n');await fd.sync();}
+  finally{await fd.close();}
+  try{await rename(staging,path);}
+  finally{await unlink(staging).catch(()=>{});}
+  await audit(root,taskId,action,{value:action==='assign'?input.agent:action==='edit'?'updated':options.priority});
+  return {id:taskId,status:state==='requests'?'na fila':'pausada',note:'Alteração registrada na solicitação durável.'};
+ }
+ const target=action==='pause'?'paused':action==='cancel'?'cancelled':action==='archive'?'archived':action==='restore'?'paused':'requests';
+ if(action==='archive'&&state==='archived')return {id:taskId,status:'arquivada',already:true};
+ if(action==='restore'&&state!=='archived')throw Error('tarefa_nao_arquivada');
+ if(state==='archived'&&action!=='restore')throw Error('tarefa_arquivada');
  if(action==='resume'&&state==='requests')throw Error('tarefa_ja_esta_na_fila');
  if(action==='pause'&&state!=='requests')throw Error('so_pode_pausar_uma_tarefa_na_fila');
  if(action==='resume'&&state!=='paused'&&state!=='cancelled')throw Error('tarefa_nao_estava_suspensa');
@@ -163,12 +245,42 @@ export async function directTaskAction(taskId,action){
  catch(e){if(e.code==='EEXIST')throw Error('tarefa_duplicada_no_destino');throw e;}
  try{await unlink(sourcePath);}
  catch(e){await unlink(targetPath).catch(()=>{});throw e;}
- await appendFile(join(root,'control-actions.jsonl'),JSON.stringify({taskId,action,at:new Date().toISOString(),
-  note:'Comando aplicado à fila local; não interrompe processos já carregados pelo executor.'})+'\n',{mode:0o600});
- return {id:taskId,status:target==='requests'?'na fila':target==='paused'?'pausada':'cancelada',
-  note:'Aplicado na fila do Railway. Se o agente já estava executando, essa etapa pode continuar até encerrar.'};
+ await audit(root,taskId,action,{note:'Comando aplicado à fila local; não interrompe processos já carregados pelo executor.'});
+ return {id:taskId,status:target==='requests'?'na fila':target==='paused'?'pausada':target==='archived'?'arquivada':'cancelada',
+  note:'Aplicado na fila do servidor. Se o agente já estava executando, essa etapa pode continuar até encerrar.'};
 }
 
+
+export async function agentSettings(agent){
+ if(!AGENTS.has(agent))throw Error('agente_invalido');
+ const root=await ensure();
+ try{
+  const value=JSON.parse(await readFile(join(root,'agent-settings',agent+'.json'),'utf8'));
+  return validateAgentSettings(value);
+ }catch(e){if(e.code==='ENOENT')return {maxPending:0,allowedRepositories:[],notes:''};throw e;}
+}
+function validateAgentSettings(data){
+ const maxPending=data?.maxPending??0,allowedRepositories=data?.allowedRepositories??[],notes=data?.notes??'';
+ if(!Number.isInteger(maxPending)||maxPending<0||maxPending>50||
+  !Array.isArray(allowedRepositories)||allowedRepositories.length>20||
+  allowedRepositories.some(x=>typeof x!=='string'||!REPO.test(x))||
+  new Set(allowedRepositories).size!==allowedRepositories.length||
+  typeof notes!=='string'||notes.length>240)throw Error('configuracao_invalida');
+ return {maxPending,allowedRepositories,notes:notes.trim()};
+}
+export async function setAgentSettings(agent,data){
+ if(!AGENTS.has(agent))throw Error('agente_invalido');
+ const root=await ensure(),config=validateAgentSettings(data);
+ const destination=join(root,'agent-settings',agent+'.json');
+ const temp=destination+'.'+randomUUID()+'.tmp';
+ const fd=await open(temp,'wx',0o600);
+ try{await fd.writeFile(JSON.stringify(config)+'\n');await fd.sync();}
+ finally{await fd.close();}
+ try{await rename(temp,destination);}
+ finally{await unlink(temp).catch(()=>{});}
+ await audit(root,agent,'config',{maxPending:config.maxPending,allowedRepositories:config.allowedRepositories});
+ return {agent,...config};
+}
 
 export async function agentHolds(){
  const root=await ensure(),names=await readdir(join(root,'agent-holds'));
@@ -176,28 +288,35 @@ export async function agentHolds(){
 }
 export async function directAgentAction(agent,action){
  if(!AGENTS.has(agent)||!['pause','resume'].includes(action))throw Error('comando_invalido');
- const root=await ensure();
- const file=join(root,'agent-holds',agent+'.json');
- if(action==='pause'){
-  try{
-   const fd=await open(file,'wx',0o600);
-   try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString()})+'\n');await fd.sync();}
-   finally{await fd.close();}
-  }catch(e){if(e.code!=='EEXIST')throw e;}
- }else{
-  await unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});
- }
+ const root=await ensure(),file=join(root,'agent-holds',agent+'.json');
+ let previous=null;
+ try{previous=JSON.parse(await readFile(file,'utf8'));}
+ catch(e){if(e.code!=='ENOENT')throw e;}
+ if(action==='pause'&&previous)return {agent,status:'novas tarefas suspensas',affected:0,already:true};
  const tasks=await directTasks();
- let moved=0;
+ if(action==='pause'){
+  const fd=await open(file,'wx',0o600);
+  try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString(),autoPaused:[]})+'\n');await fd.sync();}
+  finally{await fd.close();}
+ }
+ const resumed=Array.isArray(previous?.autoPaused)?new Set(previous.autoPaused):new Set();
+ let moved=0,autoPaused=[];
  for(const t of tasks){
   if(t.agent!==agent)continue;
   if(action==='pause'&&!t.inQueue)continue;
-  if(action==='resume'&&t.status!=='pausada')continue;
-  try{await directTaskAction(t.id,action==='pause'?'pause':'resume');moved++;}
+  if(action==='resume'&&!(t.status==='pausada'&&resumed.has(t.id)))continue;
+  try{await directTaskAction(t.id,action==='pause'?'pause':'resume');moved++;if(action==='pause')autoPaused.push(t.id);}
   catch(e){if(!/ja_esta|nao_estava|so_pode/.test(e.message))throw e;}
  }
+ if(action==='pause'){
+  const temp=file+'.'+randomUUID()+'.tmp';
+  const fd=await open(temp,'wx',0o600);
+  try{await fd.writeFile(JSON.stringify({agent,pausedAt:new Date().toISOString(),autoPaused})+'\n');await fd.sync();}
+  finally{await fd.close();}
+  try{await rename(temp,file);}finally{await unlink(temp).catch(()=>{});}
+ }else await unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});
  return {agent,status:action==='pause'?'novas tarefas suspensas':'novas tarefas liberadas',
-  affected:moved,note:'Este comando controla novas tarefas no Railway. Um processamento já iniciado pode continuar até terminar.'};
+  affected:moved,note:'Ações pendentes atualizadas. Tarefas pausadas manualmente permanecem pausadas.'};
 }
 
 export async function directStatus(taskId){

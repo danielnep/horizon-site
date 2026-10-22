@@ -68,35 +68,37 @@ test('login requires same-origin, issues HttpOnly session and protects write com
  });
 });
 
-test('Central não grava solicitações no armazenamento antigo sem acesso à VPS',async()=>{
- const root=await mkdtemp(join(tmpdir(),'horizon-central-old-'));
- const prior=process.env.HORIZON_DIRECT_INBOX_DIR;
- const priorUrl=process.env.HORIZON_VPS_API_URL,priorToken=process.env.HORIZON_VPS_API_TOKEN;
+test('central envia direto ao Maestro na VPS, sem gravar solicitações no GitHub',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'horizon-central-'));
+ const previous=process.env.HORIZON_DIRECT_INBOX_DIR;
  process.env.HORIZON_DIRECT_INBOX_DIR=root;
- delete process.env.HORIZON_VPS_API_URL;delete process.env.HORIZON_VPS_API_TOKEN;
  try{
-  await withServer(async({url,origin})=>{
-   const login=await fetch(url+'/central/api/login',{method:'POST',
-    headers:{origin,'content-type':'application/json'},
-    body:JSON.stringify({password:'local-test-only-strong-secret-value'})});
-   const cookie=login.headers.get('set-cookie').split(';')[0];
-   const task={project:'romaneio-digital',repository:'danielnep/romaneio-digital',
-    objective:'Melhorar a interface sem alterar o comportamento anterior',agent:'may-maestro',
-    priority:'P2',public_data_confirmed:true,delivery_type:'existing_product',
-    allowed_paths:['css/style.css','index.html']};
-   const res=await fetch(url+'/central/api/tasks',{method:'POST',
-    headers:{origin,cookie,'content-type':'application/json'},body:JSON.stringify(task)});
-   assert.notEqual(res.status,201);
-   const queuePath=join(root,'requests');
-   await assert.rejects(()=>readFile(join(queuePath,'ctl-123.json'),'utf8'));
-   const overview=await fetch(url+'/central/api/overview').then(x=>x.json());
-   assert.equal(overview.available.vps,false);
-   assert.equal(overview.tasks.length,0);
-  });
+ await withServer(async({url,origin})=>{
+  const login=await fetch(url+'/central/api/login',{method:'POST',
+   headers:{origin,'content-type':'application/json'},
+   body:JSON.stringify({password:'local-test-only-strong-secret-value'})});
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const headers={origin,cookie,'content-type':'application/json'};
+  const task={project:'romaneio-digital',repository:'danielnep/romaneio-digital',
+   objective:'Melhorar a UI e as animações sem alterar navegação e regras',
+   agent:'may-maestro',priority:'P2',public_data_confirmed:true,
+   delivery_type:'existing_product',allowed_paths:['css/style.css','index.html']};
+  const response=await fetch(url+'/central/api/tasks',
+   {method:'POST',headers,body:JSON.stringify(task)});
+  assert.equal(response.status,201);
+  const out=await response.json();
+  assert.equal(out.transport,'vps_local');
+  const body=JSON.parse(await readFile(join(root,'requests',out.id+'.json'),'utf8'));
+  assert.equal(body.repository,task.repository);
+  assert.deepEqual(body.payload.allowed_paths,task.allowed_paths);
+  const tasks=await fetch(url+'/central/api/tasks',{headers:{cookie}});
+  assert.equal(tasks.status,200);
+  const state=await tasks.json();
+  assert.ok(state.tasks.some(x=>x.id===out.id));
+ });
  }finally{
-  if(prior===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;else process.env.HORIZON_DIRECT_INBOX_DIR=prior;
-  if(priorUrl===undefined)delete process.env.HORIZON_VPS_API_URL;else process.env.HORIZON_VPS_API_URL=priorUrl;
-  if(priorToken===undefined)delete process.env.HORIZON_VPS_API_TOKEN;else process.env.HORIZON_VPS_API_TOKEN=priorToken;
+  if(previous===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;
+  else process.env.HORIZON_DIRECT_INBOX_DIR=previous;
   await rm(root,{recursive:true,force:true});
  }
 });
@@ -136,6 +138,8 @@ test('SSE immediately streams actual worker state, never needs an AI call',async
   assert.match(found,/"event":"cycle"/);
   assert.match(found,/"rc":"0"/);
   const overview=await (await fetch(url+'/central/api/overview')).json();
+  // SSE may report local process events; without an authenticated VPS source, overview stays offline.
+  assert.equal(overview.available.vps,false);
   assert.equal(overview.worker.status,'Sem ligação com a VPS');
   abort.abort();
   await reader.cancel().catch(()=>{});
@@ -221,11 +225,9 @@ test('supervisor wait and dependency proof appear in real task API',async()=>{
   await withServer(async({url})=>{
    const res=await fetch(url+'/central/api/tasks');
    assert.equal(res.status,200);
-   const state=await res.json();
-   assert.equal(state.tasks.find(x=>x.id===id),undefined);
-   assert.equal(state.tasks.length,0);
-   const overview=await fetch(url+'/central/api/overview').then(x=>x.json());
-   assert.equal(overview.available.vps,false);
+   const task=(await res.json()).tasks.find(x=>x.id===id);
+   assert.equal(task.supervision.retryReason,'groq_capacity_wait');
+   assert.equal(task.stages[2].waitReason,'waiting_for_dependencies');
    const ui=await (await fetch(url+'/central/app.js')).text();
    assert.match(ui,/function waitDescription/);
    assert.match(ui,/Primeira etapa:/);
@@ -321,14 +323,14 @@ test('tokens from two real provider receipt shapes are counted by agent and mode
  }
 });
 test('chat answers common questions with algorithms without model calls',async()=>{
- const view={available:{vps:true},agents:[],tasks:[{id:'ctl-1',inQueue:true}],usage:{available:true,days:7,total:480,calls:4}};
+ const view={agents:[],tasks:[{id:'ctl-1',inQueue:true}],usage:{available:true,days:7,total:480,calls:4}};
  assert.match(quickAnswer('quantos agentes existem?',view),/17 especialistas/);
  assert.match(quickAnswer('quantos tokens consumimos?',view),/480/);
  assert.match(quickAnswer('quantas tarefas na fila?',view),/1 tarefas/);
  assert.equal(quickAnswer('O que é esta função pouco comum?',view),null);
  const context=conciseProjectFacts({...view,at:'2026-10-21T00:00:00Z'},'quantos agentes');
  assert.equal(context.numeroTarefas,1);
- assert.equal(context.fonte,'Central Horizon, dados comprovados da VPS');
+ assert.equal(context.fonte,'Central Horizon, fila local do servidor');
 });
 test('help chat uses simple Portuguese and is available without secret access',async()=>{
  await withServer(async({url,origin})=>{
@@ -337,7 +339,7 @@ test('help chat uses simple Portuguese and is available without secret access',a
    body:JSON.stringify({message:'quantos agentes temos?'})});
   assert.equal(response.status,200);
   const body=await response.json();
-  assert.match(body.response,/conexão com a VPS ainda não foi estabelecida/);
+  assert.match(body.response,/17 especialistas/);
   assert.equal(body.usage.total,0);
   const html=await fetch(url+'/central/').then(x=>x.text());
   assert.match(html,/id="help-panel"/);

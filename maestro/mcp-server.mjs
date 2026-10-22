@@ -30,8 +30,8 @@ const submitInput={type:'object',properties:{
  additionalProperties:false};
 const TOOLS=Object.freeze([
  {name:'horizon_list_agents',description:'Retorna os 17 agentes do executor Horizon com nomes verificaveis. Nao inicia agentes.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}},
- {name:'horizon_task_status',description:'Consulta recebimento e resultados da fila interna Railway, sem consultar GitHub.',inputSchema:taskIdInput,annotations:{readOnlyHint:true,openWorldHint:false}},
- {name:'horizon_submit_task',description:'Entrega ao Maestro no Railway em fila local duravel, imediatamente e sem GitHub Actions. Nao confunde aceite com conclusao.',inputSchema:submitInput,annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
+ {name:'horizon_task_status',description:'Consulta recebimento e resultados da fila interna da VPS Horizon, sem consultar GitHub.',inputSchema:taskIdInput,annotations:{readOnlyHint:true,openWorldHint:false}},
+ {name:'horizon_submit_task',description:'Entrega ao Maestro na VPS em fila local persistente, sem GitHub Actions. Nao confunde aceite com conclusao.',inputSchema:submitInput,annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
  {name:'horizon_sync_status',description:'Consulta politica de sincronizacao agentes↔plugins no repositorio publico, sem fazer publicacao.',inputSchema:agentInput,annotations:{readOnlyHint:true,openWorldHint:false}}
 ]);
 function safeEqual(a,b){if(typeof a!=='string'||typeof b!=='string'||!a||!b)return false;const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length && timingSafeEqual(x,y);}
@@ -84,7 +84,7 @@ export async function handleHorizonMcp(req,res,{fetcher=fetch,token=process.env.
   if(id===null&&input.method==='notifications/initialized'){res.writeHead(202);res.end();return;}
   let output;
   try{
-    if(input.method==='initialize')output=result(id,{protocolVersion:VERSION,capabilities:{tools:{listChanged:false}},serverInfo:{name:'horizon-agents',version:'1.0.0'},instructions:'Ferramentas dos 17 especialistas. Envie solicitações diretamente ao Maestro no Railway; tarefas e resultados ficam no volume privativo. Aceite não significa conclusão.'});
+    if(input.method==='initialize')output=result(id,{protocolVersion:VERSION,capabilities:{tools:{listChanged:false}},serverInfo:{name:'horizon-agents',version:'1.0.0'},instructions:'Ferramentas dos 17 especialistas. Envie solicitações diretamente ao Maestro na VPS; tarefas e resultados ficam em armazenamento privado. Aceite não significa conclusão.'});
     else if(input.method==='ping')output=result(id,{});
     else if(input.method==='tools/list')output=result(id,{tools:TOOLS});
     else if(input.method==='tools/call'){
