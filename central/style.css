@@ -203,6 +203,7 @@
   }
   .task-detail{min-width:0;grid-template-columns:minmax(0,1fr);gap:12px;padding-bottom:18px}
   .task-detail>*{grid-column:1;min-width:0}
+  .task-row .task-detail>.linkrow{grid-column:1;grid-row:auto;justify-self:start}
   .task-detail .live-operation{margin-top:0}
   .task-actions-disclosure{margin:2px 0 6px}
   .task-actions-disclosure>summary{min-height:48px;border-bottom:1px solid var(--line)}
