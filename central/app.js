@@ -202,10 +202,21 @@ function taskRow(t){
    '</div></div>';
   }).join('')+'</div>':
   '<p class="smallprint">Não há detalhes de etapas anteriores registrados.</p>';
- const controls=PAGES_MODE?'':t.inQueue?
- '<div class="task-controls"><button class="secondary" data-task-action="pause" data-task-id="'+escapeHTML(t.id)+'">Pausar</button>'+
- '<button class="secondary" data-task-action="cancel" data-task-id="'+escapeHTML(t.id)+'">Cancelar tarefa</button></div>':
- /pausada|cancelada/.test(t.status)?'<div class="task-controls"><button class="secondary" data-task-action="resume" data-task-id="'+escapeHTML(t.id)+'">Devolver para a fila</button></div>':'';
+ const taskId=escapeHTML(t.id);
+ const controls=PAGES_MODE?'':t.status==='arquivada'?
+ '<div class="task-controls"><button class="secondary" data-task-action="restore" data-task-id="'+taskId+'">Restaurar como pausada</button></div>':
+ '<div class="task-controls">'+(t.inQueue?
+ '<button class="secondary" data-task-action="up" data-task-id="'+taskId+'" title="Adiantar na ordem de execução">↑ Subir</button>'+
+ '<button class="secondary" data-task-action="down" data-task-id="'+taskId+'" title="Atrasar na ordem de execução">↓ Descer</button>'+
+ '<button class="secondary" data-task-action="pause" data-task-id="'+taskId+'">Pausar</button>':
+ /pausada|cancelada/.test(t.status)?'<button class="secondary" data-task-action="resume" data-task-id="'+taskId+'">Devolver à fila</button>':'')+
+ (t.inQueue||t.status==='pausada'?
+ '<label class="task-setting">Prioridade <select data-task-priority="'+taskId+'" aria-label="Alterar prioridade da tarefa">'+
+ ['P0','P1','P2','P3'].map(p=>'<option value="'+p+'"'+(t.priority===p?' selected':'')+'>'+({P0:'Urgente',P1:'Alta',P2:'Normal',P3:'Baixa'}[p])+'</option>').join('')+'</select></label>'+
+ '<label class="task-setting">Agente <select data-task-agent="'+taskId+'" aria-label="Configurar agente responsável">'+
+ Object.keys(AGENT_NAMES).map(id=>'<option value="'+id+'"'+(t.agent===id?' selected':'')+'>'+escapeHTML(label(id))+'</option>').join('')+'</select></label>':'')+
+ (t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
+ '</div>';
  const diagnosis=t.supervision?'<section class="wait-diagnosis" aria-label="Diagnóstico do supervisor"><b>Supervisor · Situação real</b>'+
   '<p>'+escapeHTML(pendingDiagnosis||waitDescription(t.supervision.reason,t.supervision.retryReason))+'</p>'+
   (t.supervision.firstPendingTask?'<small>Primeira etapa: '+escapeHTML(t.supervision.firstPendingTask)+'</small>':'')+
@@ -222,7 +233,7 @@ function taskRow(t){
  '<div><small>Testes</small><b>'+(t.approved?'Aprovados':'Sem aprovação comprovada')+'</b></div>'+
  '<div><small>Publicação</small><b>'+(t.published?'Confirmada':'Não confirmada')+'</b></div></div></details>'+
  '<a class="linkrow" href="#historico">Abrir histórico completo →</a></div>';
- return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
+ return '<div class="task-row"><div><div class="name">'+escapeHTML(t.project)+(t.queuePosition?' · #'+t.queuePosition+' na fila':'')+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
  (latest?'<div class="recent-action">'+escapeHTML(acaoEmPortugues(latest.action,latest.path))+'</div>':'')+
  (pendingDiagnosis?'<div class="pending-reason">'+escapeHTML(pendingDiagnosis)+'</div>':'')+
  (validProgress?'<div class="tiny-progress">'+progress.done+'/'+progress.total+' etapas com resultado</div>':'')+'</div>'+
@@ -282,11 +293,11 @@ function pageInicio(){
  '<section id="live-overview" aria-label="Situação atual da equipe">'+overviewMarkup()+'</section>';
 }
 function pageTarefas(){
- const tasks=snapshot?.tasks||[];const text=term.toLocaleLowerCase('pt-BR');
+ const tasks=filter==='arquivada'?archivedTasks:(snapshot?.tasks||[]);const text=term.toLocaleLowerCase('pt-BR');
  const filtered=tasks.filter(t=>(filter==='todos'||(filter==='fora'?!t.inQueue:t.status===filter))&&(!text||[t.project,t.id,t.title,t.agent].join(' ').toLocaleLowerCase('pt-BR').includes(text)));
  return heading('Tarefas','Solicitações registradas na fila e os respectivos resultados verificáveis.')+
  '<div class="searchbar"><input id="search" placeholder="Buscar por projeto ou tarefa…" aria-label="Buscar tarefas" value="'+escapeHTML(term)+'">'+
- '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
+ '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="arquivada">Excluídas (recuperáveis)</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
  '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do Railway</span></div>'+listTasks(filtered);
 }
 function agentRow(a){
@@ -397,7 +408,12 @@ function render(){
  if(renderedPage==='estudio')stopStudio();
  const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
- renderedPage=page;bind();if(page==='estudio')mountStudio({repositories:repoList,onProjectChange:repository=>{
+ renderedPage=page;bind();repaintAnalysis();
+ for(const id of openTasks){
+  const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
+  if(detail&&trigger){detail.hidden=false;trigger.setAttribute('aria-expanded','true');trigger.textContent='Recolher ▴';}
+ }
+ if(page==='estudio')mountStudio({repositories:repoList,onProjectChange:repository=>{
  selectedRepository=repository;const selector=$('project');if(selector&&[...selector.options].some(o=>o.value===repository))selector.value=repository;
  }});updateConn();
 }
@@ -441,41 +457,47 @@ async function executeAgentAction(id,action,skipConfirm=false){
   else note(e.message,true);
  }
 }
-async function executeTaskAction(id,action,skipConfirm=false){
- if(!skipConfirm&&!await janelaDeAcao(action==='cancel'?'Cancelar esta tarefa?':action==='pause'?'Pausar esta tarefa?':'Devolver para a fila?',action==='cancel'?'Ela sairá da fila de execução, mas seu histórico será guardado. Se um agente já tiver iniciado a etapa, a conclusão dessa execução não poderá ser interrompida por este comando.':action==='pause'?'A tarefa ficará suspensa e poderá ser retomada depois. Se o trabalho já começou, a etapa atual pode continuar.':'A tarefa voltará para a fila. Ela será assumida pelo executor conforme a disponibilidade, sem garantia de início imediato.'))return;
+async function executeTaskAction(id,action,skipConfirm=false,settings={}){
+ if(!skipConfirm&&!await janelaDeAcao(action==='archive'?'Excluir esta tarefa da lista?':action==='cancel'?'Cancelar esta tarefa?':action==='pause'?'Pausar esta tarefa?':'Devolver para a fila?',action==='archive'?'A tarefa será retirada da fila e colocada em Excluídas, preservando resultados e recuperação. Uma etapa já carregada pelo executor pode terminar.':action==='cancel'?'Ela sairá da fila de execução, mas seu histórico será guardado. Se um agente já tiver iniciado a etapa, a conclusão dessa execução não poderá ser interrompida por este comando.':action==='pause'?'A tarefa ficará suspensa e poderá ser retomada depois. Se o trabalho já começou, a etapa atual pode continuar.':'A tarefa voltará para a fila. Ela será assumida pelo executor conforme a disponibilidade, sem garantia de início imediato.'))return;
  try{
-  const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
+  const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action,...settings})});
   note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
+  if(filter==='arquivada')archivedTasks=(await api('tasks/archived')).tasks||[];
   await refresh(true);
  }catch(e){
   if(e.message.includes('autorização')||e.message.includes('autorizacao')){
-   pendingCommand={id,action,type:'task'};
+   pendingCommand={id,action,type:'task',settings};
    note('Para controlar execuções, autorize o dispositivo uma vez.',true);
   }else note(e.message,true);
  }
 }
 function bindTaskActions(root=document){
- root.querySelectorAll('[data-task-action]').forEach(btn=>btn.addEventListener('click',()=>executeTaskAction(btn.dataset.taskId,btn.dataset.taskAction)));
+ root.querySelectorAll('[data-task-action]').forEach(btn=>btn.addEventListener('click',()=>{
+  const action=btn.dataset.taskAction;
+  void executeTaskAction(btn.dataset.taskId,action,['up','down','restore'].includes(action));
+ }));
+ root.querySelectorAll('[data-task-priority]').forEach(select=>select.addEventListener('change',()=>void executeTaskAction(select.dataset.taskPriority,'priority',true,{priority:select.value})));
+ root.querySelectorAll('[data-task-agent]').forEach(select=>select.addEventListener('change',()=>void executeTaskAction(select.dataset.taskAgent,'assign',true,{agent:select.value})));
  root.querySelectorAll('[data-agent-action]').forEach(btn=>btn.addEventListener('click',()=>executeAgentAction(btn.dataset.agentId,btn.dataset.agentAction)));
 }
 
 function bind(){
  document.querySelectorAll('[data-detail]').forEach(el=>el.addEventListener('click',()=>{
  const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
- target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
+ target.hidden=!target.hidden;if(target.hidden)openTasks.delete(el.dataset.detail);else openTasks.add(el.dataset.detail);
+ el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
  }));
  document.querySelectorAll('[data-agent]').forEach(el=>el.addEventListener('click',()=>{selectedAgent=selectedAgent===el.dataset.agent?null:el.dataset.agent;render()}));
  const search=$('search');if(search)search.addEventListener('input',()=>{term=search.value;render();$('search')?.focus();$('search')?.setSelectionRange(term.length,term.length)});
- const dropdown=$('filter');if(dropdown){dropdown.value=filter;dropdown.addEventListener('change',()=>{filter=dropdown.value;render()});}
+ const dropdown=$('filter');if(dropdown){dropdown.value=filter;dropdown.addEventListener('change',async()=>{filter=dropdown.value;
+  if(filter==='arquivada')try{archivedTasks=(await api('tasks/archived')).tasks||[];}
+  catch(e){note('Entre como administrador para consultar as tarefas excluídas.',true);filter='todos';}
+  render();
+ });}
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
  document.querySelectorAll('[data-assign-agent]').forEach(btn=>btn.addEventListener('click',()=>{selectedAgentId=btn.dataset.assignAgent;location.hash='#inicio';render();$('objective')?.focus();}));
  bindTaskActions(document);
- const diagnosis=$('diagnose-ai');if(diagnosis)diagnosis.addEventListener('click',async()=>{
-  diagnosis.disabled=true;diagnosis.textContent='Analisando...';
-  try{const out=await api('ai/diagnose',{method:'POST',body:'{}'});
-   const target=$('diagnosis-result');target.hidden=false;target.textContent=out.response||'Sem conclusão do provedor.';
-  }catch(e){note(e.message,true);}finally{diagnosis.disabled=false;diagnosis.textContent='Investigar com IA';}
- });
+ const diagnosis=$('diagnose-ai');if(diagnosis)diagnosis.addEventListener('click',()=>void runAnalysis('diagnose','ai/diagnose',{}));
  const form=$('task-form');
  if(form){
  const project=$('project');
@@ -486,10 +508,7 @@ function bind(){
  $('priority').addEventListener('change',()=>{selectedPriority=$('priority').value;});
  $('agent').addEventListener('change',()=>{selectedAgentId=$('agent').value;});
  const retry=$('retry-repos');if(retry)retry.addEventListener('click',()=>loadRepositories());
- $('ai-action').addEventListener('click',async()=>{const message=objective.value.trim();if(message.length<12){note('Descreva a solicitação antes de analisar.',true);return;}
- const b=$('ai-action');b.disabled=true;b.textContent='Analisando...';
- try{const r=await api('ai/interpret',{method:'POST',body:JSON.stringify({message})});const target=$('ai-result');target.hidden=false;target.textContent=r.response+(r.usage?.input!==null&&r.usage?.input!==undefined?'\n\nTokens desta análise: '+r.usage.input+' entrada, '+(r.usage.output??'não informado')+' saída.':'');}
- catch(e){note(e.message,true);}finally{b.disabled=false;b.textContent='Analisar com IA';}});
+ $('ai-action').addEventListener('click',()=>{const message=objective.value.trim();if(message.length<12){note('Descreva a solicitação antes de analisar.',true);return;}void runAnalysis('request','ai/interpret',{message});});
  form.addEventListener('submit',async e=>{e.preventDefault();const b=$('task-submit');if(b.disabled)return;
  const repository=project.value;
  if(!repoList.some(r=>r.repository===repository)){note('Selecione um projeto da lista.',true);return;}
@@ -580,7 +599,7 @@ $('login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('login-error').textContent='';
  try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});
  $('password').value='';adminAuthorized=true;showLogin(false);note('Administração autorizada.');await refresh(true);
- if(pendingCommand){const command=pendingCommand;pendingCommand=null;if(command.type==='agent')await executeAgentAction(command.id,command.action,true);else await executeTaskAction(command.id,command.action,true);}
+ if(pendingCommand){const command=pendingCommand;pendingCommand=null;if(command.type==='agent')await executeAgentAction(command.id,command.action,true);else await executeTaskAction(command.id,command.action,true,command.settings||{});}
  }catch(e){$('login-error').textContent=e.message;}
 });
 $('refresh').addEventListener('click',()=>refresh(true));
