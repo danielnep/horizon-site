@@ -4,26 +4,14 @@ const $=id=>document.getElementById(id);
 const PAGES_MODE=location.hostname.endsWith('.github.io');
 
 async function pagesOverview(){
- const BASE='https://api.github.com/repos/danielnep/May-Maestro-Executor/contents/';
- const load=async path=>{const r=await fetch(BASE+path+'?ref=main',{cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw Error('GitHub HTTP '+r.status);return r.json();};
- const decode=o=>{try{return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob((o?.content||'').replace(/\s/g,'')),c=>c.charCodeAt(0))));}catch{return null;}};
- const [record,files]=await Promise.all([load('tasks/attendance/equipe.json'),load('tasks/chat')]);
- const data=decode(record);
- const agents=Object.keys(AGENT_NAMES).map(id=>{const entry=Array.isArray(data?.agents)?data.agents.find(x=>x.agent===id):null;return {id,status:entry?.status||'sem telemetria individual',currentTask:entry?.task_ref||null,updatedAt:null};});
- const names=Array.isArray(files)?files.filter(x=>x.type==='file'&&/^[a-z0-9-]+\.json$/.test(x.name)).slice(0,20):[];
- const tasks=await Promise.all(names.map(async x=>{
-  const [task,output]=await Promise.all([load('tasks/chat/'+x.name).catch(()=>null),load('tasks/results/'+x.name).catch(()=>null)]);
-  const t=decode(task),r=decode(output);
-  if(!t)return null;
-  return {id:x.name.slice(0,-5),project:String(t.project||''),repository:String(t.repository||''),title:String(t.objective||'').slice(0,180),
-   agent:t.agent,priority:t.priority||null,status:r?'aguardando validação':'sem confirmação',
-   rawStatus:r?.status||'sem resultado',approved:r?.quality?.approved===true,published:r?.publication?.published===true};
- }));
- return {at:new Date().toISOString(),agents,tasks:tasks.filter(Boolean),source:'GitHub Pages: leitura pública',
- worker:{status:'Railway não acessível neste modo',lastCycle:null},
- issues:['Apenas leitura: comandos e IA exigem servidor protegido'],
- available:{queue:Array.isArray(files),results:true,attendance:Boolean(data)},
- usage:{input:null,output:null,total:null},events:[]};
+ return {at:new Date().toISOString(),source:'VPS Hostinger',
+  connection:{state:'disconnected',message:'Conexão direta com a VPS ainda não estabelecida.'},
+  agents:[],tasks:[],events:[],activity:[],
+  worker:{status:'sem ligação com a VPS',lastCycle:null},
+  issues:['Dados reais dos agentes só poderão ser consultados na VPS.'],
+  available:{vps:false,queue:false,results:false,attendance:false},
+  usage:{available:false,input:null,output:null,total:null,calls:0,byProvider:{},byAgent:{},byModel:{}}
+ };
 }
 
 const AGENT_NAMES={
@@ -124,7 +112,7 @@ function counts(){
  blocked:q.filter(x=>x.status==='bloqueada').length,
  queue:q.length,offQueue:t.filter(x=>!x.inQueue&&!x.published).length};
 }
-function summary(){const c=counts();return '<div class="summary" aria-label="Situação geral"><span class="working"><b>'+c.active+'</b> trabalhando</span><span><b>'+c.queue+'</b> na fila</span><span><b>'+c.offQueue+'</b> pendências fora da fila</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas na fila</span><span><b>17</b> agentes</span></div>';}
+function summary(){if(!snapshot?.available?.vps)return '<div class="central-vps-offline" role="status"><strong>Sem ligação com a VPS</strong><p>Os dados atuais dos agentes não estão disponíveis. Nenhum número antigo será mostrado como atual.</p></div>';const c=counts();return '<div class="summary" aria-label="Situação geral"><span class="working"><b>'+c.active+'</b> trabalhando</span><span><b>'+c.queue+'</b> na fila</span><span><b>'+c.offQueue+'</b> pendências fora da fila</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas na fila</span><span><b>17</b> agentes</span></div>';}
 function taskRow(t){
  const latest=t.lastActivity||null,stamp=latest&&Date.parse(latest.at),fresh=Number.isFinite(stamp)&&Date.now()-stamp<120000;
  const pendingDiagnosis=taskWaitingSummary(t);
@@ -239,7 +227,7 @@ function requestForm(){
 }
 function overviewMarkup(){
  return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
- listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do Railway indisponível: não é possível confirmar que está vazia.</p>':'')+
+ listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila do VPS indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'')+
  '<div class="section-heading"><h2>Agentes</h2><a class="linkrow" href="#agentes">Ver os 17 →</a></div>'+
  '<div class="compact-agent-list">'+(snapshot?.agents||[]).slice(0,5).map(a=>'<div><span>'+escapeHTML(label(a.id))+'</span>'+chip(a.status)+'</div>').join('')+'</div>'+
@@ -252,12 +240,12 @@ function pageInicio(){
  '<section id="live-overview" aria-label="Situação atual da equipe">'+overviewMarkup()+'</section>';
 }
 function pageTarefas(){
- const tasks=snapshot?.tasks||[];const text=term.toLocaleLowerCase('pt-BR');
+ const tasks=snapshot?.available?.vps?snapshot.tasks:[];const text=term.toLocaleLowerCase('pt-BR');
  const filtered=tasks.filter(t=>(filter==='todos'||(filter==='fora'?!t.inQueue:t.status===filter))&&(!text||[t.project,t.id,t.title,t.agent].join(' ').toLocaleLowerCase('pt-BR').includes(text)));
  return heading('Tarefas','Solicitações registradas na fila e os respectivos resultados verificáveis.')+
  '<div class="searchbar"><input id="search" placeholder="Buscar por projeto ou tarefa…" aria-label="Buscar tarefas" value="'+escapeHTML(term)+'">'+
  '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
- '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do Railway</span></div>'+listTasks(filtered);
+ '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados do VPS</span></div>'+listTasks(filtered);
 }
 function agentRow(a){
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
@@ -266,9 +254,9 @@ function agentRow(a){
 }
 function pageAgentes(){
  const a=snapshot?.agents||[];
- return heading('Os 17 especialistas','Estado individual apenas quando houver registro concreto de execução.')+
+ return heading('Os 17 especialistas','Estado individual baseado somente no que a VPS informar.')+
  '<div class="summary"><span><b>17</b> cadastrados</span><span>Atualização individual conforme registros disponíveis</span></div>'+
- '<div class="list">'+a.map(agentRow).join('')+'</div>';
+ '<div class="list">'+(snapshot?.available?.vps?a.map(agentRow).join(''):'<div class="empty">A VPS está desconectada; sem estados individuais verificados.</div>')+'</div>';
 }
 
 function explainEvent(e){
@@ -288,8 +276,8 @@ function explainEvent(e){
 }
 
 function pageHistorico(){
- const events=snapshot?.events||[];
- return heading('Histórico','Resultados operacionais no Railway e eventos recentes da equipe.')+
+ const events=snapshot?.available?.vps?snapshot?.events||[]:[];
+ return heading('Histórico','Resultados operacionais no VPS e eventos recentes da equipe.')+
  '<div class="section-heading"><h2>Resultados armazenados</h2><span class="meta">Mesmo após sair da fila</span></div>'+listTasks((snapshot?.tasks||[]).filter(x=>x.hasResult))+
  '<div class="section-heading"><h2>Atividade recente do servidor</h2></div>'+
  (!events.length?'<div class="empty">Ainda não há eventos recentes da equipe nesta instância.</div>':
@@ -299,7 +287,7 @@ function pageHistorico(){
  '<p class="smallprint">Reiniciar o servidor limpa apenas este painel de eventos recentes, não os registros permanentes do executor.</p>';
 }
 function pageConsumo(){
- const u=snapshot?.usage||{},fmt=x=>Number.isFinite(x)?x.toLocaleString('pt-BR'):'—';
+ const u=snapshot?.available?.vps?snapshot?.usage||{}:{available:false};const fmt=x=>Number.isFinite(x)?x.toLocaleString('pt-BR'):'—';
  const providers=Object.entries(u.byProvider||{}).sort((a,b)=>b[1].total-a[1].total);
  const agents=Object.entries(u.byAgent||{}).sort((a,b)=>b[1].total-a[1].total);
  return heading('Consumo de inteligência artificial','Quantidade recebida diretamente do Gemini e da Groq, sem estimativas inventadas.')+
@@ -337,7 +325,7 @@ function pageSistema(){
  '<div><small>Worker</small><b>'+escapeHTML(w.status||'não verificado')+'</b></div>'+
  '<div><small>Último ciclo visto</small><b>'+escapeHTML(time(last.at))+'</b></div>'+
  '<div><small>Resultado do último ciclo</small><b>'+escapeHTML(last.rc??last.code??'não informado')+'</b></div>'+
- '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'Railway consultado':'Railway indisponível')+'</b></div>'+
+ '<div><small>Fonte de tarefas</small><b>'+escapeHTML(snapshot?.available?.queue?'VPS consultado':'VPS indisponível')+'</b></div>'+
  '<div><small>Presença dos agentes</small><b>'+escapeHTML(snapshot?.available?.attendance?'Registros consultados':'Sem confirmação individual')+'</b></div></div>'+
  '<p class="smallprint">Explicação baseada no último registro, sem inventar causas.</p><div class="task-controls"><button type="button" class="secondary" id="diagnose-ai">Investigar com IA</button></div><div id="diagnosis-result" class="diagnosis" hidden></div></section>'+
  '<div class="section-heading"><h2>Conexão</h2></div><div class="smallprint">Atualizações por SSE, com reconexão e atualização periódica de segurança. Nada de IA para sincronizar estados.</div>';
@@ -348,7 +336,7 @@ function studioProgress(){
  return '<h2>Agentes trabalhando</h2>'+
  (active.length?active.map(t=>'<div class="studio-progress-line"><strong>'+escapeHTML(String(t.title||t.project||'Tarefa').slice(0,68))+'</strong>'+
  chip(t.status)+'</div>').join(''):'<p class="smallprint">Nenhuma tarefa em execução confirmada. Envie uma solicitação para acompanhar o progresso.</p>')+
- '<p class="smallprint">Os indicadores vêm da fila real do Railway. O preview mostra a publicação do projeto, não um mockup.</p>';
+ '<p class="smallprint">Os indicadores vêm da fila real do VPS. O preview mostra a publicação do projeto, não um mockup.</p>';
 }
 function pageEstudio(){
  return heading('Estúdio de criação','Converse com os especialistas e veja o aplicativo no celular ou desktop.')+
@@ -415,7 +403,7 @@ async function executeTaskAction(id,action,skipConfirm=false){
  if(!skipConfirm&&!await janelaDeAcao(action==='cancel'?'Cancelar esta tarefa?':action==='pause'?'Pausar esta tarefa?':'Devolver para a fila?',action==='cancel'?'Ela sairá da fila de execução, mas seu histórico será guardado. Se um agente já tiver iniciado a etapa, a conclusão dessa execução não poderá ser interrompida por este comando.':action==='pause'?'A tarefa ficará suspensa e poderá ser retomada depois. Se o trabalho já começou, a etapa atual pode continuar.':'A tarefa voltará para a fila. Ela será assumida pelo executor conforme a disponibilidade, sem garantia de início imediato.'))return;
  try{
   const result=await api('tasks/'+encodeURIComponent(id)+'/action',{method:'POST',body:JSON.stringify({action})});
-  note(result.note||'Comando aplicado no Railway.');pendingCommand=null;
+  note(result.note||'Comando aplicado no VPS.');pendingCommand=null;
   await refresh(true);
  }catch(e){
   if(e.message.includes('autorização')||e.message.includes('autorizacao')){
@@ -473,14 +461,14 @@ function bind(){
 }
 function updateConn(){
  const el=$('connection');el.className='connection '+(online?'ok':'off');
- const streaming=!PAGES_MODE&&stream?.readyState===EventSource.OPEN;
+ const streaming=online&&!PAGES_MODE&&stream?.readyState===EventSource.OPEN;
  el.className='connection '+(!online?'off':streaming||PAGES_MODE?'ok':'');
- el.querySelector('span').textContent=online?(PAGES_MODE?'GitHub (leitura)':streaming?'Ao vivo':'Sincronizando'):'Sem conexão';
+ el.querySelector('span').textContent=online?(streaming?'VPS ao vivo':'VPS conectada'):'VPS desconectada';
 }
 async function refresh(force=false){
  if(refreshing)return refreshing;
  refreshing=(async()=>{
-  try{const data=await api('overview');snapshot=data;online=true;
+  try{const data=await api('overview');snapshot=data;online=data.available?.vps===true;
    const focused=document.activeElement;
    const formFocused=!force&&focused&&['TEXTAREA','INPUT','SELECT'].includes(focused.tagName)&&$('task-form')?.contains(focused);
    if(formFocused&&active()==='inicio'&&$('live-overview')){
