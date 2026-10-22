@@ -46,7 +46,7 @@ export async function operationalTelemetry(days=7){
  }
  return {usage:{input:input||0,output:output||0,total:total||0,calls,byAgent,byProvider,byModel,
   days,available:calls>0,partial:usage.incomplete,unavailableCalls:missing,
-  origin:'Respostas reais dos provedores, registradas no Railway'},
+  origin:'Respostas reais dos provedores, registradas na fila privada da VPS'},
   activity:{lastByTask:byTask,recent:latest.slice(-80),available:latest.length>0,partial:activity.incomplete}};
 }
 export async function recordCentralUsage(model,usage){
