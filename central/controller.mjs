@@ -11,7 +11,7 @@ export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css',
+'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
