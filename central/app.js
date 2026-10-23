@@ -1,5 +1,6 @@
 import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
 import {studioMarkup,mountStudio,notifyStudioChanged,stopStudio} from './studio.mjs';
+import {wireframeMarkup,mountWireframe} from './wireframe.mjs';
 const $=id=>document.getElementById(id);
 const PAGES_MODE=location.hostname.endsWith('.github.io');
 
@@ -136,7 +137,9 @@ async function api(path,options={}){
 function showLogin(show){$('gate').hidden=!show;if(show)$('password')?.focus();}
 function active(){const x=(location.hash||'#inicio').replace(/^#/,'');return LABELS[x]?x:'inicio';}
 function updateMenu(){
+ const more=document.getElementById('bottom-more-menu');if(more)more.hidden=true;const moreButton=document.getElementById('bottom-more');if(moreButton)moreButton.setAttribute('aria-expanded','false');
  const page=active();$('page-label').textContent=LABELS[page];
+ for(const [id,selected] of [['mode-painel',page!=='estudio'],['mode-estudio',page==='estudio']])document.getElementById(id)?.classList.toggle('active',selected);
  document.querySelectorAll('[data-page]').forEach(x=>{x.classList.toggle('active',x.dataset.page===page);if(x.dataset.page===page)x.setAttribute('aria-current','page');else x.removeAttribute('aria-current');});
 }
 function heading(title,subtitle=''){return '<div class="page-head"><div><p class="eyebrow">HORIZON / OPERAÇÕES</p><h1>'+escapeHTML(title)+'</h1>'+(subtitle?'<p class="subtitle">'+escapeHTML(subtitle)+'</p>':'')+'</div><span class="time-label">'+(snapshot?'Atualizado '+time(snapshot.at):'Aguardando dados')+'</span></div>';}
@@ -424,11 +427,13 @@ function studioProgress(){
  '<p class="smallprint">Indicadores da fila local do servidor. O preview abre a publicação real do projeto.</p>';
 }
 function pageEstudio(){
- return heading('Estúdio de criação','Converse com os especialistas e veja o aplicativo no celular ou desktop.')+
- '<div class="studio-layout"><div class="studio-compose">'+
+ return heading('Estúdio de criação','Primeiro desenhe o layout, depois organize páginas e fluxos.')+
+ '<div class="studio-controls" role="group" aria-label="Área do estúdio" style="margin-bottom:12px"><button type="button" class="studio-device selected" id="studio-tab-wireframe">Desenho arquitetural</button><button type="button" class="studio-device" id="studio-tab-code">Aplicação real</button></div>'+
+ '<div id="studio-builder-panel">'+wireframeMarkup()+'</div>'+
+ '<div id="studio-code-panel" hidden><div class="studio-layout" ><div class="studio-compose">'+
  (PAGES_MODE?'<section class="panel request"><h2>Prévia do projeto</h2><p class="subtitle">No GitHub Pages, o estúdio funciona em modo de acompanhamento.</p></section>':requestForm())+
  '<section id="studio-progress" class="studio-progress" aria-label="Atividade real dos agentes">'+studioProgress()+'</section>'+
- '</div>'+studioMarkup(repoList)+'</div>';
+ '</div>'+studioMarkup(repoList)+'</div></div>';
 }
 let renderedPage=null;
 function render(){
@@ -445,9 +450,16 @@ function render(){
   const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
   if(detail&&trigger){detail.hidden=false;trigger.setAttribute('aria-expanded','true');trigger.textContent='Recolher ▴';}
  }
- if(page==='estudio')mountStudio({repositories:repoList,onProjectChange:repository=>{
+ if(page==='estudio'){
+  mountWireframe();
+  const builder=$('studio-builder-panel'),code=$('studio-code-panel'),b=$('studio-tab-wireframe'),c=$('studio-tab-code');
+  const switchTab=value=>{const building=value!=='code';builder.hidden=!building;code.hidden=building;b.classList.toggle('selected',building);c.classList.toggle('selected',!building);if(!building)notifyStudioChanged()};
+  b.onclick=()=>switchTab('builder');c.onclick=()=>switchTab('code');
+  switchTab('builder');
+  mountStudio({repositories:repoList,onProjectChange:repository=>{
  selectedRepository=repository;const selector=$('project');if(selector&&[...selector.options].some(o=>o.value===repository))selector.value=repository;
- }});updateConn();
+ }});}
+ updateConn();
 }
 
 
@@ -589,7 +601,7 @@ function updateConn(){
  const el=$('connection');el.className='connection '+(online?'ok':'off');
  const streaming=online&&!PAGES_MODE&&stream?.readyState===EventSource.OPEN;
  el.className='connection '+(!online?'off':streaming||PAGES_MODE?'ok':'');
- el.querySelector('span').textContent=online?(streaming?'VPS ao vivo':'VPS conectada'):'VPS desconectada';
+ el.querySelector('span').textContent=online?(streaming?'VPS sincronizando':'VPS conectada · eventos offline'):'VPS desconectada';
 }
 async function refresh(force=false){
  if(refreshing)return refreshing;
@@ -607,7 +619,7 @@ async function refresh(force=false){
     bindTaskActions($('live-overview'));
     updateConn();
    }else render();
-  }catch(e){online=false;updateConn();if(!snapshot)$('content').innerHTML='<div class="empty">Sem dados ao vivo: '+escapeHTML(e.message)+'. Verifique a sessão e tente novamente.</div>';}
+  }catch(e){online=false;snapshot=null;render();note('Falha ao atualizar dados da VPS: '+e.message,true);}
  })().finally(()=>refreshing=null);
  return refreshing;
 }
@@ -627,6 +639,7 @@ async function boot(){
  connectEvents();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));
+$('bottom-more').addEventListener('click',()=>{const menu=$('bottom-more-menu');menu.hidden=!menu.hidden;$('bottom-more').setAttribute('aria-expanded',String(!menu.hidden));});
 
 function mensagemAjuda(role,text){
  const element=document.createElement('p');
@@ -655,8 +668,7 @@ $('help-form').addEventListener('submit',async e=>{
   waiting.textContent=output.response||'Não encontrei informações suficientes para responder.';
   helpHistory.push({question,response:waiting.textContent});if(helpHistory.length>5)helpHistory.shift();
  }catch(err){
-  waiting.textContent=err.message.includes('limite')?'O limite de consultas foi atingido. Tente novamente mais tarde.':
-   'Não consegui consultar a ajuda agora. Os dados da Central continuam disponíveis nas outras telas.';
+  waiting.textContent='Falha na IA: '+err.message;
  }finally{send.disabled=false;$('help-input').focus();}
 });
 
@@ -673,6 +685,6 @@ $('logout').addEventListener('click',async()=>{if(PAGES_MODE)return;try{await ap
 window.addEventListener('hashchange',render);
 window.addEventListener('online',()=>refresh(true));
 window.addEventListener('offline',()=>{online=false;updateConn()});
-setInterval(()=>refresh(),PAGES_MODE?120000:30000);
+setInterval(()=>refresh(),PAGES_MODE?120000:10000);
 if('serviceWorker'in navigator)window.addEventListener('load',()=>{const url=new URL('./sw.js',location.href);navigator.serviceWorker.register(url.pathname,{scope:new URL('./',url).pathname}).catch(()=>{});});
 boot();

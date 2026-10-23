@@ -12,6 +12,7 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HORIZON_LEGACY_WORKER_EXPLICIT_OPT_IN: "false"
+      HORIZON_SITE_ONLY: "true"
       HORIZON_VPS_API_SOCKET: /run/horizon-central/control.sock
     group_add:
       - "987"
@@ -24,7 +25,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/central/"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 5s
       retries: 3

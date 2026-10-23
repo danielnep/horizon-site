@@ -133,7 +133,7 @@ async function unixRequest(socket,path,{method,data,token,timeout}){
    let value='';res.setEncoding('utf8');
    res.on('data',chunk=>{value+=chunk;if(value.length>3_000_000)call.destroy(new Error('resposta_vps_grande'));});
    res.on('end',()=>{
-    if(res.statusCode<200||res.statusCode>=300)return reject(new Error('vps_http_'+res.statusCode));
+    if(res.statusCode<200||res.statusCode>=300){let reason='';try{reason=String(JSON.parse(value)?.error||'').slice(0,160).replace(/[^a-zA-Z0-9_ |:,-]/g,'');}catch{}return reject(new Error('vps_http_'+res.statusCode+(reason?': '+reason:'')));}
     try{const parsed=JSON.parse(value);if(!parsed||typeof parsed!=='object')throw Error('resposta_vps_invalida');resolve(parsed);}
     catch{reject(new Error('resposta_vps_invalida'));}
    });

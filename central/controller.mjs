@@ -10,7 +10,7 @@ export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css',
+'':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
@@ -328,10 +328,9 @@ function startVpsChangeStream(){
 function startLiveMonitor(){
  if(monitorTimer!==null)return;
  monitorDigest=null;
- // Fallback check only: the primary update path is the SQLite push stream.
- monitorTimer=setInterval(()=>{
-  if(!vpsStreamClose)void pollLiveState();
- },20000);
+ // Reconcile every six seconds even with a healthy SQLite stream:
+ // provider JSONL, CI and remote repository updates may not change SQLite.
+ monitorTimer=setInterval(()=>void pollLiveState(),6000);
  monitorTimer.unref?.();
  void pollLiveState();
  startVpsChangeStream();
@@ -580,7 +579,9 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    send(res,output.status,{response:output.response||null,error:output.error||null,usage:output.usage||null});
   }catch(error){
    console.warn('[central-ai] chat_failed',String(error?.name||'Error').slice(0,45),String(error?.message||'sem_detalhes').slice(0,130));
-   send(res,502,{error:'nao_foi_possivel_responder'});
+   const reason=String(error?.message||'erro_inesperado');
+   const details=reason.includes('provedores_ia_indisponiveis|')?reason.split('provedores_ia_indisponiveis|')[1].replaceAll('HTTP_','HTTP ').replaceAll(',',', ').slice(0,120):'';
+   send(res,503,{error:details?'Provedores de IA indisponíveis: '+details:/vps_http_503/.test(reason)?'IA da VPS indisponível':/timeout|tempo_limite/.test(reason)?'IA da VPS excedeu o tempo limite':'Falha na comunicação da IA com a VPS'});
   }
   return true;
  }

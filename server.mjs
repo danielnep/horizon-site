@@ -31,9 +31,15 @@ export function startServer({listenPort=Number(process.env.PORT||3000),reader=re
   const checkpointRecipient=background?migrationKey():null;
   const server=http.createServer(async(req,res)=>{
     const path=(req.url||'/').split('?')[0];
+    if(process.env.HORIZON_PANEL_ONLY==='true'&&(path==='/'||path==='/index.html')){res.writeHead(308,{'location':'/central/','cache-control':'no-store'});res.end();return;}
     if(path==='/central'||path.startsWith('/central/')){
+      if(process.env.HORIZON_SITE_ONLY==='true'){
+        if(req.method==='GET'||req.method==='HEAD'){res.writeHead(308,{'location':'https://painel.hzsys.tech'+(req.url||'/central/'),'cache-control':'no-store'});res.end();return;}
+        res.writeHead(410,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify({error:'painel_transferido_para_hzsys_tech'}));return;
+      }
       await handleCentral(req,res,{reader});return;
     }
+    if(process.env.HORIZON_PANEL_ONLY==='true'){res.writeHead(404,{'content-type':'text/plain','cache-control':'no-store'});res.end('Nao encontrado');return;}
     if(path==='/mcp'){await handleHorizonMcp(req,res);return;}
     if(path==='/api/internal/horizon-agent-state'){
       if(retirementConfirmed()){

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#191e26">
 <meta name="description" content="Central Horizon: gestão dos 17 agentes, tarefas e eventos ao vivo."><meta name="apple-mobile-web-app-capable" content="yes">
-<title>Horizon | Central de Agentes</title><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./studio.css"><script type="module" src="./app.js"></script></head>
+<title>Horizon Órbita | Painel e Estúdio</title><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./studio.css"><link rel="stylesheet" href="./wireframe.css"><script type="module" src="./app.js"></script></head>
 <body>
 <div id="shell">
   <aside class="side" aria-label="Navegação principal">
@@ -19,7 +19,7 @@
   </aside>
   <div class="workspace">
     <header class="topbar">
-      <div class="heading"><span class="compact-logo">H</span><span id="page-label">Central de Agentes</span></div>
+      <div class="heading"><span class="compact-logo">H</span><span id="page-label">Central de Agentes</span></div><div class="mode-switch" aria-label="Escolher ambiente"><a href="#inicio" id="mode-painel">Painel</a><a href="#estudio" id="mode-estudio">Estúdio</a></div>
       <div class="top-actions"><span id="connection" class="connection"><i></i><span>Conectando…</span></span>
       <button id="refresh" class="icon-button" title="Atualizar dados" aria-label="Atualizar dados">↻</button>
       <button id="logout" class="icon-button" title="Encerrar administração" aria-label="Encerrar administração" hidden>⇥</button></div>
@@ -32,9 +32,12 @@
     <a data-page="estudio" href="#estudio"><span>▣</span>Estúdio</a>
     <a data-page="tarefas" href="#tarefas"><span>☷</span>Tarefas</a>
     <a data-page="agentes" href="#agentes"><span>◎</span>Agentes</a>
-    <a data-page="historico" href="#historico"><span>↶</span>Histórico</a>
-    <a data-page="consumo" href="#consumo"><span>◉</span>Tokens</a>
-    <a data-page="sistema" href="#sistema"><span>⚙</span>Sistema</a>
+    <button id="bottom-more" type="button" aria-expanded="false" aria-controls="bottom-more-menu"><span>⋯</span>Mais</button>
+  </nav>
+  <nav id="bottom-more-menu" class="bottom-more-menu" aria-label="Outras seções" hidden>
+    <a data-page="historico" href="#historico">Histórico</a>
+    <a data-page="consumo" href="#consumo">Tokens</a>
+    <a data-page="sistema" href="#sistema">Sistema</a>
   </nav>
 </div>
 <button id="help-open" class="help-fab" type="button" aria-expanded="false" aria-controls="help-panel">✦ <span>Ajuda da IA</span></button>

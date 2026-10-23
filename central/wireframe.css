@@ -1,0 +1,57 @@
+/* Horizon Órbita: progressive architectural editor. */
+.mode-switch{display:flex;align-items:center;border:1px solid #455365;background:#202c39;border-radius:9px;padding:3px;gap:2px}
+.mode-switch a{display:flex;align-items:center;justify-content:center;min-height:35px;padding:5px 12px;border-radius:6px;color:#b2c4d6;font-size:12px;font-weight:700}
+.mode-switch a.active{background:#1f98ff;color:#081b2b}
+.wf-root{border:1px solid #405166;background:#222c38;border-radius:12px;overflow:hidden;min-width:0}
+.wf-root button,.wf-root input,.wf-root select{font:inherit}
+.wf-top{padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid #405166}
+.wf-top>div:first-child{display:flex;flex-direction:column;gap:4px}
+.wf-top strong{font-size:16px;color:#fff}.wf-top small{font-size:11px;color:#9db0c3}
+.wf-file{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.wf-file select{min-width:125px;max-width:250px}
+.wf-root select,.wf-root input{min-height:38px;min-width:0;background:#192533;color:#e5edf5;border:1px solid #516174;border-radius:6px;padding:6px 10px;font-size:12px}
+.wf-options{padding:10px 18px;border-bottom:1px solid #3b4a59;display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:12px}
+.wf-options label,.wf-properties label{display:grid;gap:7px;color:#a8b8c8;font-size:11px}
+.wf-options details{position:relative}.wf-options summary{cursor:pointer;color:#a9c9e8}
+.wf-theme{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}.wf-theme input[type=color]{min-width:52px;padding:3px}
+.wf-editor{display:grid;grid-template-columns:156px minmax(0,1fr) 182px;gap:0;min-height:490px}
+.wf-side,.wf-properties{padding:15px 11px;background:#1e2834;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.wf-side{border-right:1px solid #3b4b5d}.wf-properties{border-left:1px solid #3b4b5d}
+.wf-side h3,.wf-properties h3{font-size:12px;margin:8px 0 5px;color:#eff6fd}
+.wf-side button{min-height:35px;background:none;color:#b0c5d9;border:1px solid #3c4b5c;border-radius:5px;text-align:left;padding:6px 9px;font-size:11px}
+.wf-side button.selected{background:#245079;border-color:#369be9;color:#fff}
+.wf-side button:hover{background:#2d4154}
+.wf-properties p{font-size:11px;color:#9fb1c3;line-height:1.5}
+.wf-properties input{width:100%;font-size:12px}
+.wf-properties-body{display:grid;gap:9px}
+.wf-property-actions{display:flex;gap:5px;flex-wrap:wrap}
+.wf-property-actions button{font-size:11px;background:#33465b;border:1px solid #506074;color:white;padding:8px;border-radius:5px}
+.wf-flow{border-top:1px solid #405062;margin-top:18px;padding-top:10px}
+.wf-flow select{width:100%}
+.wf-workspace{min-width:0;padding:10px 12px 22px;background:radial-gradient(circle at 50% 0,#344356,#141e29);overflow:auto}
+.wf-ruler{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:10px;color:#aabccc;font-size:10px}
+#wf-stage{display:flex;justify-content:center;align-items:flex-start;min-height:420px;overflow:auto}
+#wf-canvas{position:relative;flex:none;width:min(100%,var(--wf-width,393px));min-height:310px;background:#f7faff;color:#1c2b38;border:1px solid #a3b7cb;box-shadow:0 15px 45px #0005;border-radius:8px;overflow:hidden}
+#wf-canvas[data-theme=dark]{background:#131c27;color:#f2f7ff;border-color:#536c84}
+.wf-element{position:absolute;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:normal;word-break:break-word;text-align:center;background:#dce5ee;color:#142333;border:1px dashed #6a8297;border-radius:5px;cursor:grab;touch-action:none;font-size:clamp(9px,1.5vw,13px);padding:3px}
+#wf-canvas[data-theme=dark] .wf-element{background:#263548;color:#eaf3ff;border-color:#6383a4}
+.wf-element.wf-button{background:var(--wf-accent);color:#fff;border:0}
+.wf-element.wf-text{background:transparent;border:1px dashed #a3a9b7;font-weight:700}
+.wf-element.wf-image{background:repeating-linear-gradient(45deg,#8897a922,#8897a922 8px,transparent 8px,transparent 16px)}
+.wf-element.selected{outline:3px solid #ffba62;outline-offset:2px;z-index:1}
+.wf-footer{display:flex;flex-direction:column;gap:11px;border-top:1px solid #435062;padding:12px 18px}
+#wf-message{color:#a9bdd0;font-size:11px;overflow-wrap:anywhere}
+#wf-message[data-bad=true]{color:#ff9a8d}
+#wf-ai-form{display:flex;gap:8px;min-width:0}
+#wf-ai-form input{flex:1}
+@media(max-width:1050px){.wf-editor{grid-template-columns:132px minmax(0,1fr) 152px}}
+@media(max-width:790px){.wf-editor{grid-template-columns:minmax(0,1fr);min-height:auto}.wf-side{display:block;border-right:0;border-bottom:1px solid #405062;padding:10px}.wf-side h3{margin:7px 0}.wf-side #wf-pages,.wf-side #wf-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.wf-side button{min-height:36px}.wf-properties{border-left:0;border-top:1px solid #405062}.wf-workspace{padding:12px 9px}.wf-top{padding:12px}.wf-options{padding:10px 12px}#wf-stage{min-height:375px}.wf-ruler{font-size:10px}}
+@media(max-width:450px){.mode-switch a{padding:5px 8px;font-size:10px}.topbar{gap:6px;padding:0 8px}.heading{font-size:10px;gap:4px}.top-actions{gap:3px}.connection{font-size:9px}.wf-file{width:100%}.wf-file select{flex:1;min-width:90px}.wf-file button{padding:0 7px;font-size:11px}#wf-ai-form{flex-wrap:wrap}#wf-ai-form button{width:100%}}
+/* Compact mobile navigation: all seven destinations remain accessible. */
+.bottom-more-menu[hidden]{display:none}
+.bottom-more-menu{position:fixed;right:9px;bottom:calc(67px + env(safe-area-inset-bottom));z-index:30;display:grid;min-width:170px;background:#263647;border:1px solid #57718a;border-radius:11px;box-shadow:0 15px 35px #0009;padding:5px}
+.bottom-more-menu a{display:block;color:#d3e3ef;padding:13px 15px;border-radius:6px;font-size:12px}
+.bottom-more-menu a:hover,.bottom-more-menu a.active{background:#2b587b;color:white}
+body:has(#wf-root) #help-open{display:none}
+@media(max-width:650px){.bottom-nav button{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#a5b7ca;font-size:10px;background:none;border:0;border-radius:5px;padding:2px;min-width:0}.bottom-nav button span{font-size:24px;color:#a6b3c1;line-height:1}.bottom-nav a{font-size:10px}}
+@media(min-width:651px){.bottom-more-menu{display:none}}

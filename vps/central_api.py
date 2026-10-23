@@ -88,6 +88,7 @@ def complete_ai(prompt):
                                {"contents": [{"parts": [{"text": prompt}]}],
                                 "generationConfig": {"maxOutputTokens": 1100, "temperature": 0.2,
                                                      "thinkingConfig": {"thinkingLevel": "medium"}}}))
+        provider_failures = []
         for provider, model, url, headers, payload in routes:
             request = urllib.request.Request(
                 url, data=json.dumps(payload).encode("utf-8"), method="POST",
@@ -113,12 +114,15 @@ def complete_ai(prompt):
                 if isinstance(response, str) and response.strip():
                     return {"response": response[:1300], "provider": provider,
                             "model": model, "usage": usage}
-            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError,
-                    OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
-                # A provider failure allows the other provider to answer.
-                # Never expose error bodies or credentials to the browser.
+            except urllib.error.HTTPError as error:
+                # Codes only: never expose upstream bodies, URLs or API keys.
+                provider_failures.append(provider + ":HTTP_" + str(error.code))
                 continue
-        raise RuntimeError("provedores_ia_indisponiveis")
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError,
+                    KeyError, TypeError, json.JSONDecodeError):
+                provider_failures.append(provider + ":falha_temporaria")
+                continue
+        raise RuntimeError("provedores_ia_indisponiveis|" + ",".join(provider_failures))
     finally:
         AI_SLOTS.release()
 
@@ -300,7 +304,7 @@ def snapshot():
             "description": item["objective"][:2800],
             "agent": item["agent"], "priority": "P1" if item["priority"] > 0 else "P2",
             "status": visible_status, "rawStatus": status,
-            "inQueue": status == "queued" and not c,
+            "inQueue": status in ("queued", "running") and c.get("state") not in ("paused", "cancelled"),
             "hasResult": item["result"] is not None,
             "approved": False, "published": False, "progress": None,
             "stages": [], "lastActivity": last,
@@ -315,7 +319,7 @@ def snapshot():
     return {"source": "vps", "at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "tasks": rows, "agents": agents, "activity": activity, "events": events,
             "worker": worker_status(),
-            "available": {"queue": True, "results": True, "attendance": bool(running)},
+            "available": {"queue": True, "results": True, "attendance": True},
             "usage": usage, "issues": []}
 
 
@@ -569,7 +573,13 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(value, dict):
                 return self.send_json(400, {"error": "solicitacao_invalida"})
             if path == "/v1/ai/complete":
-                return self.send_json(200, complete_ai(value.get("prompt")))
+                try:
+                    return self.send_json(200, complete_ai(value.get("prompt")))
+                except RuntimeError as error:
+                    message = str(error)
+                    if message.startswith("provedores_ia_indisponiveis|"):
+                        return self.send_json(503, {"error": message[:150]})
+                    return self.send_json(503, {"error": "servico_ia_temporariamente_indisponivel"})
             if path == "/v1/tasks":
                 return self.send_json(201, submit(value))
             hit = re.fullmatch(r"/v1/tasks/([a-z0-9:-]{3,110})/actions", path)
