@@ -3,7 +3,7 @@ const KEY='horizon.orbita.wireframes.v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const templates={button:'Botão',text:'Texto',input:'Campo',nav:'Menu',image:'Imagem',card:'Área'};
 const sizes={mobile:[393,852],tablet:[800,1100],desktop:[1440,900]};
-let docs=[],activeId='',pageId='',selectedId='',device='current',dirty=false;
+let docs=[],activeId='',pageId='',selectedId='',device='current',dirty=false,history=[];
 function makeId(){return Math.random().toString(36).slice(2,11)}
 function newProject(name='Novo projeto'){
  return {id:makeId(),name,palette:'#1f98ff',theme:'dark',updated:new Date().toISOString(),
@@ -23,12 +23,12 @@ load();
 function current(){return docs.find(d=>d.id===activeId)}
 function page(){return current()?.pages.find(p=>p.id===pageId)}
 function activeEl(){return page()?.elements.find(e=>e.id===selectedId)}
-function update(mutator){mutator();const doc=current();if(doc)doc.updated=new Date().toISOString();dirty=true;paint();save();}
+function update(mutator){const before=JSON.stringify(current());if(before){history.push(before);if(history.length>20)history.shift()}mutator();const doc=current();if(doc)doc.updated=new Date().toISOString();dirty=true;paint();save();}
 export function wireframeMarkup(){
  return '<section id="wf-root" class="wf-root" aria-label="Editor de protótipos">'+
   '<div class="wf-top"><div><strong>Arquiteto visual</strong><small>Defina layout, páginas e fluxos. Sem alterar os agentes.</small></div>'+
   '<div class="wf-file"><select id="wf-project" aria-label="Selecionar rascunho"></select><button id="wf-new" type="button" class="secondary">+ Novo projeto</button>'+
-  '<button id="wf-export" type="button" class="secondary">Exportar</button></div></div>'+
+  '<button id="wf-undo" type="button" class="secondary">Desfazer</button><button id="wf-export" type="button" class="secondary">Exportar</button></div></div>'+
   '<div class="wf-options"><label>Dispositivo <select id="wf-device"><option value="current">Meu aparelho</option><option value="mobile">393 × 852</option><option value="tablet">Tablet</option><option value="desktop">Desktop</option></select></label>'+
   '<details><summary>Identidade e tema</summary><div class="wf-theme"><label>Nome <input id="wf-name" maxlength="80"></label>'+
   '<label>Cor de destaque <input id="wf-color" type="color"></label><label>Estilo <select id="wf-theme"><option value="dark">Escuro</option><option value="light">Claro</option></select></label></div></details></div>'+
@@ -37,7 +37,7 @@ export function wireframeMarkup(){
   '<div class="wf-workspace"><div class="wf-ruler"><span id="wf-size-label"></span><span>Arraste os elementos</span></div>'+
   '<div id="wf-stage"><div id="wf-canvas" aria-label="Prancheta interativa"></div></div></div>'+
   '<aside class="wf-properties"><h3>Propriedades</h3><div id="wf-properties-body">Selecione um componente.</div>'+
-  '<div class="wf-flow"><h3>Fluxo da página</h3><label>Após esta página <select id="wf-next"></select></label></div></aside></div>'+
+  '<div class="wf-flow"><h3>Página e fluxo</h3><label>Nome da página <input id="wf-page-name" maxlength="65"></label><label>Após esta página <select id="wf-next"></select></label></div></aside></div>'+
   '<div class="wf-footer"><span id="wf-message" role="status">Rascunho salvo localmente</span>'+
   '<form id="wf-ai-form"><input id="wf-ai-prompt" placeholder="Ex.: desenhe um login com telefone e senha" aria-label="Comando para IA" maxlength="700">'+
   '<button class="primary" type="submit">Gerar com IA</button></form></div></section>';
@@ -53,6 +53,7 @@ function paint(){
  document.getElementById('wf-device').value=device;
  document.getElementById('wf-pages').innerHTML=doc.pages.map(x=>'<button type="button" class="'+(x.id===pageId?'selected':'')+'" data-page-id="'+esc(x.id)+'">'+esc(x.name)+'</button>').join('');
  document.getElementById('wf-tools').innerHTML=Object.entries(templates).map(([type,name])=>'<button type="button" data-add="'+type+'">+ '+name+'</button>').join('');
+ document.getElementById('wf-page-name').value=p.name;
  const next=document.getElementById('wf-next');next.innerHTML='<option value="">Fim do fluxo</option>'+doc.pages.filter(x=>x.id!==p.id).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');next.value=p.next||'';
  const size=device==='current'?[Math.round(window.innerWidth),Math.round(window.innerHeight)]:sizes[device];document.getElementById('wf-size-label').textContent=size.join(' × ')+' px CSS';
  const box=document.getElementById('wf-canvas');box.style.setProperty('--wf-accent',doc.palette);box.style.setProperty('--wf-width',size[0]+'px');box.dataset.theme=doc.theme;box.style.aspectRatio=size[0]+'/'+size[1];
@@ -74,11 +75,13 @@ export function mountWireframe(){
   if(e.target.id==='wf-copy'&&activeEl()){update(()=>{const a=activeEl();page().elements.push({...a,id:makeId(),y:Math.min(a.y+12,88)});selectedId=page().elements.at(-1).id;});return}
   if(e.target.id==='wf-remove'){update(()=>{page().elements=page().elements.filter(a=>a.id!==selectedId);selectedId=''});return}
  });
+ $('wf-undo').onclick=()=>{const previous=history.pop();if(!previous){show('Nenhuma alteração para desfazer.');return}const replacement=JSON.parse(previous);const index=docs.findIndex(x=>x.id===replacement.id);if(index>=0)docs[index]=replacement;pageId=replacement.pages.some(p=>p.id===pageId)?pageId:replacement.pages[0].id;selectedId='';paint();save()};
  $('wf-new').onclick=()=>{const name='Novo projeto '+(docs.length+1);const doc=newProject(name);docs.push(doc);activeId=doc.id;pageId=doc.pages[0].id;selectedId='';paint();save()};
  $('wf-project').onchange=e=>{activeId=e.target.value;pageId=current().pages[0].id;selectedId='';paint()};
  $('wf-device').onchange=e=>{device=e.target.value;paint()};
  $('wf-add-page').onclick=()=>update(()=>{const p={id:makeId(),name:'Página '+(current().pages.length+1),elements:[],next:''};current().pages.push(p);pageId=p.id;selectedId=''});
  $('wf-next').onchange=e=>update(()=>page().next=e.target.value);
+ $('wf-page-name').onchange=e=>update(()=>{page().name=e.target.value.trim().slice(0,65)||'Página'});
  $('wf-name').onchange=e=>update(()=>{current().name=e.target.value.trim()||'Novo projeto'});
  $('wf-color').onchange=e=>update(()=>{current().palette=e.target.value});
  $('wf-theme').onchange=e=>update(()=>{current().theme=e.target.value});
@@ -110,13 +113,22 @@ export function mountWireframe(){
   show('Arquivo do protótipo exportado. Repositório GitHub ainda não criado.');
  };
  $('wf-ai-form').onsubmit=async e=>{
-  e.preventDefault();const prompt=$('wf-ai-prompt').value.trim();if(prompt.length<12){show('Descreva o que deseja desenhar.',true);return}
-  const button=e.target.querySelector('button');button.disabled=true;show('Consultando IA da VPS…');
+  e.preventDefault();
+  const prompt=$('wf-ai-prompt').value.trim();
+  if(prompt.length<12){show('Descreva o que deseja desenhar.',true);return}
+  const button=e.target.querySelector('button');button.disabled=true;show('Desenhando com a IA da VPS…');
   try{
-   const response=await fetch('/central/api/ai/interpret',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({message:'Descreva um wireframe com os componentes e sua posição para: '+prompt})});
-   const data=await response.json();if(!response.ok)throw Error(data.error||'IA indisponível');
-   show('Sugestão da IA: '+String(data.response).slice(0,380)+'. Ajuste os elementos manualmente.');
-  }catch(err){show('IA indisponível: '+err.message,true)}
+   const response=await fetch('/central/api/ai/wireframe',{method:'POST',
+    credentials:'same-origin',headers:{'content-type':'application/json'},
+    body:JSON.stringify({prompt,elements:page().elements.map(({type,text,x,y,w,h})=>({type,text,x,y,w,h}))})});
+   const data=await response.json();
+   if(!response.ok){
+    if(response.status===401){const gate=document.getElementById('gate');if(gate)gate.hidden=false;}
+    throw Error(data.error||'IA indisponível');
+   }
+   update(()=>{page().elements=data.elements.map(e=>({...e,id:makeId()}));selectedId=''});
+   show('Protótipo atualizado pela '+String(data.model||data.provider)+' e salvo localmente.');
+  }catch(err){show('IA: '+err.message,true)}
   finally{button.disabled=false}
  };
 }

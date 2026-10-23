@@ -591,6 +591,46 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   try{const output=await interpret({mode:'diagnose'});send(res,output.status,{response:output.response||null,error:output.error||null,usage:output.usage||null});}
   catch{send(res,502,{error:'provedor_indisponivel'});}return true;
  }
+ if(req.method==='POST'&&raw==='/central/api/ai/wireframe'){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  const ip=String(req.socket.remoteAddress||'unknown').slice(0,80);
+  if(!limit('wireframe:'+ip,6,60000)){send(res,429,{error:'limite_de_prototipos'});return true;}
+  try{
+   const input=await body(req,4200),objective=String(input.prompt||'').trim();
+   if(objective.length<12||objective.length>650){send(res,400,{error:'comando_invalido'});return true;}
+   const source=Array.isArray(input.elements)?input.elements.slice(0,16).map(e=>({
+    type:String(e.type||'').slice(0,10),text:String(e.text||'').slice(0,80),
+    x:Number(e.x)||0,y:Number(e.y)||0,w:Number(e.w)||40,h:Number(e.h)||8
+   })):[];
+   const instruction='Voce projeta rascunhos de telas de aplicativos. Modifique ou crie o layout segundo este pedido: '+
+    objective+' . Layout atual: '+JSON.stringify(source)+
+    '. Responda somente JSON minificado, sem markdown, com este formato: {"elements":[{"type":"text","text":"Titulo","x":10,"y":12,"w":80,"h":8},{"type":"button","text":"Entrar","x":15,"y":70,"w":70,"h":8}]}. Aceitos: button,text,input,nav,image,card. Use 3 a 9 elementos; coordenadas e dimensoes percentuais (0 a 100). Nao gere codigo.';
+   const result=await vpsRequest('/v1/ai/complete',{method:'POST',data:{prompt:instruction}});
+   const raw=String(result.response||'').trim();
+   const candidate=raw.match(/\{[\s\S]*\}/)?.[0]||'';
+   let spec;try{spec=JSON.parse(candidate);}catch{send(res,422,{error:'IA respondeu fora do formato de prototipo. Tente novamente.'});return true;}
+   if(!Array.isArray(spec.elements)||spec.elements.length<1||spec.elements.length>14){
+    send(res,422,{error:'IA retornou um rascunho invalido'});return true;
+   }
+   const types=new Set(['button','text','input','nav','image','card']);
+   const elements=spec.elements.map(e=>{
+    if(!e||!types.has(e.type)||typeof e.text!=='string'||e.text.length>100
+       ||![e.x,e.y,e.w,e.h].every(n=>Number.isFinite(n))){
+      throw Error('elemento_invalido');
+    }
+    return {type:e.type,text:e.text.slice(0,100),
+      x:Math.max(0,Math.min(92,e.x)),y:Math.max(0,Math.min(92,e.y)),
+      w:Math.max(8,Math.min(100,e.w)),h:Math.max(5,Math.min(70,e.h))};
+   });
+   send(res,200,{elements,provider:result.provider||'não informado',model:result.model||'não informado'});
+  }catch(error){
+   const reason=String(error?.message||'erro_ia');
+   const matched=reason.match(/provedores_ia_indisponiveis\|([^\n]+)/);
+   send(res,503,{error:matched?'IA temporariamente indisponível: '+matched[1].slice(0,100):
+    reason==='elemento_invalido'?'Resposta da IA contém elementos inválidos':'Não foi possível gerar o rascunho com a IA'});
+  }
+  return true;
+ }
  if(req.method==='POST'&&raw==='/central/api/ai/interpret'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{const output=await interpret(await body(req,2400));send(res,output.status,{response:output.response||null,error:output.error||null,usage:output.usage||null});}

@@ -87,7 +87,7 @@ async function probe({force=false}={}){
    return;
   }
   display(data.url,data.revision||'');
-  setStatus(data.revision?'Preview publicado · atualização automática ativa':'Preview publicado · verificando alterações','ready');
+  setStatus(data.revision?'Publicação identificada · verificando versão':'Publicação identificada · aguardando nova versão','ready');
  }catch{
   if(project===state.project){display('');setStatus('Não foi possível consultar a publicação. Use um endereço de preview direto.','error');}
  }finally{state.checking=false;if(state.root===root)checkButton.disabled=false;
@@ -111,7 +111,7 @@ export function studioMarkup(repositories=[]){
  if(!available.some(r=>r.repository===state.project))state.project=available[0]?.repository||'';
  const options=available.map(r=>'<option value="'+safe(r.repository)+'"'+(state.project===r.repository?' selected':'')+'>'+safe(r.label||r.name||r.repository)+'</option>').join('');
  return '<section id="studio-root" class="studio-preview" aria-label="Preview interativo">'+
-  '<div class="studio-toolbar"><div class="studio-caption"><span class="studio-indicator" aria-hidden="true"></span><strong>Preview ao vivo</strong><small id="studio-status" role="status" aria-live="polite">Verificando publicação…</small></div>'+
+  '<div class="studio-toolbar"><div class="studio-caption"><span class="studio-indicator" aria-hidden="true"></span><strong>Prévia publicada</strong><small id="studio-status" role="status" aria-live="polite">Verificando publicação…</small></div>'+
   '<div class="studio-controls" role="group" aria-label="Formato da tela">'+Object.keys(SIZES).map(k=>'<button type="button" class="studio-device'+(state.device===k?' selected':'')+'" data-device="'+k+'" aria-pressed="'+(state.device===k)+'">'+SIZES[k].label+'</button>').join('')+'</div></div>'+
   '<div class="studio-project-row"><label for="studio-project">Projeto</label><select id="studio-project"'+(available.length?'':' disabled')+'>'+options+'</select><button type="button" id="studio-check" class="studio-tool" title="Verificar nova publicação">↻ <span>Atualizar</span></button></div>'+
   '<div class="studio-canvas" id="studio-canvas"><div id="studio-stage" class="studio-stage"><div id="studio-viewport" class="studio-viewport"><iframe id="studio-frame" title="Aplicativo em desenvolvimento" sandbox="allow-scripts allow-forms allow-same-origin allow-popups" referrerpolicy="no-referrer" hidden></iframe>'+
@@ -142,7 +142,7 @@ export function mountStudio({repositories=[],onProjectChange=()=>{}}={}){
  });
  $(root,'studio-connect').addEventListener('click',()=>setManual($(root,'studio-url').value));
  $(root,'studio-clear').addEventListener('click',()=>{delete state.manualUrls[state.project];$(root,'studio-url').value='';state.currentUrl='';persist();void probe({force:true})});
- $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Preview solicitado · se a tela ficar vazia, use Abrir','ready')});
+ $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Endereço carregado · se ficar vazio, use Abrir','ready')});
  if(typeof ResizeObserver!=='undefined'){state.observer=new ResizeObserver(fitPreview);state.observer.observe($(root,'studio-canvas'));}
  window.addEventListener('resize',fitPreview);
  state.loop=setInterval(()=>void probe(),20000);
