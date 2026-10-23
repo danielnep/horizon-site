@@ -1,3 +1,4 @@
+import {enrollOwner,loginOwner} from './passkey-client.mjs';
 import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
 import {studioMarkup,mountStudio,notifyStudioChanged,stopStudio} from './studio.mjs';
 import {wireframeMarkup,mountWireframe} from './wireframe.mjs';
@@ -62,7 +63,13 @@ async function runAnalysis(key,path,body){
  finally{state.busy=false;persistAnalysis();repaintAnalysis();}
 }
 let adminAuthorized=false;
+let usePasskey=false;
 let panelPasswordless=false;
+let enrollmentLinkKey=null;
+if(location.hash.startsWith('#cadastrar=')){
+ enrollmentLinkKey=decodeURIComponent(location.hash.slice('#cadastrar='.length));
+ history.replaceState(null,'',location.pathname+location.search+'#inicio');
+}
 let pendingCommand=null;
 let actionTimer=null;
 const helpHistory=[];
@@ -131,13 +138,21 @@ async function api(path,options={}){
  if(PAGES_MODE){if(path==='session')return {authenticated:true,configured:false};if(path==='overview')return pagesOverview();throw Error('Comando indisponível no modo leitura');}
  const response=await fetch('/central/api/'+path,{credentials:'same-origin',cache:'no-store',headers:options.body?{'content-type':'application/json'}:{},...options});
  let data;try{data=await response.json();}catch{data={error:'resposta_invalida'};}
- if(response.status===401){if(options.method==='POST')showLogin(true);throw Error('A consulta é livre. Para enviar comandos, é necessária autorização administrativa.');}
+ if(response.status===401){if(options.method==='POST')showLogin(true);throw Error('Autorize no celular para gerenciar seus agentes.');}
  if(!response.ok)throw Error(String(data.error||'Falha de comunicação').replaceAll('_',' '));
  return data;
 }
 function showLogin(show){
  const gate=$('gate');if(!gate||panelPasswordless)return;
- gate.hidden=!show;if(show)$('password')?.focus();
+ gate.hidden=!show;
+ $('login-form').hidden=false;
+ $('passkey-button').hidden=!usePasskey;
+ const hint=$('login-help');
+ if(hint)hint.textContent=usePasskey?'Acesse com digital ou com a senha administrativa.':'Informe a senha administrativa para gerenciar os agentes.';
+ if(usePasskey){
+  $('passkey-button').textContent=enrollmentLinkKey?'Cadastrar digital neste celular':'Entrar com digital';
+  if(show)$('passkey-button').focus();
+ }else if(show)$('password')?.focus();
 }
 function active(){const x=(location.hash||'#inicio').replace(/^#/,'');return LABELS[x]?x:'inicio';}
 function updateMenu(){
@@ -205,7 +220,7 @@ function taskRow(t){
  const taskId=escapeHTML(t.id);
  const controls=PAGES_MODE?'':t.status==='arquivada'?
  '<div class="task-controls"><button class="secondary" data-task-action="restore" data-task-id="'+taskId+'">Restaurar como pausada</button></div>':
- '<div class="task-controls">'+(t.inQueue?
+ '<details class="task-actions-disclosure"><summary>Gerenciar tarefa <span aria-hidden="true">⌄</span></summary><div class="task-controls">'+(t.inQueue?
  '<button class="secondary" data-task-action="up" data-task-id="'+taskId+'" title="Adiantar na ordem de execução">↑ Subir</button>'+
  '<button class="secondary" data-task-action="down" data-task-id="'+taskId+'" title="Atrasar na ordem de execução">↓ Descer</button>'+
  '<button class="secondary" data-task-action="pause" data-task-id="'+taskId+'">Pausar</button>':
@@ -216,7 +231,7 @@ function taskRow(t){
  '<label class="task-setting">Agente <select data-task-agent="'+taskId+'" aria-label="Configurar agente responsável">'+
  Object.keys(AGENT_NAMES).map(id=>'<option value="'+id+'"'+(t.agent===id?' selected':'')+'>'+escapeHTML(label(id))+'</option>').join('')+'</select></label>':'')+
  (t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
- '</div>'+
+ '</div></details>'+
  (t.inQueue||t.status==='pausada'?'<details class="task-editor" data-editor="'+taskId+'"'+(editPanels.has(t.id)?' open':'')+'><summary>Editar solicitação e posição</summary>'+
  '<label>Instrução original<textarea data-edit-objective="'+taskId+'" maxlength="2800">'+escapeHTML(taskDrafts.get(t.id)??String(t.description||'').replace(/^P[0-3]\s*\|\s*/,''))+'</textarea></label>'+
  '<button class="secondary" data-save-objective="'+taskId+'">Salvar instrução</button>'+
@@ -227,7 +242,8 @@ function taskRow(t){
   (t.supervision.firstPendingTask?'<small>Primeira etapa: '+escapeHTML(t.supervision.firstPendingTask)+'</small>':'')+
   (t.supervision.checkedAt?'<small> · Conferido: '+escapeHTML(time(t.supervision.checkedAt))+'</small>':'')+
   '</section>':'';
- const detail='<div class="task-detail">'+live+diagnosis+controls+
+ const detail='<div class="task-detail"><button type="button" class="mobile-detail-close" data-detail-close="'+taskId+'">← Voltar às tarefas</button>'+
+ '<div class="mobile-detail-summary"><strong>'+escapeHTML(t.project)+'</strong><p>'+escapeHTML(t.title)+'</p>'+chip(t.status)+'</div>'+live+diagnosis+controls+
  '<p class="smallprint">'+(t.inQueue?'Esta tarefa está na fila do servidor.':
  'Esta tarefa não está na fila atual. O registro anterior pode ser consultado no histórico.')+'</p>'+
  (t.blocker?'<p class="error">Problema: '+escapeHTML(t.blocker)+'</p>':'')+
@@ -545,7 +561,19 @@ function bindTaskActions(root=document){
  root.querySelectorAll('[data-agent-action]').forEach(btn=>btn.addEventListener('click',()=>executeAgentAction(btn.dataset.agentId,btn.dataset.agentAction)));
 }
 
+function closeTaskDetail(id){
+ const detail=document.getElementById('detail-'+id);
+ const trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
+ if(!detail||!trigger)return;
+ detail.hidden=true;openTasks.delete(id);
+ trigger.setAttribute('aria-expanded','false');trigger.textContent='Acompanhar ▾';
+ trigger.focus({preventScroll:true});
+}
+function bindTaskDetailClose(root=document){
+ root.querySelectorAll('[data-detail-close]').forEach(el=>el.addEventListener('click',()=>closeTaskDetail(el.dataset.detailClose)));
+}
 function bind(){
+ bindTaskDetailClose();
  document.querySelectorAll('[data-detail]').forEach(el=>el.addEventListener('click',()=>{
  const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
  target.hidden=!target.hidden;if(target.hidden)openTasks.delete(el.dataset.detail);else openTasks.add(el.dataset.detail);
@@ -621,6 +649,7 @@ async function refresh(force=false){
       target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
     }));
     bindTaskActions($('live-overview'));
+    bindTaskDetailClose($('live-overview'));
     updateConn();
    }else render();
   }catch(e){online=false;snapshot=null;render();note('Falha ao atualizar dados da VPS: '+e.message,true);}
@@ -641,14 +670,31 @@ async function boot(){
   const session=await api('session');
   panelPasswordless=Boolean(session.passwordless);
   adminAuthorized=Boolean(session.authenticated);
+  usePasskey=Boolean(session.passkey?.enabled)&&!panelPasswordless;
   if(panelPasswordless){$('gate')?.remove();$('logout')?.remove();}
  }catch{}
+ if(enrollmentLinkKey&&usePasskey&&!adminAuthorized)showLogin(true);
  await refresh(true);
  await loadRepositories();
  connectEvents();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));
 $('bottom-more').addEventListener('click',()=>{const menu=$('bottom-more-menu');menu.hidden=!menu.hidden;$('bottom-more').setAttribute('aria-expanded',String(!menu.hidden));});
+$('passkey-button').addEventListener('click',async()=>{
+ const button=$('passkey-button');button.disabled=true;$('login-error').textContent='';
+ try{
+  if(enrollmentLinkKey){
+   await enrollOwner(enrollmentLinkKey);enrollmentLinkKey=null;
+  }else await loginOwner();
+  adminAuthorized=true;showLogin(false);note('Acesso autorizado neste aparelho.');await refresh(true);
+  if(pendingCommand){
+   const command=pendingCommand;pendingCommand=null;
+   if(command.type==='agent')await executeAgentAction(command.id,command.action,true);
+   else await executeTaskAction(command.id,command.action,true,command.settings||{});
+  }
+ }catch(error){$('login-error').textContent=error?.name==='NotAllowedError'?'Autenticação cancelada no aparelho.':String(error.message||'Não foi possível autenticar.');}
+ finally{button.disabled=false;}
+});
 
 function mensagemAjuda(role,text){
  const element=document.createElement('p');

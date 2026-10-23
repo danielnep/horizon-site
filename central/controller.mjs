@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
+import {passkeyEnabled,ownerPasskeyStatus,beginEnrollment,completeEnrollment,beginAuthentication,completeAuthentication} from './passkey-auth.mjs';
 import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,vpsRequest,disconnectedVps,subscribeVpsChanges} from './vps-client.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
@@ -11,7 +12,7 @@ export const SPECIALISTS=Object.freeze([
 function passwordlessPanel(){return process.env.HORIZON_PANEL_ONLY==='true';}
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css',
+'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
@@ -34,7 +35,7 @@ function send(res,status,value,headers={}){
   'x-content-type-options':'nosniff',...headers});
   res.end(JSON.stringify(value));
 }
-function sec(){return process.env.HORIZON_CONTROL_PASSWORD||process.env.HORIZON_MCP_TOKEN||'';}
+function sec(){return process.env.HORIZON_CONTROL_PASSWORD||process.env.HORIZON_OWNER_SESSION_SECRET||process.env.HORIZON_MCP_TOKEN||'';}
 function same(a,b){if(!a||!b)return false;const aa=Buffer.from(a),bb=Buffer.from(b);return aa.length===bb.length&&timingSafeEqual(aa,bb);}
 function signature(message){return createHmac('sha256',sec()).update('horizon-control:v1:'+message).digest('base64url');}
 function authenticated(req){
@@ -42,7 +43,7 @@ function authenticated(req){
  if(!sec()||!match)return false;
  const [stamp,sig]=decodeURIComponent(match[1]).split('.');
  const timestamp=Number(stamp);
- return Number.isSafeInteger(timestamp)&&timestamp<=Date.now()+30000&&timestamp>Date.now()-43200000&&same(signature(stamp),sig);
+ return Number.isSafeInteger(timestamp)&&timestamp<=Date.now()+30000&&timestamp>Date.now()-(passkeyEnabled()?15552000000:43200000)&&same(signature(stamp),sig);
 }
 function sameOrigin(req){
  const origin=req.headers.origin;if(!origin)return false;
@@ -452,7 +453,37 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   }catch{send(res,503,{error:'painel_indisponivel'});}return true;
  }
  if(raw==='/central/api/session'&&req.method==='GET'){
-  send(res,200,{authenticated:passwordlessPanel()||authenticated(req),configured:!passwordlessPanel()&&Boolean(sec()),passwordless:passwordlessPanel()});return true;
+  const status=passwordlessPanel()?{enabled:false,enrolled:false}:await ownerPasskeyStatus();
+  send(res,200,{authenticated:passwordlessPanel()||authenticated(req),
+    configured:!passwordlessPanel()&&Boolean(sec()),passwordless:passwordlessPanel(),passkey:status});return true;
+ }
+ if(raw.startsWith('/central/api/passkey/')){
+  if(passwordlessPanel()||!passkeyEnabled()){send(res,404,{error:'passkey_not_configured'});return true;}
+  if(req.method!=='POST'||!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  const ip=String(req.socket.remoteAddress||'unknown').slice(0,80);
+  if(!limit('passkey:'+ip,50,900000)){send(res,429,{error:'tentativas_excedidas'});return true;}
+  try{
+   const input=await body(req,35000);
+   const origin=String(req.headers.origin||'');
+   if(raw==='/central/api/passkey/register/options'){
+    send(res,200,await beginEnrollment({origin,key:input.key,authorized:authenticated(req)}));return true;
+   }
+   if(raw==='/central/api/passkey/register/verify'){
+    const result=await completeEnrollment({origin,key:input.key,authorized:authenticated(req),ceremony:input.ceremony,response:input.response});
+    const stamp=String(Date.now()),session=stamp+'.'+signature(stamp);
+    send(res,200,result,{'set-cookie':'horizon_session='+session+'; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=15552000'});return true;
+   }
+   if(raw==='/central/api/passkey/login/options'){
+    send(res,200,await beginAuthentication({origin}));return true;
+   }
+   if(raw==='/central/api/passkey/login/verify'){
+    const result=await completeAuthentication({origin,ceremony:input.ceremony,response:input.response});
+    const stamp=String(Date.now()),session=stamp+'.'+signature(stamp);
+    send(res,200,result,{'set-cookie':'horizon_session='+session+'; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=15552000'});return true;
+   }
+   send(res,404,{error:'not_found'});
+  }catch(e){send(res,403,{error:String(e?.message||'passkey_failed').slice(0,110)});}
+  return true;
  }
  if(raw==='/central/api/login'&&req.method==='POST'){
   if(passwordlessPanel()){send(res,410,{error:'senha_desativada_no_painel'});return true;}
