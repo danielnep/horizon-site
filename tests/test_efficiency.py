@@ -20,7 +20,7 @@ class EfficiencyByTaskTests(unittest.TestCase):
                 {"at": "2026-10-22T00:00:02Z", "agent": "backend-engineer", "provider": "groq",
                  "model": "openai/gpt-oss-120b", "input": 10, "output": 5, "total": 15},
             ]
-            path.write_text("".join(json.dumps(x) + "\\n" for x in rows))
+            path.write_text("".join(json.dumps(x) + "\n" for x in rows))
             with patch.object(central_api, "TELEMETRY", Path(directory)):
                 usage, _, _ = central_api.activity_data(1)
             self.assertEqual(usage["total"], 180)
