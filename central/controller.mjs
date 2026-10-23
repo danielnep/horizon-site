@@ -1,4 +1,4 @@
-import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
+import {createHmac,createHash,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
@@ -15,6 +15,36 @@ const ASSETS=Object.freeze({
 '':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
+// Asset fingerprints invalidate stale CSS/JS across deploys, including under an
+// already-installed service worker. Every deploy generates its own version.
+const UI_VERSION_FILES=Object.freeze(['index.html','style.css','studio.css','wireframe.css',
+ 'app.js','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs','sw.js']);
+const MODULE_FILES=Object.freeze(['studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs']);
+let uiVersionMemo;
+function uiVersion(){
+ if(!uiVersionMemo){
+  uiVersionMemo=Promise.all(UI_VERSION_FILES.map(name=>
+   readFile(fileURLToPath(new URL('./'+name,import.meta.url)))))
+   .then(data=>createHash('sha256').update(Buffer.concat(data)).digest('hex').slice(0,16))
+   .catch(error=>{uiVersionMemo=null;throw error});
+ }
+ return uiVersionMemo;
+}
+function versionHtml(value,version){
+ let text=value.toString('utf8');
+ for(const name of ['style.css','studio.css','wireframe.css','app.js']){
+  text=text.replaceAll('"./'+name+'"','"./'+name+'?v='+version+'"');
+ }
+ return Buffer.from(text);
+}
+function versionImports(value,version){
+ let text=value.toString('utf8');
+ for(const name of MODULE_FILES){
+  text=text.replaceAll("'./"+name+"'","'./"+name+"?v="+version+"'");
+ }
+ return Buffer.from(text);
+}
+
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
 const REPO=/^danielnep\/[a-z0-9._-]{2,90}$/i;
 const PATH=/^(?!\/)(?!.*(?:^|\/)\.)(?!.*\.\.)(?!.*[\\])[a-zA-Z0-9_./*-]{1,120}$/;
@@ -443,10 +473,16 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   let route;try{route=decodeURIComponent(raw.slice('/central/'.length));}catch{send(res,400,{error:'invalid_path'});return true;}
   const asset=ASSETS[route];
   if(!asset){send(res,404,{error:'not_found'});return true;}
-  try{const value=await reader(fileURLToPath(new URL('./'+asset,import.meta.url)));
+  try{
+   let value=await reader(fileURLToPath(new URL('./'+asset,import.meta.url)));
+   if(asset==='index.html'||asset==='app.js'){
+    const version=await uiVersion();
+    value=asset==='index.html'?versionHtml(value,version):versionImports(value,version);
+   }
    const ext=asset.split('.').pop();
    const headers={'content-type':MIME[ext]||'application/octet-stream','x-content-type-options':'nosniff',
-    'cache-control':asset==='sw.js'||asset==='index.html'?'no-cache':'public, max-age=300',
+    // No reusable cache for UI assets: HTML + fingerprinted URLs always agree.
+    'cache-control':'no-store, max-age=0',
     'content-security-policy':"default-src 'self'; connect-src 'self'; frame-src https:; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     'referrer-policy':'no-referrer'};
    res.writeHead(200,headers);res.end(req.method==='HEAD'?undefined:value);

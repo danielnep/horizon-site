@@ -341,3 +341,13 @@
 
 /* The owner enters with a platform passkey; obsolete form stays unavailable. */
 #login-form[hidden],#passkey-button[hidden]{display:none!important}
+
+/* Tablet: preserve a real text column rather than the 4-column desktop grid. */
+@media (min-width:651px) and (max-width:900px){
+ .task-row:has(>.task-checkbox){grid-template-columns:24px minmax(0,1fr) auto;align-items:start}
+ .task-row:has(>.task-checkbox)>.task-checkbox{grid-column:1;grid-row:1}
+ .task-row:has(>.task-checkbox)>div:not(.inline-detail){grid-column:2;grid-row:1;min-width:0}
+ .task-row:has(>.task-checkbox)>.chip{grid-column:3;grid-row:1;justify-self:end}
+ .task-row:has(>.task-checkbox)>[data-detail]{grid-column:2/-1;grid-row:2;justify-self:start;min-height:40px}
+ .task-row:has(>.task-checkbox)>.inline-detail{grid-column:1/-1;grid-row:3;min-width:0}
+}

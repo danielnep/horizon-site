@@ -1,1 +1,8 @@
-const CACHE='horizon-central-ui-v9';const BASE=new URL('./',self.location.href).pathname;const FILES=['','index.html','style.css','studio.css','app.js','passkey-client.mjs','studio.mjs','wireframe.css','wireframe.mjs','task-steps.mjs','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png'].map(x=>BASE+x);self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;const u=new URL(e.request.url);if(u.origin!==self.location.origin||!FILES.includes(u.pathname))return;e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();void caches.open(CACHE).then(c=>c.put(e.request,copy));}return r;}).catch(()=>caches.match(e.request)));});
+// Central Horizon runs against the VPS. Never replay old HTML, JS or CSS
+// from a service-worker cache after a release. Offline status is explicit.
+self.addEventListener('install',event=>event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate',event=>event.waitUntil(
+ caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('horizon-central-ui-')).map(key=>caches.delete(key))))
+ .then(()=>self.clients.claim())
+));
+// Deliberately no fetch handler. The browser always requests current UI.
