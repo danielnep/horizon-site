@@ -363,6 +363,25 @@ function pageConsumo(){
  '<p class="smallprint">'+(u.available?u.calls+' respostas contabilizadas nos últimos '+u.days+' dias.':
  'Nenhuma resposta com consumo identificado desde o início do registro.')+
  (u.partial?' Parte dos registros não pôde ser consultada.':'')+'</p>'+
+ '<div class="section-heading"><h2>Eficiência por tarefa</h2></div>'+
+ '<p class="smallprint">Tokens medidos por tarefa desde que a identificação passou a ser registrada. Aprovada significa aprovação registrada, não apenas término do agente. Valores anteriores sem vínculo permanecem separados.</p>'+
+ (()=>{const jobs=Object.entries(u.byTask||{}).sort((a,b)=>b[1].total-a[1].total);
+   const taskMap=new Map((snapshot?.tasks||[]).map(t=>[t.id,t]));
+   const verified=jobs.filter(([id])=>taskMap.get(id)?.approved===true);
+   const verifiedTotal=verified.reduce((sum,[,d])=>sum+d.total,0);
+   const unassigned=u.unattributed||{};
+   return '<div class="stat-strip"><div><small>Tarefas com medição</small><strong>'+fmt(jobs.length)+'</strong></div>'+
+    '<div><small>Tarefas aprovadas com medição</small><strong>'+fmt(verified.length)+'</strong></div>'+
+    '<div><small>Tokens por entrega aprovada</small><strong>'+fmt(verified.length?Math.round(verifiedTotal/verified.length):null)+'</strong></div></div>'+
+    (jobs.length?'<div class="list">'+jobs.slice(0,45).map(([id,d])=>{const task=taskMap.get(id);
+      const quality=task?.approved?'Aprovada':task?.hasResult?'Entregue, aguardando aprovação':task?'Sem entrega aprovada':'Fora da lista atual';
+      const model=Object.entries(d.byModel||{}).sort((a,b)=>b[1]-a[1]).map(([name,tokens])=>escapeHTML(name)+' '+fmt(tokens)).join(' · ');
+      return '<div class="agent-row"><div><div class="name">'+escapeHTML(task?.title||id)+'</div>'+
+      '<div class="details">'+escapeHTML(quality)+' · '+fmt(d.calls)+' chamadas · '+model+'</div></div>'+
+      '<strong>'+fmt(d.total)+' tokens</strong></div>'}).join('')+'</div>':
+      '<div class="empty">Ainda não há consumo associado a tarefas. As próximas chamadas serão vinculadas ao ID da tarefa.</div>')+
+    '<p class="smallprint">Consumo histórico sem tarefa identificada: '+fmt(unassigned.total||0)+' tokens em '+fmt(unassigned.calls||0)+' chamadas. Não atribuído retroativamente.</p>';
+ })()+
  '<div class="section-heading"><h2>Por serviço de IA</h2></div>'+
  (providers.length?'<div class="list">'+providers.map(([name,d])=>'<div class="agent-row"><div><div class="name">'+escapeHTML(name==='central-groq'?'Ajuda da Central (Groq)':name==='groq'?'Groq':'Gemini')+
  '</div><div class="details">'+d.calls+' chamadas</div></div><strong>'+fmt(d.total)+' tokens</strong></div>').join('')+'</div>':
