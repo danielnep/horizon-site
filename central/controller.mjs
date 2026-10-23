@@ -8,6 +8,7 @@ import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHol
 
 export const SPECIALISTS=Object.freeze([
 'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
+function passwordlessPanel(){return process.env.HORIZON_PANEL_ONLY==='true';}
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
 '':'index.html','index.html':'index.html','app.js':'app.js','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css',
@@ -451,9 +452,10 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   }catch{send(res,503,{error:'painel_indisponivel'});}return true;
  }
  if(raw==='/central/api/session'&&req.method==='GET'){
-  send(res,200,{authenticated:authenticated(req),configured:Boolean(sec())});return true;
+  send(res,200,{authenticated:passwordlessPanel()||authenticated(req),configured:!passwordlessPanel()&&Boolean(sec()),passwordless:passwordlessPanel()});return true;
  }
  if(raw==='/central/api/login'&&req.method==='POST'){
+  if(passwordlessPanel()){send(res,410,{error:'senha_desativada_no_painel'});return true;}
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   const ip=String(req.socket.remoteAddress||'unknown').slice(0,80);
   if(!limit('login:'+ip,8)){send(res,429,{error:'tentativas_excedidas'});return true;}
@@ -469,7 +471,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  '/central/api/usage','/central/api/history','/central/api/events','/central/api/repositories','/central/api/preview',
  '/central/api/ai/chat'
  ].includes(raw);
- if(!publicRead&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
+ if(!publicRead&&!passwordlessPanel()&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
  if(raw==='/central/api/logout'&&req.method==='POST'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   send(res,200,{ok:true},{'set-cookie':'horizon_session=; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=0'});return true;
