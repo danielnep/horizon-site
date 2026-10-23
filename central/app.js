@@ -62,6 +62,7 @@ async function runAnalysis(key,path,body){
  finally{state.busy=false;persistAnalysis();repaintAnalysis();}
 }
 let adminAuthorized=false;
+let panelPasswordless=false;
 let pendingCommand=null;
 let actionTimer=null;
 const helpHistory=[];
@@ -134,7 +135,10 @@ async function api(path,options={}){
  if(!response.ok)throw Error(String(data.error||'Falha de comunicação').replaceAll('_',' '));
  return data;
 }
-function showLogin(show){$('gate').hidden=!show;if(show)$('password')?.focus();}
+function showLogin(show){
+ const gate=$('gate');if(!gate||panelPasswordless)return;
+ gate.hidden=!show;if(show)$('password')?.focus();
+}
 function active(){const x=(location.hash||'#inicio').replace(/^#/,'');return LABELS[x]?x:'inicio';}
 function updateMenu(){
  const more=document.getElementById('bottom-more-menu');if(more)more.hidden=true;const moreButton=document.getElementById('bottom-more');if(moreButton)moreButton.setAttribute('aria-expanded','false');
@@ -444,7 +448,7 @@ function render(){
  }
  if(renderedPage==='estudio')stopStudio();
  const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
- const content=$('content');content.innerHTML=template();$('logout').hidden=!adminAuthorized||PAGES_MODE;
+ const content=$('content');content.innerHTML=template();const logout=$('logout');if(logout)logout.hidden=!adminAuthorized||PAGES_MODE||panelPasswordless;
  renderedPage=page;bind();repaintAnalysis();
  for(const id of openTasks){
   const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
@@ -633,7 +637,12 @@ function connectEvents(){
 }
 async function boot(){
  showLogin(false);
- try{const session=await api('session');adminAuthorized=Boolean(session.authenticated);}catch{}
+ try{
+  const session=await api('session');
+  panelPasswordless=Boolean(session.passwordless);
+  adminAuthorized=Boolean(session.authenticated);
+  if(panelPasswordless){$('gate')?.remove();$('logout')?.remove();}
+ }catch{}
  await refresh(true);
  await loadRepositories();
  connectEvents();
