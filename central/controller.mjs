@@ -649,7 +649,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   }catch(error){
    console.warn('[central-ai] chat_failed',String(error?.name||'Error').slice(0,45),String(error?.message||'sem_detalhes').slice(0,130));
    const reason=String(error?.message||'erro_inesperado');
-   const details=reason.includes('provedores_ia_indisponiveis|')?reason.split('provedores_ia_indisponiveis|')[1].replaceAll('HTTP_','HTTP ').replaceAll(',',', ').slice(0,120):'';
+   const details=reason.includes('provedores_ia_indisponiveis|')?reason.split('provedores_ia_indisponiveis|')[1].replaceAll('HTTP_','HTTP ').replaceAll(',',', ').slice(0,330):'';
    send(res,503,{error:details?'Provedores de IA indisponíveis: '+details:/vps_http_503/.test(reason)?'IA da VPS indisponível':/timeout|tempo_limite/.test(reason)?'IA da VPS excedeu o tempo limite':'Falha na comunicação da IA com a VPS'});
   }
   return true;

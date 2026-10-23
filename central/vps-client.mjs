@@ -133,7 +133,7 @@ async function unixRequest(socket,path,{method,data,token,timeout}){
    let value='';res.setEncoding('utf8');
    res.on('data',chunk=>{value+=chunk;if(value.length>3_000_000)call.destroy(new Error('resposta_vps_grande'));});
    res.on('end',()=>{
-    if(res.statusCode<200||res.statusCode>=300){let reason='';try{reason=String(JSON.parse(value)?.error||'').slice(0,160).replace(/[^a-zA-Z0-9_ |:,-]/g,'');}catch{}return reject(new Error('vps_http_'+res.statusCode+(reason?': '+reason:'')));}
+    if(res.statusCode<200||res.statusCode>=300){let reason='';try{reason=String(JSON.parse(value)?.error||'').slice(0,360).replace(/[^a-zA-Z0-9_ ./|:,-]/g,'');}catch{}return reject(new Error('vps_http_'+res.statusCode+(reason?': '+reason:'')));}
     try{const parsed=JSON.parse(value);if(!parsed||typeof parsed!=='object')throw Error('resposta_vps_invalida');resolve(parsed);}
     catch{reject(new Error('resposta_vps_invalida'));}
    });
@@ -149,7 +149,7 @@ export async function vpsRequest(path,{method='GET',data,fetcher=fetch,env=proce
  const conn=vpsConnectionConfig(env);
  if(!conn.ok)throw new Error(conn.reason);
  if(!/^\/v1\/[a-z0-9/_-]+$/.test(path)||path.includes('//'))throw new Error('rota_vps_invalida');
- const timeout=path==='/v1/ai/complete'?30000:8500;
+ const timeout=path==='/v1/ai/complete'?45000:8500;
  if(conn.socket)return unixRequest(conn.socket,path,{method,data,token:conn.token,timeout});
  const ctrl=new AbortController();
  const timer=setTimeout(()=>ctrl.abort(),timeout);

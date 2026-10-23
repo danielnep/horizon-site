@@ -121,7 +121,9 @@ def complete_ai(prompt):
                 headers={"Content-Type": "application/json", **headers})
             try:
                 # 4 independent routes must fit the dashboard's 30s HTTP timeout.
-                with urllib.request.urlopen(request, timeout=6) as reply:
+                # Gemma 4 needs a longer first-token window than the small control models.
+                # All four attempts still fit the control bridge's 45s cap.
+                with urllib.request.urlopen(request, timeout=18 if model == 'gemma-4-31b-it' else 7) as reply:
                     data = json.loads(reply.read(80000))
                 if provider == "groq":
                     choices = data.get("choices") or []
@@ -143,11 +145,16 @@ def complete_ai(prompt):
                             "model": model, "usage": usage}
                 failures.append(model + ":sem_texto")
             except urllib.error.HTTPError as error:
-                # Do not log response bodies, tokens, or key material.
-                failures.append(model + ":HTTP_" + str(error.code))
-            except (urllib.error.URLError, TimeoutError, OSError, ValueError,
-                    KeyError, TypeError, json.JSONDecodeError):
-                failures.append(model + ":falha_temporaria")
+                # Error classes from known upstream status codes; never expose
+                # error bodies (which can contain user data or account details).
+                label = {401: 'credencial_invalida', 403: 'sem_permissao',
+                         404: 'modelo_indisponivel', 429: 'quota_ou_limite',
+                         503: 'provedor_indisponivel'}.get(error.code, 'recusada')
+                failures.append(model + ':HTTP_' + str(error.code) + '_' + label)
+            except (urllib.error.URLError, TimeoutError) as error:
+                failures.append(model + ':tempo_limite_ou_conexao')
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                failures.append(model + ':resposta_invalida')
         raise RuntimeError("provedores_ia_indisponiveis|" + ",".join(failures))
     finally:
         AI_SLOTS.release()
@@ -604,7 +611,7 @@ class Handler(BaseHTTPRequestHandler):
                 except RuntimeError as error:
                     message = str(error)
                     if message.startswith("provedores_ia_indisponiveis|"):
-                        return self.send_json(503, {"error": message[:150]})
+                        return self.send_json(503, {"error": message[:360]})
                     return self.send_json(503, {"error": "servico_ia_temporariamente_indisponivel"})
             if path == "/v1/tasks":
                 return self.send_json(201, submit(value))
