@@ -68,6 +68,32 @@ test('login requires same-origin, issues HttpOnly session and protects write com
  });
 });
 
+test('dedicated panel edits without password but rejects foreign browser origins',async()=>{
+ const old=process.env.HORIZON_PANEL_ONLY;
+ process.env.HORIZON_PANEL_ONLY='true';
+ try{
+  await withServer(async({url,origin})=>{
+   const session=await fetch(url+'/central/api/session');
+   assert.equal((await session.json()).authenticated,true);
+   const req=url+'/central/api/tasks/ctl-test-123/action';
+   const badOrigin=await fetch(req,{method:'POST',
+    headers:{'content-type':'application/json',origin:'https://other.example'},
+    body:JSON.stringify({action:'pause'})});
+   assert.equal(badOrigin.status,403);
+   const permitted=await fetch(req,{method:'POST',
+    headers:{'content-type':'application/json',origin},
+    body:JSON.stringify({action:'pause'})});
+   assert.notEqual(permitted.status,401);
+   assert.notEqual(permitted.status,403);
+   const login=await fetch(url+'/central/api/login',{method:'POST',headers:{origin,'content-type':'application/json'},body:'{}'});
+   assert.equal(login.status,410);
+  });
+ }finally{
+  if(old===undefined)delete process.env.HORIZON_PANEL_ONLY;
+  else process.env.HORIZON_PANEL_ONLY=old;
+ }
+});
+
 test('central envia direto ao Maestro na VPS, sem gravar solicitações no GitHub',async()=>{
  const root=await mkdtemp(join(tmpdir(),'horizon-central-'));
  const previous=process.env.HORIZON_DIRECT_INBOX_DIR;
