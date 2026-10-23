@@ -156,7 +156,8 @@ def ensure_tables(db):
 def activity_data(days=7):
     today = dt.datetime.now(dt.timezone.utc).date()
     usage = {"available": False, "input": 0, "output": 0, "total": 0,
-             "calls": 0, "days": days, "byAgent": {}, "byProvider": {}, "byModel": {}}
+             "calls": 0, "days": days, "byAgent": {}, "byProvider": {}, "byModel": {},
+             "byTask": {}, "unattributed": {"total": 0, "calls": 0}}
     latest = {}
     recent = []
     for elapsed in range(days):
@@ -196,6 +197,21 @@ def activity_data(days=7):
                                 slot["output"] += out
                                 slot["total"] += total
                                 slot["calls"] += 1
+                            task_id = item.get("taskId")
+                            if isinstance(task_id, str) and ID.fullmatch(task_id):
+                                bucket = usage["byTask"].setdefault(task_id, {
+                                    "input": 0, "output": 0, "total": 0,
+                                    "calls": 0, "byModel": {}})
+                                bucket["input"] += inp
+                                bucket["output"] += out
+                                bucket["total"] += total
+                                bucket["calls"] += 1
+                                model = str(item.get("model") or "")[:90]
+                                if model:
+                                    bucket["byModel"][model] = bucket["byModel"].get(model, 0) + total
+                            else:
+                                usage["unattributed"]["total"] += total
+                                usage["unattributed"]["calls"] += 1
                         else:
                             task_id, agent, action = item.get("taskId"), item.get("agent"), item.get("action")
                             if not (isinstance(task_id, str) and ID.fullmatch(task_id)
