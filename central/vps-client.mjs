@@ -99,6 +99,8 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
   byAgent:u.byAgent&&typeof u.byAgent==='object'?u.byAgent:{},
   byProvider:u.byProvider&&typeof u.byProvider==='object'?u.byProvider:{},
   byModel:u.byModel&&typeof u.byModel==='object'?u.byModel:{},
+  byTask:u.byTask&&typeof u.byTask==='object'?u.byTask:{},
+  unattributed:u.unattributed&&typeof u.unattributed==='object'?u.unattributed:{total:0,calls:0},
   origin:'Respostas dos provedores registradas na VPS'
  }:{available:false,input:null,output:null,total:null,calls:0,byAgent:{},byProvider:{},byModel:{}};
  const worker=data.worker&&typeof data.worker==='object'?data.worker:{};
