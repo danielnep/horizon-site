@@ -61,40 +61,67 @@ def json_or(raw, default=None):
 AI_SLOTS = threading.BoundedSemaphore(2)
 
 
+def _control_ai_routes(prompt):
+    """Single private credential source; model order is stable across requests."""
+    groq_key = os.getenv("GROQ_API_KEY") or os.getenv("API_IA_GROQ")
+    google_key = (os.getenv("GEMINI_API_KEY")
+                  if os.getenv("GEMINI_REQUESTS_ENABLED", "true").lower() == "true" else None)
+    if not (groq_key or google_key):
+        raise RuntimeError("provedor_ia_nao_configurado")
+
+    gemini = os.getenv("HORIZON_CONTROL_GEMINI_MODEL") or "gemini-3.6-flash"
+    gpt = os.getenv("HORIZON_CONTROL_AI_MODEL") or "openai/gpt-oss-120b"
+    gemma = "gemma-4-31b-it"
+    qwen = "qwen/qwen3.8-27b"
+    routes = []
+
+    def add_google(model, *, thinking):
+        if not google_key:
+            return
+        if not re.fullmatch(r"[A-Za-z0-9._-]{3,90}", model):
+            return
+        config = {"maxOutputTokens": 900}
+        if thinking:
+            config["thinkingConfig"] = {"thinkingLevel": "low"}
+        routes.append(("gemini", model,
+                       "https://generativelanguage.googleapis.com/v1beta/models/"
+                       + model + ":generateContent",
+                       {"x-goog-api-key": google_key},
+                       {"contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": config}))
+
+    def add_groq(model):
+        if not groq_key:
+            return
+        routes.append(("groq", model, "https://api.groq.com/openai/v1/chat/completions",
+                       {"Authorization": "Bearer " + groq_key},
+                       {"model": model, "messages": [{"role": "user", "content": prompt}],
+                        "max_completion_tokens": 900}))
+
+    # Priority explicitly set by the owner. Each model gets a real request,
+    # not just a different label after an upstream failure.
+    add_google(gemini, thinking=True)
+    add_groq(gpt)
+    add_google(gemma, thinking=False)
+    add_groq(qwen)
+    return routes
+
+
 def complete_ai(prompt):
     if not isinstance(prompt, str) or not 3 <= len(prompt) <= 8500:
         raise ValueError("prompt_invalido")
-
-    groq_key = os.getenv("GROQ_API_KEY") or os.getenv("API_IA_GROQ")
-    gemini_key = os.getenv("GEMINI_API_KEY") if os.getenv("GEMINI_REQUESTS_ENABLED", "true").lower() == "true" else None
-    if not (groq_key or gemini_key):
-        raise RuntimeError("provedor_ia_nao_configurado")
     if not AI_SLOTS.acquire(blocking=False):
         raise RuntimeError("ia_ocupada")
     try:
-        routes = []
-        if groq_key:
-            model = os.getenv("HORIZON_CONTROL_AI_MODEL", "openai/gpt-oss-120b")
-            routes.append(("groq", model, "https://api.groq.com/openai/v1/chat/completions",
-                           {"Authorization": "Bearer " + groq_key},
-                           {"model": model, "messages": [{"role": "user", "content": prompt}],
-                            "max_completion_tokens": 280, "temperature": 0.2}))
-        if gemini_key:
-            model = os.getenv("HORIZON_CONTROL_GEMINI_MODEL", "gemini-3.6-flash")
-            if re.fullmatch(r"[A-Za-z0-9._-]{3,90}", model):
-                routes.append(("gemini", model,
-                               "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
-                               {"x-goog-api-key": gemini_key},
-                               {"contents": [{"parts": [{"text": prompt}]}],
-                                "generationConfig": {"maxOutputTokens": 1100, "temperature": 0.2,
-                                                     "thinkingConfig": {"thinkingLevel": "medium"}}}))
-        provider_failures = []
+        routes = _control_ai_routes(prompt)
+        failures = []
         for provider, model, url, headers, payload in routes:
             request = urllib.request.Request(
                 url, data=json.dumps(payload).encode("utf-8"), method="POST",
                 headers={"Content-Type": "application/json", **headers})
             try:
-                with urllib.request.urlopen(request, timeout=11) as reply:
+                # 4 independent routes must fit the dashboard's 30s HTTP timeout.
+                with urllib.request.urlopen(request, timeout=6) as reply:
                     data = json.loads(reply.read(80000))
                 if provider == "groq":
                     choices = data.get("choices") or []
@@ -114,15 +141,14 @@ def complete_ai(prompt):
                 if isinstance(response, str) and response.strip():
                     return {"response": response[:1300], "provider": provider,
                             "model": model, "usage": usage}
+                failures.append(model + ":sem_texto")
             except urllib.error.HTTPError as error:
-                # Codes only: never expose upstream bodies, URLs or API keys.
-                provider_failures.append(provider + ":HTTP_" + str(error.code))
-                continue
+                # Do not log response bodies, tokens, or key material.
+                failures.append(model + ":HTTP_" + str(error.code))
             except (urllib.error.URLError, TimeoutError, OSError, ValueError,
                     KeyError, TypeError, json.JSONDecodeError):
-                provider_failures.append(provider + ":falha_temporaria")
-                continue
-        raise RuntimeError("provedores_ia_indisponiveis|" + ",".join(provider_failures))
+                failures.append(model + ":falha_temporaria")
+        raise RuntimeError("provedores_ia_indisponiveis|" + ",".join(failures))
     finally:
         AI_SLOTS.release()
 
