@@ -8,6 +8,7 @@ services:
     init: true
     env_file:
       - /etc/horizon-site-control.env
+      - /etc/horizon-orbita-auth.env
     environment:
       NODE_ENV: production
       PORT: "3000"
