@@ -71,3 +71,5 @@ body:has(#studio-root) main{width:min(100%,1500px)}
 .studio-compose{grid-template-columns:minmax(0,1fr);width:100%;max-width:100%}
 .studio-compose>*{min-width:0;max-width:100%}
 .studio-compose .request-meta .field select{min-width:0;max-width:100%}
+
+.studio-controls[aria-label="Área do estúdio"]{margin-bottom:12px}

@@ -57,7 +57,17 @@ function paint(){
  const next=document.getElementById('wf-next');next.innerHTML='<option value="">Fim do fluxo</option>'+doc.pages.filter(x=>x.id!==p.id).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');next.value=p.next||'';
  const size=device==='current'?[Math.round(window.innerWidth),Math.round(window.innerHeight)]:sizes[device];document.getElementById('wf-size-label').textContent=size.join(' × ')+' px CSS';
  const box=document.getElementById('wf-canvas');box.style.setProperty('--wf-accent',doc.palette);box.style.setProperty('--wf-width',size[0]+'px');box.dataset.theme=doc.theme;box.style.aspectRatio=size[0]+'/'+size[1];
- box.innerHTML=p.elements.map(e=>'<button type="button" class="wf-element wf-'+esc(e.type)+(e.id===selectedId?' selected':'')+'" data-el="'+esc(e.id)+'" style="left:'+safe(e.x)+'%;top:'+safe(e.y)+'%;width:'+Math.min(100-safe(e.x),Math.max(8,e.w))+'%;height:'+Math.max(5,e.h)+'%">'+esc(e.text)+'</button>').join('');
+ // The production CSP forbids HTML style attributes. CSSOM assignments below
+ // are allowed and keep positioned components interactive without unsafe-inline.
+ box.innerHTML=p.elements.map(e=>'<button type="button" class="wf-element wf-'+esc(e.type)+(e.id===selectedId?' selected':'')+'" data-el="'+esc(e.id)+'">'+esc(e.text)+'</button>').join('');
+ const nodes=box.querySelectorAll('.wf-element');
+ p.elements.forEach((e,i)=>{
+  const node=nodes[i];if(!node)return;
+  node.style.left=safe(e.x)+'%';
+  node.style.top=safe(e.y)+'%';
+  node.style.width=Math.min(100-safe(e.x),Math.max(8,e.w))+'%';
+  node.style.height=Math.max(5,e.h)+'%';
+ });
  const el=activeEl();const detail=document.getElementById('wf-properties-body');
  detail.innerHTML=el?'<label>Texto <input id="wf-label" maxlength="100" value="'+esc(el.text)+'"></label>'+
   '<label>Largura (%) <input id="wf-width" type="number" min="8" max="100" value="'+el.w+'"></label>'+

@@ -52,6 +52,5 @@
 .bottom-more-menu{position:fixed;right:9px;bottom:calc(67px + env(safe-area-inset-bottom));z-index:30;display:grid;min-width:170px;background:#263647;border:1px solid #57718a;border-radius:11px;box-shadow:0 15px 35px #0009;padding:5px}
 .bottom-more-menu a{display:block;color:#d3e3ef;padding:13px 15px;border-radius:6px;font-size:12px}
 .bottom-more-menu a:hover,.bottom-more-menu a.active{background:#2b587b;color:white}
-body:has(#wf-root) #help-open{display:none}
 @media(max-width:650px){.bottom-nav button{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#a5b7ca;font-size:10px;background:none;border:0;border-radius:5px;padding:2px;min-width:0}.bottom-nav button span{font-size:24px;color:#a6b3c1;line-height:1}.bottom-nav a{font-size:10px}}
 @media(min-width:651px){.bottom-more-menu{display:none}}

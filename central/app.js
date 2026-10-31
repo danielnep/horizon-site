@@ -184,7 +184,7 @@ function taskRow(t){
  const progress=t.progress;
  const validProgress=progress&&Number.isInteger(progress.done)&&Number.isInteger(progress.total)&&progress.total>0&&progress.done<=progress.total;
  const value=validProgress?Math.round(100*progress.done/progress.total):null;
- const track=validProgress?'<div class="task-progress-display"><div style="width:'+value+'%"></div></div><span class="smallprint">'+
+ const track=validProgress?'<div class="task-progress-display"><div data-progress-width="'+value+'"></div></div><span class="smallprint">'+
   progress.done+' de '+progress.total+' etapas com resultado registrado</span>':
   active?'<div class="task-progress-display indefinite"><div></div></div><span class="smallprint">Trabalhando. Sem previsão confiável de conclusão.</span>':'';
  const activity=latest?acaoEmPortugues(latest.action,latest.path):t.inQueue?'Aguardando o próximo registro do executor':'Não há atividade recente registrada.';
@@ -457,7 +457,7 @@ function studioProgress(){
 }
 function pageEstudio(){
  return heading('Estúdio de criação','Comande a equipe, acompanhe tarefas e a publicação do projeto.')+
- '<div class="studio-controls" role="group" aria-label="Área do estúdio" style="margin-bottom:12px"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Comandar agentes</button></div>'+
+ '<div class="studio-controls" role="group" aria-label="Área do estúdio"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Comandar agentes</button></div>'+
  '<div id="studio-builder-panel">'+wireframeMarkup()+'</div>'+
  '<div id="studio-code-panel" hidden><div class="studio-layout" ><div class="studio-compose">'+
  (PAGES_MODE?'<section class="panel request"><h2>Prévia do projeto</h2><p class="subtitle">No GitHub Pages, o estúdio funciona em modo de acompanhamento.</p></section>':requestForm())+
@@ -474,7 +474,7 @@ function render(){
  if(renderedPage==='estudio')stopStudio();
  const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();const logout=$('logout');if(logout)logout.hidden=!adminAuthorized||PAGES_MODE||panelPasswordless;
- renderedPage=page;bind();repaintAnalysis();
+ renderedPage=page;bind();positionProgress(content);repaintAnalysis();
  for(const id of openTasks){
   const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
   if(detail&&trigger){detail.hidden=false;trigger.setAttribute('aria-expanded','true');trigger.textContent='Recolher ▴';}
@@ -639,6 +639,12 @@ function bind(){
  });
  }
 }
+function positionProgress(root=document){
+ root.querySelectorAll('[data-progress-width]').forEach(node=>{
+  const n=Number(node.dataset.progressWidth);
+  if(Number.isFinite(n))node.style.width=Math.max(0,Math.min(100,n))+'%';
+ });
+}
 function updateConn(){
  const el=$('connection');el.className='connection '+(online?'ok':'off');
  const streaming=online&&!PAGES_MODE&&stream?.readyState===EventSource.OPEN;
@@ -653,7 +659,7 @@ async function refresh(force=false){
    const formFocused=!force&&focused&&['TEXTAREA','INPUT','SELECT'].includes(focused.tagName)&&$('task-form')?.contains(focused);
    if(formFocused&&active()==='inicio'&&$('live-overview')){
     // Refresh tasks/agent status without clearing what the owner is typing.
-    $('live-overview').innerHTML=overviewMarkup();
+    $('live-overview').innerHTML=overviewMarkup();positionProgress($('live-overview'));
     document.querySelectorAll('#live-overview [data-detail]').forEach(el=>el.addEventListener('click',()=>{
       const target=document.getElementById('detail-'+el.dataset.detail);if(!target)return;
       target.hidden=!target.hidden;el.setAttribute('aria-expanded',String(!target.hidden));el.textContent=target.hidden?'Detalhes ▾':'Recolher ▴';
