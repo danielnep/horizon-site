@@ -17,7 +17,7 @@ import {request as httpRequest} from 'node:http';
  */
 const ID=/^[a-z0-9][a-z0-9-]{2,79}$/;
 const TASK_ID=/^[a-z0-9][a-z0-9:-]{2,109}$/;
-const ACTIONS=new Set(['pause','resume','cancel','retry']);
+const ACTIONS=new Set(['pause','resume','cancel','retry','archive','restore']);
 const AGENT_ACTIONS=new Set(['pause','resume']);
 
 export function vpsConnectionConfig(env=process.env){
@@ -119,6 +119,7 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
   agents,tasks,activity,events,worker:{status:String(worker.status||'sem telemetria').slice(0,100),
     lastCycle:worker.lastCycle||null},
   available:{vps:true,queue:data.available?.queue===true,advancedControls:false,
+   archive:data.available?.archive===true,eventStream:data.available?.eventStream===true,
    results:data.available?.results===true,attendance:data.available?.attendance===true},
   issues:Array.isArray(data.issues)?data.issues.slice(0,12).map(x=>String(x).slice(0,200)):[],
   usage,
@@ -173,6 +174,13 @@ export async function vpsSnapshot(agentIds,options={}){
  const packet=await vpsRequest('/v1/snapshot',options);
  return normalizeVpsSnapshot(packet,agentIds);
 }
+export async function vpsArchivedTasks(options={}){
+ const packet=await vpsRequest('/v1/tasks/archived',options);
+ if(!Array.isArray(packet.tasks))throw new Error('arquivo_vps_invalido');
+ return normalizeVpsSnapshot({source:'vps',tasks:packet.tasks,agents:[],
+  available:{queue:true,archive:true}},[]).tasks;
+}
+
 export async function vpsSubmitTask(payload,options={}){
  const result=await vpsRequest('/v1/tasks',{...options,method:'POST',data:payload});
  if(!result?.id||!TASK_ID.test(result.id))throw new Error('envio_vps_sem_confirmacao');

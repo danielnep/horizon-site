@@ -50,3 +50,32 @@ class SqliteLiveEventsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TelemetryLiveEventsTest(unittest.TestCase):
+    def test_telemetry_append_pushes_event_without_polling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dbfile=Path(tmp)/'active.sqlite3'
+            tele=Path(tmp)/'telemetry'
+            tele.mkdir()
+            with sqlite3.connect(dbfile) as db:
+                db.execute('PRAGMA journal_mode=WAL')
+                db.execute('CREATE TABLE fake_tasks (id INTEGER)')
+            old_db,old_tel=live.DB,live.TELEMETRY
+            live.DB,live.TELEMETRY=dbfile,tele
+            received=[]
+            stream_ready=threading.Event()
+            def listener():
+                stream=live.listen_sqlite_changes()
+                stream_ready.set()
+                try: received.append(next(stream))
+                finally: stream.close()
+            try:
+                t=threading.Thread(target=listener,daemon=True)
+                t.start();self.assertTrue(stream_ready.wait(1))
+                time.sleep(0.12)
+                with (tele/('activity-'+time.strftime('%Y-%m-%d',time.gmtime())+'.jsonl')).open('a') as f:
+                    f.write('{"test":true}\n')
+                t.join(3)
+                self.assertEqual(received,[True])
+            finally:
+                live.DB,live.TELEMETRY=old_db,old_tel

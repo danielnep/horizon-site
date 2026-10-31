@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {operationalTelemetry,recordCentralUsage} from './telemetry.mjs';
 import {passkeyEnabled,ownerPasskeyStatus,beginEnrollment,completeEnrollment,beginAuthentication,completeAuthentication} from './passkey-auth.mjs';
-import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,vpsRequest,disconnectedVps,subscribeVpsChanges} from './vps-client.mjs';
+import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,vpsArchivedTasks,vpsRequest,disconnectedVps,subscribeVpsChanges} from './vps-client.mjs';
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
@@ -358,14 +358,17 @@ function startVpsChangeStream(){
  }catch{retry();}
 }
 function startLiveMonitor(){
- if(monitorTimer!==null)return;
+ if(monitorTimer!==null||vpsStreamClose)return;
  monitorDigest=null;
- // Reconcile every six seconds even with a healthy SQLite stream:
- // provider JSONL, CI and remote repository updates may not change SQLite.
- monitorTimer=setInterval(()=>void pollLiveState(),6000);
- monitorTimer.unref?.();
- void pollLiveState();
- startVpsChangeStream();
+ // The VPS emits SQLite and provider-telemetry inotify events over a local
+ // authenticated Unix socket. Never poll when the event stream is available.
+ if(hasSharedVpsQueue()){
+   monitorTimer=setInterval(()=>void pollLiveState(),6000);
+   monitorTimer.unref?.();
+   void pollLiveState();
+ }else{
+   startVpsChangeStream();
+ }
 }
 function stopLiveMonitorIfUnused(){
  if(live.size!==0)return;
@@ -564,8 +567,9 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   catch{send(res,503,{error:'nao_foi_possivel_consultar_repositorios'});}return true;
  }
  if(req.method==='GET'&&raw==='/central/api/tasks/archived'){
-  if(!hasSharedVpsQueue()){send(res,503,{error:'arquivo_vps_exige_fila_compartilhada'});return true;}
-  try{const tasks=await directTasks({includeArchived:true});send(res,200,{tasks:tasks.filter(t=>t.status==='arquivada')});}
+  try{const tasks=hasSharedVpsQueue()?
+   (await directTasks({includeArchived:true})).filter(t=>t.status==='arquivada'):
+   await vpsArchivedTasks();send(res,200,{tasks});}
   catch{send(res,503,{error:'arquivo_indisponivel'});}
   return true;
  }
@@ -612,7 +616,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   try{
    const data=await body(req,5000);
-   if(!hasSharedVpsQueue()&&!['pause','resume','cancel','retry'].includes(data.action)){
+   if(!hasSharedVpsQueue()&&!['pause','resume','cancel','retry','archive','restore'].includes(data.action)){
      send(res,503,{error:'controle_avancado_exige_fila_compartilhada_na_vps'});return true;
     }
     const result=hasSharedVpsQueue()?

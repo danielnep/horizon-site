@@ -180,7 +180,7 @@ function summary(){
 function taskRow(t){
  const latest=t.lastActivity||null,stamp=latest&&Date.parse(latest.at),fresh=Number.isFinite(stamp)&&Date.now()-stamp<120000;
  const pendingDiagnosis=taskWaitingSummary(t);
- const active=fresh&&t.inQueue&&!/pausada|cancelada|concluída/.test(t.status);
+ const active=fresh&&t.inQueue&&t.rawStatus==='running'&&t.status==='em execução';
  const progress=t.progress;
  const validProgress=progress&&Number.isInteger(progress.done)&&Number.isInteger(progress.total)&&progress.total>0&&progress.done<=progress.total;
  const value=validProgress?Math.round(100*progress.done/progress.total):null;
@@ -224,7 +224,8 @@ function taskRow(t){
    '</div></div>';
   }).join('')+'</div>':
   '<p class="smallprint">Não há detalhes de etapas anteriores registrados.</p>';
- const taskId=escapeHTML(t.id),advanced=Boolean(snapshot?.available?.advancedControls);
+ const taskId=escapeHTML(t.id),advanced=Boolean(snapshot?.available?.advancedControls),
+ canArchive=advanced||Boolean(snapshot?.available?.archive);
  const controls=PAGES_MODE?'':t.status==='arquivada'?
  '<div class="task-controls"><button class="secondary" data-task-action="restore" data-task-id="'+taskId+'">Restaurar como pausada</button></div>':
  '<details class="task-actions-disclosure"><summary>Gerenciar tarefa <span aria-hidden="true">⌄</span></summary><div class="task-controls">'+(t.inQueue?
@@ -237,7 +238,7 @@ function taskRow(t){
  ['P0','P1','P2','P3'].map(p=>'<option value="'+p+'"'+(t.priority===p?' selected':'')+'>'+({P0:'Urgente',P1:'Alta',P2:'Normal',P3:'Baixa'}[p])+'</option>').join('')+'</select></label>'+
  '<label class="task-setting">Agente <select data-task-agent="'+taskId+'" aria-label="Configurar agente responsável">'+
  Object.keys(AGENT_NAMES).map(id=>'<option value="'+id+'"'+(t.agent===id?' selected':'')+'>'+escapeHTML(label(id))+'</option>').join('')+'</select></label>':'')+
- (advanced&&t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
+ (canArchive&&t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
  '</div></details>'+
  (advanced&&(t.inQueue||t.status==='pausada')?'<details class="task-editor" data-editor="'+taskId+'"'+(editPanels.has(t.id)?' open':'')+'><summary>Editar solicitação e posição</summary>'+
  '<label>Instrução original<textarea data-edit-objective="'+taskId+'" maxlength="2800">'+escapeHTML(taskDrafts.get(t.id)??String(t.description||'').replace(/^P[0-3]\s*\|\s*/,''))+'</textarea></label>'+
@@ -325,16 +326,16 @@ function pageTarefas(){
  const filtered=tasks.filter(t=>(filter==='todos'||(filter==='fora'?!t.inQueue:t.status===filter))&&(!text||[t.project,t.id,t.title,t.agent].join(' ').toLocaleLowerCase('pt-BR').includes(text)));
  return heading('Tarefas','Solicitações registradas na fila e os respectivos resultados verificáveis.')+
  '<div class="searchbar"><input id="search" placeholder="Buscar por projeto ou tarefa…" aria-label="Buscar tarefas" value="'+escapeHTML(term)+'">'+
- '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="arquivada"'+(snapshot?.available?.advancedControls?'':' disabled')+'>Arquivadas</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="falhou">Falhou</option><option value="concluída">Concluída</option></select></div>'+
+ '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="arquivada"'+(snapshot?.available?.advancedControls||snapshot?.available?.archive?'':' disabled')+'>Arquivadas</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="falhou">Falhou</option><option value="concluída">Concluída</option></select></div>'+
  '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados da VPS</span></div>'+
  (filter==='arquivada'?'':'<div class="bulk-toolbar"><label><input type="checkbox" id="select-visible" aria-label="Selecionar tarefas visíveis"> Selecionar visíveis</label>'+
  '<span id="selected-count">'+taskSelections.size+' selecionadas</span>'+
- '<button class="secondary" data-bulk="pause">Pausar</button><button class="secondary" data-bulk="cancel">Cancelar</button>'+(snapshot?.available?.advancedControls?'<button class="secondary" data-bulk="archive">Arquivar</button>':'')+'</div>')+
+ '<button class="secondary" data-bulk="pause">Pausar</button><button class="secondary" data-bulk="cancel">Cancelar</button>'+(snapshot?.available?.advancedControls||snapshot?.available?.archive?'<button class="secondary" data-bulk="archive">Arquivar</button>':'')+'</div>')+
  listTasks(filtered);
 }
 function agentRow(a){
  const latest=a.lastTask?'Última tarefa: '+a.lastTaskTitle+' · '+emPortugues(a.lastTaskStatus):'Nenhuma tarefa atribuída no histórico consultado';
- const active=a.currentTask?'Atividade atual: '+a.currentTask:latest;
+ const active=a.currentTask?(a.status==='em execução'?'Executando: ':'Aguardando na fila: ')+a.currentTask:latest;
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(active)+'</div></div>'+
  chip(a.held?'novas tarefas pausadas':a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Gerenciar →</button>'+
  (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado atual: '+escapeHTML(a.status)+'\n'+escapeHTML(active)+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa</button><button class="secondary" data-agent-action="'+(a.held?'resume':'pause')+'" data-agent-id="'+escapeHTML(a.id)+'">'+(a.held?'Liberar novas tarefas':'Pausar novas tarefas')+'</button>'+(a.lastTask?'<button class="secondary" data-open-agent-task="'+escapeHTML(a.lastTask)+'">Ver última tarefa</button>':'')+'</div>'+
@@ -353,7 +354,7 @@ function agentConfigMarkup(id){
 function pageAgentes(){
  const a=snapshot?.agents||[];
  return heading('Os 17 especialistas','Envie tarefas, pause atribuições e consulte a última atividade registrada.')+
- '<div class="summary"><span><b>'+a.length+'</b> cadastrados</span><span><b>'+a.filter(x=>x.currentTask).length+'</b> executando agora</span><span>Histórico individual sem simular agentes ativos</span></div>'+
+ '<div class="summary"><span><b>'+a.length+'</b> cadastrados</span><span><b>'+a.filter(x=>x.currentTask&&x.status==='em execução').length+'</b> executando agora</span><span>Histórico individual sem simular agentes ativos</span></div>'+
  '<div class="list">'+(snapshot?.available?.vps?a.map(agentRow).join(''):'<div class="empty">VPS desconectada. Nenhum estado individual pode ser confirmado.</div>')+'</div>';
 }
 
@@ -643,7 +644,7 @@ function updateConn(){
  const el=$('connection');el.className='connection '+(online?'ok':'off');
  const streaming=online&&!PAGES_MODE&&stream?.readyState===EventSource.OPEN;
  el.className='connection '+(!online?'off':streaming||PAGES_MODE?'ok':'');
- el.querySelector('span').textContent=online?(streaming?'VPS sincronizando':'VPS conectada · eventos offline'):'VPS desconectada';
+ el.querySelector('span').textContent=online?(streaming?'VPS em tempo real':'VPS conectada · eventos offline'):'VPS desconectada';
 }
 async function refresh(force=false){
  if(refreshing)return refreshing;
@@ -671,7 +672,7 @@ function connectEvents(){
  if(stream){stream.close();stream=null;}
  stream=new EventSource('/central/api/events');
  stream.addEventListener('update',()=>{setTimeout(()=>refresh(),450)});
- stream.onopen=()=>updateConn();
+ stream.onopen=()=>{updateConn();void refresh();};
  stream.onerror=()=>{if(!navigator.onLine)online=false;updateConn();};
 }
 async function boot(){
@@ -780,6 +781,6 @@ $('logout').addEventListener('click',async()=>{if(PAGES_MODE)return;try{await ap
 window.addEventListener('hashchange',render);
 window.addEventListener('online',()=>refresh(true));
 window.addEventListener('offline',()=>{online=false;updateConn()});
-setInterval(()=>refresh(),PAGES_MODE?120000:10000);
+if(PAGES_MODE)setInterval(()=>refresh(),120000);
 if('serviceWorker'in navigator)window.addEventListener('load',()=>{const url=new URL('./sw.js',location.href);navigator.serviceWorker.register(url.pathname,{scope:new URL('./',url).pathname}).catch(()=>{});});
 boot();

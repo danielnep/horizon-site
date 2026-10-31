@@ -188,6 +188,13 @@ def ensure_tables(db):
     db.execute("""CREATE TABLE IF NOT EXISTS horizon_control_agents(
        agent TEXT PRIMARY KEY, paused_at REAL NOT NULL
     )""")
+    # A separate reversible view is safer than deleting historic task records.
+    db.execute("""CREATE TABLE IF NOT EXISTS horizon_control_archived(
+       task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+       original_status TEXT NOT NULL,
+       original_not_before REAL,
+       archived_at REAL NOT NULL
+    )""")
 
 
 def activity_data(days=7):
@@ -287,7 +294,7 @@ def worker_status():
             "lastCycle": {"at": reported} if reported else None}
 
 
-def snapshot():
+def snapshot(*, include_archived=False):
     usage, latest, activity = activity_data()
     with database() as db:
         tasks = db.execute(
@@ -301,6 +308,10 @@ def snapshot():
             holds = {r["agent"] for r in db.execute("SELECT agent FROM horizon_control_agents")}
         except sqlite3.OperationalError:
             control, holds = {}, set()
+        try:
+            archived = {r["task_id"] for r in db.execute("SELECT task_id FROM horizon_control_archived")}
+        except sqlite3.OperationalError:
+            archived = set()
         recent = db.execute(
             """SELECT id,task_id,kind,created_at FROM events
                ORDER BY id DESC LIMIT 70""").fetchall()
@@ -308,9 +319,15 @@ def snapshot():
     running = {}
     for item in tasks:
         tid = item["task_id"]
+        if tid in archived and not include_archived:
+            continue
+        if tid not in archived and include_archived:
+            continue
         status = item["status"]
         c = control.get(tid) or {}
-        if c.get("state") == "paused":
+        if tid in archived:
+            visible_status = "arquivada"
+        elif c.get("state") == "paused":
             visible_status = "pausada"
         elif c.get("state") == "cancelled":
             visible_status = "cancelada"
@@ -337,7 +354,7 @@ def snapshot():
             "description": item["objective"][:2800],
             "agent": item["agent"], "priority": "P1" if item["priority"] > 0 else "P2",
             "status": visible_status, "rawStatus": status,
-            "inQueue": status in ("queued", "running") and c.get("state") not in ("paused", "cancelled"),
+            "inQueue": status in ("queued", "running") and tid not in archived and c.get("state") not in ("paused", "cancelled"),
             "hasResult": item["result"] is not None,
             "approved": False, "published": False, "progress": None,
             "stages": [], "lastActivity": last,
@@ -372,7 +389,8 @@ def snapshot():
     return {"source": "vps", "at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "tasks": rows, "agents": agents, "activity": activity, "events": events,
             "worker": worker_status(),
-            "available": {"queue": True, "results": True, "attendance": True},
+            "available": {"queue": True, "results": True, "attendance": True,
+                          "archive": True, "eventStream": True},
             "usage": usage, "issues": []}
 
 
@@ -429,6 +447,9 @@ def _update_task(db, id_, action, now):
     if row is None:
         raise ValueError("tarefa_nao_encontrada")
     control = db.execute("SELECT state,original_not_before,source FROM horizon_control_tasks WHERE task_id=?", (id_,)).fetchone()
+    if action not in ("archive", "restore") and db.execute(
+            "SELECT 1 FROM horizon_control_archived WHERE task_id=?", (id_,)).fetchone():
+        raise ValueError("tarefa_arquivada_restaure_antes")
     if action == "pause":
         if row["status"] != "queued" or control:
             raise ValueError("somente_tarefa_aguardando_pode_ser_pausada")
@@ -450,6 +471,29 @@ def _update_task(db, id_, action, now):
         db.execute("UPDATE tasks SET status='queued',not_before=?,error=NULL WHERE task_id=?",
                    (max(0, control["original_not_before"] or 0), id_))
         db.execute("DELETE FROM horizon_control_tasks WHERE task_id=?", (id_,))
+    elif action == "archive":
+        if row["status"] == "running":
+            raise ValueError("tarefa_em_execucao_aguarde_checkpoint")
+        if db.execute("SELECT 1 FROM horizon_control_archived WHERE task_id=?", (id_,)).fetchone():
+            return {"id": id_, "status": "arquivada", "already": True}
+        db.execute("INSERT INTO horizon_control_archived VALUES(?,?,?,?)",
+                   (id_, row["status"], row["not_before"], now))
+        # Prevent future claim of untouched queued tasks. Preserve checkpoints,
+        # historical status, and original scheduling for reversible restoration.
+        if row["status"] == "queued" and not control:
+            db.execute("UPDATE tasks SET status='blocked',error=? WHERE task_id=?",
+                       (json.dumps({"reason":"archived_by_owner"}), id_))
+    elif action == "restore":
+        archived = db.execute("SELECT original_status,original_not_before FROM horizon_control_archived WHERE task_id=?", (id_,)).fetchone()
+        if not archived:
+            raise ValueError("tarefa_nao_arquivada")
+        db.execute("DELETE FROM horizon_control_archived WHERE task_id=?", (id_,))
+        if archived["original_status"] == "queued" and not control:
+            # Restoration never silently runs an old job. Owner chooses resume.
+            db.execute("UPDATE tasks SET status='queued',not_before=?,error=NULL WHERE task_id=?",
+                       (HOLD_UNTIL, id_))
+            db.execute("INSERT INTO horizon_control_tasks VALUES(?,?,?,?,?)",
+                       (id_, "paused", archived["original_not_before"], "manual", now))
     elif action == "retry":
         if row["status"] not in ("blocked", "failed") or control:
             raise ValueError("tarefa_nao_esta_em_falha")
@@ -459,8 +503,13 @@ def _update_task(db, id_, action, now):
         raise ValueError("comando_invalido")
     db.execute("INSERT INTO events(task_id,kind,data,created_at) VALUES(?,?,?,?)",
                (id_, "central_" + action, "{}", now))
-    return {"id": id_, "status": {"pause": "pausada", "cancel": "cancelada", "resume": "na fila",
-                                   "retry": "na fila"}[action],
+    restored = "pausada" if action == "restore" and archived["original_status"] == "queued" and not control else (
+        "pausada" if action == "restore" and control and control["state"] == "paused" else
+        "cancelada" if action == "restore" and control and control["state"] == "cancelled" else
+        CHECKS.get(row["status"], "na fila"))
+    return {"id": id_, "status": restored if action == "restore" else {
+            "pause": "pausada", "cancel": "cancelada", "resume": "na fila",
+            "retry": "na fila", "archive": "arquivada"}[action],
             "note": "Comando aplicado no banco da VPS. Uma execução já iniciada não é interrompida."}
 
 
@@ -545,6 +594,9 @@ def listen_sqlite_changes():
         error = ctypes.get_errno()
         os.close(fd)
         raise OSError(error, "SQLite directory watch failed")
+    telemetry_watch = -1
+    if TELEMETRY.is_dir():
+        telemetry_watch = libc.inotify_add_watch(fd, ctypes.c_char_p(os.fsencode(str(TELEMETRY))), _IN_EVENTS)
     try:
         while True:
             readable, _, _ = select.select([fd], [], [], 24)
@@ -558,11 +610,13 @@ def listen_sqlite_changes():
             changed = False
             cursor = 0
             while cursor + _INOTIFY_HEADER.size <= len(packet):
-                _, mask, _, size = _INOTIFY_HEADER.unpack_from(packet, cursor)
+                event_watch, mask, _, size = _INOTIFY_HEADER.unpack_from(packet, cursor)
                 cursor += _INOTIFY_HEADER.size
                 filename = packet[cursor:cursor + size].rstrip(b"\x00")
                 cursor += size
-                if os.fsdecode(filename) in _SQLITE_NAMES and mask & _IN_EVENTS:
+                name = os.fsdecode(filename)
+                if mask & _IN_EVENTS and ((event_watch == wd and name in _SQLITE_NAMES)
+                    or (event_watch == telemetry_watch and re.fullmatch(r"(usage|activity)-\d{4}-\d{2}-\d{2}\.jsonl", name))):
                     changed = True
             if changed:
                 # Merge bursts of WAL writes before requesting a new snapshot.
@@ -615,6 +669,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.command == "GET" and path == "/v1/snapshot":
                 return self.send_json(200, snapshot())
+            if self.command == "GET" and path == "/v1/tasks/archived":
+                return self.send_json(200, {"tasks": snapshot(include_archived=True)["tasks"]})
             if self.command == "GET" and path == "/v1/events":
                 return self.send_change_stream()
             if self.command != "POST":

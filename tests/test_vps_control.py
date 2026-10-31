@@ -109,3 +109,46 @@ class VpsControlTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ArchivedTaskRegression(VpsControlTests):
+    def test_archive_queued_does_not_run_and_restores_paused(self):
+        item=self.new_task();id_=item['id']
+        self.assertEqual(api.task_action(id_, 'archive')['status'],'arquivada')
+        self.assertEqual(api.snapshot()['tasks'],[])
+        archived=api.snapshot(include_archived=True)['tasks']
+        self.assertEqual(archived[0]['status'],'arquivada')
+        with api.database() as db:
+            self.assertEqual(db.execute('SELECT status FROM tasks WHERE task_id=?',(id_,)).fetchone()[0],'blocked')
+        self.assertEqual(api.task_action(id_, 'restore')['status'],'pausada')
+        self.assertEqual(api.snapshot()['tasks'][0]['status'],'pausada')
+        self.assertEqual(api.task_action(id_, 'resume')['status'],'na fila')
+
+    def test_archive_completed_keeps_evidence_and_status(self):
+        item=self.new_task();id_=item['id']
+        with api.database(write=True) as db:
+            db.execute("UPDATE tasks SET status='succeeded',result=? WHERE task_id=?",(json.dumps({'ok':True}),id_))
+        self.assertEqual(api.task_action(id_,'archive')['status'],'arquivada')
+        self.assertEqual(api.snapshot(include_archived=True)['tasks'][0]['hasResult'],True)
+        self.assertEqual(api.task_action(id_,'restore')['status'],'concluída')
+        self.assertEqual(api.snapshot()['tasks'][0]['status'],'concluída')
+
+    def test_archiving_paused_preserves_owner_pause(self):
+        item=self.new_task();id_=item['id']
+        api.task_action(id_,'pause')
+        api.task_action(id_,'archive')
+        self.assertEqual(api.task_action(id_,'restore')['status'],'pausada')
+        self.assertEqual(api.snapshot()['tasks'][0]['status'],'pausada')
+
+    def test_running_cannot_be_archived_or_cancelled_mid_step(self):
+        item=self.new_task();id_=item['id']
+        with api.database(write=True) as db:
+            db.execute("UPDATE tasks SET status='running' WHERE task_id=?",(id_,))
+        with self.assertRaisesRegex(ValueError,'tarefa_em_execucao'):
+            api.task_action(id_,'archive')
+        self.assertEqual(api.snapshot()['tasks'][0]['status'],'em execução')
+
+    def test_archived_cannot_be_retried_without_restoration(self):
+        item=self.new_task();id_=item['id']
+        api.task_action(id_,'archive')
+        with self.assertRaisesRegex(ValueError,'tarefa_arquivada'):
+            api.task_action(id_,'retry')

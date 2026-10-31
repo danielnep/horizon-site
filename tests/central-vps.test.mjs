@@ -110,3 +110,24 @@ test('browser receives disconnected status without triggering development tasks'
   assert.match(js,/VPS desconectada/);
  }finally{server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
 });
+test('live VPS exposes reversible archive only when the VPS confirms it', async () => {
+ const enabled=normalizeVpsSnapshot({...pack,available:{...pack.available,archive:true,eventStream:true}},ids);
+ assert.equal(enabled.available.archive,true);
+ assert.equal(enabled.available.eventStream,true);
+ assert.equal(enabled.available.advancedControls,false);
+ const {vpsArchivedTasks}=await import('../central/vps-client.mjs');
+ let seen=[];
+ const fetcher=async (url,options) => {
+   seen.push([url, options.method]);
+   if(url.endsWith('/v1/tasks/archived'))return new Response(JSON.stringify({tasks:[{
+    id:'ctl-12345',status:'arquivada',inQueue:false,project:'ronda-pro',title:'Tarefa antiga'
+   }]}),{status:200});
+   return new Response(JSON.stringify({id:'ctl-12345',status:'arquivada'}),{status:200});
+ };
+ const archived=await vpsArchivedTasks({env,fetcher});
+ assert.equal(archived.length,1);
+ assert.equal(archived[0].status,'arquivada');
+ await vpsTaskAction('ctl-12345','archive',{env,fetcher});
+ await vpsTaskAction('ctl-12345','restore',{env,fetcher});
+ assert.equal(seen.length,3);
+});
