@@ -66,3 +66,8 @@ body:has(#studio-root) main{width:min(100%,1500px)}
 .studio-failures a{color:#61b5ff;font-weight:700}
 @media(max-width:850px){.studio-compose{order:1}.studio-preview{order:2}}
 @media(max-width:650px){.studio-compose .request textarea{min-height:105px}.studio-preview{box-shadow:none}}
+
+/* Prevent the narrow command form from forcing the Studio grid beyond the device. */
+.studio-compose{grid-template-columns:minmax(0,1fr);width:100%;max-width:100%}
+.studio-compose>*{min-width:0;max-width:100%}
+.studio-compose .request-meta .field select{min-width:0;max-width:100%}
