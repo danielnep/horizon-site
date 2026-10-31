@@ -1,0 +1,9 @@
+[Unit]
+Description=Horizon Panel: publish same validated GitHub main as the site
+Wants=network-online.target docker.service
+After=network-online.target docker.service horizon-site-sync.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/horizon-panel-sync
+TimeoutStartSec=240
