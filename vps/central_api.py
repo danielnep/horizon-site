@@ -344,9 +344,29 @@ def snapshot():
             "blocker": "Há dependências ou erro registrado" if status == "blocked" else None,
         })
     ids = registry_ids()
-    agents = [{"id": aid, "status": "em execução" if aid in running else "sem telemetria individual",
-               "held": aid in holds, "currentTask": running.get(aid), "updatedAt": None}
-              for aid in ids]
+    # This worker is sequential: agent IDs identify specialists, not 17 processes.
+    # Keep the latest task distinct from a task actively executing.
+    latest_by_agent = {}
+    queued_by_agent = {}
+    for task in rows:
+        aid = task["agent"]
+        if aid and aid not in latest_by_agent:
+            latest_by_agent[aid] = task
+        if task["rawStatus"] == "queued" and task["inQueue"] and aid not in queued_by_agent:
+            queued_by_agent[aid] = task["id"]
+    agents = []
+    for aid in ids:
+        previous = latest_by_agent.get(aid)
+        current_id = running.get(aid)
+        waiting_id = queued_by_agent.get(aid)
+        state = ("em execução" if current_id else
+                 "na fila" if waiting_id else "sem tarefa ativa")
+        agents.append({"id": aid, "status": state,
+                       "held": aid in holds, "currentTask": current_id or waiting_id,
+                       "lastTask": previous["id"] if previous else None,
+                       "lastTaskTitle": previous["title"][:120] if previous else None,
+                       "lastTaskStatus": previous["status"] if previous else None,
+                       "updatedAt": (previous["lastActivity"] or {}).get("at") if previous else None})
     events = [{"id": e["id"], "kind": "worker", "event": e["kind"],
                "at": timestamp(e["created_at"])} for e in reversed(recent)]
     return {"source": "vps", "at": dt.datetime.now(dt.timezone.utc).isoformat(),

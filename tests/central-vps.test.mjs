@@ -55,6 +55,16 @@ test('VPS snapshot includes only recorded facts and gives missing agents unknown
  assert.equal(v.usage.total,388);
  assert.equal(v.events[0].event,'task_started');
 });
+test('agent details distinguish last completed task from live execution',()=>{
+ const source={...pack,agents:[{id:'qa-engineer',status:'sem tarefa ativa',currentTask:null,
+  lastTask:'ctl-12345',lastTaskTitle:'Ajustar GPS',lastTaskStatus:'falhou',updatedAt:'2026-10-22T15:00:00Z'}]};
+ const state=normalizeVpsSnapshot(source,ids);
+ assert.equal(state.agents[1].currentTask,null);
+ assert.equal(state.agents[1].lastTask,'ctl-12345');
+ assert.equal(state.agents[1].lastTaskTitle,'Ajustar GPS');
+ assert.equal(state.agents[1].lastTaskStatus,'falhou');
+ assert.equal(state.available.advancedControls,false);
+});
 test('invalid data without VPS source cannot appear live',()=>{
  assert.throws(()=>normalizeVpsSnapshot({agents:[],tasks:[]},ids),/resposta_vps_invalida/);
 });

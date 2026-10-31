@@ -142,7 +142,7 @@ export function mountStudio({repositories=[],onProjectChange=()=>{}}={}){
  });
  $(root,'studio-connect').addEventListener('click',()=>setManual($(root,'studio-url').value));
  $(root,'studio-clear').addEventListener('click',()=>{delete state.manualUrls[state.project];$(root,'studio-url').value='';state.currentUrl='';persist();void probe({force:true})});
- $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Endereço carregado · se ficar vazio, use Abrir','ready')});
+ $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Visualizador atualizado · se ficar vazio, toque em Abrir','ready')});
  if(typeof ResizeObserver!=='undefined'){state.observer=new ResizeObserver(fitPreview);state.observer.observe($(root,'studio-canvas'));}
  window.addEventListener('resize',fitPreview);
  state.loop=setInterval(()=>void probe(),20000);

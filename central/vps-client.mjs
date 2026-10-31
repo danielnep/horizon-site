@@ -69,7 +69,10 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
   const found=agentMap.get(id);
   return {id,status:found?String(found.status||'não informado').slice(0,90):'sem telemetria individual',
    held:found?.held===true,currentTask:typeof found?.currentTask==='string'?found.currentTask:null,
-   updatedAt:typeof found?.updatedAt==='string'?found.updatedAt:null};
+   updatedAt:typeof found?.updatedAt==='string'?found.updatedAt:null,
+   lastTask:typeof found?.lastTask==='string'&&TASK_ID.test(found.lastTask)?found.lastTask:null,
+   lastTaskTitle:typeof found?.lastTaskTitle==='string'?found.lastTaskTitle.slice(0,120):'',
+   lastTaskStatus:typeof found?.lastTaskStatus==='string'?found.lastTaskStatus.slice(0,60):null};
  });
  const tasks=(Array.isArray(data.tasks)?data.tasks:[]).filter(t=>t&&TASK_ID.test(t.id)).slice(0,200).map(t=>({
   id:t.id,project:String(t.project||'não informado').slice(0,90),
@@ -115,7 +118,7 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
   connection:{state:'connected',message:'Dados da VPS recebidos',verifiedAt:new Date().toISOString()},
   agents,tasks,activity,events,worker:{status:String(worker.status||'sem telemetria').slice(0,100),
     lastCycle:worker.lastCycle||null},
-  available:{vps:true,queue:data.available?.queue===true,
+  available:{vps:true,queue:data.available?.queue===true,advancedControls:false,
    results:data.available?.results===true,attendance:data.available?.attendance===true},
   issues:Array.isArray(data.issues)?data.issues.slice(0,12).map(x=>String(x).slice(0,200)):[],
   usage,

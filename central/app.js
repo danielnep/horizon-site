@@ -25,6 +25,8 @@ const AGENT_NAMES={
 'corregedoria-may':'Corregedoria','may-persona':'May Persona'};
 const LABELS={estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'17 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
+let studioView='code';
+try{studioView=sessionStorage.getItem('horizon.studio.active-view')==='builder'?'builder':'code';}catch{}
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
 let noticeTimeout;
 let archivedTasks=[];
@@ -163,13 +165,18 @@ function updateMenu(){
 }
 function heading(title,subtitle=''){return '<div class="page-head"><div><p class="eyebrow">HORIZON / OPERAÇÕES</p><h1>'+escapeHTML(title)+'</h1>'+(subtitle?'<p class="subtitle">'+escapeHTML(subtitle)+'</p>':'')+'</div><span class="time-label">'+(snapshot?'Atualizado '+time(snapshot.at):'Aguardando dados')+'</span></div>';}
 function counts(){
- const t=snapshot?.tasks||[],q=t.filter(x=>x.inQueue);
- return {total:t.length,active:q.filter(x=>x.status==='em execução').length,
- waiting:q.filter(x=>['aguardando','na fila','aguardando validação'].includes(x.status)).length,
- blocked:q.filter(x=>x.status==='bloqueada').length,
- queue:q.length,offQueue:t.filter(x=>!x.inQueue&&!x.published).length};
+ const tasks=snapshot?.tasks||[];
+ return {total:tasks.length,active:tasks.filter(t=>t.rawStatus==='running'||t.status==='em execução').length,
+ waiting:tasks.filter(t=>t.inQueue&&t.rawStatus==='queued').length,
+ blocked:tasks.filter(t=>t.rawStatus==='blocked'||t.status==='bloqueada').length,
+ failed:tasks.filter(t=>t.rawStatus==='failed'||t.status==='falhou').length,
+ finished:tasks.filter(t=>t.rawStatus==='succeeded'||t.status==='concluída').length};
 }
-function summary(){if(!snapshot?.available?.vps)return '<div class="central-vps-offline" role="status"><strong>VPS desconectada</strong><p>Não há confirmação de tarefas, agentes ou consumo. Nenhum dado antigo será mostrado como atual.</p></div>';const c=counts();return '<div class="summary" aria-label="Situação geral"><span class="working"><b>'+c.active+'</b> trabalhando</span><span><b>'+c.queue+'</b> na fila</span><span><b>'+c.offQueue+'</b> pendências fora da fila</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas na fila</span><span><b>17</b> agentes</span></div>';}
+function summary(){
+ if(!snapshot?.available?.vps)return '<div class="central-vps-offline" role="status"><strong>VPS desconectada</strong><p>Sem dados confirmados da fila.</p></div>';
+ const c=counts();
+ return '<div class="summary" aria-label="Situação real do executor"><span class="working"><b>'+c.active+'</b> executando</span><span><b>'+c.waiting+'</b> aguardando</span><span class="problem"><b>'+c.blocked+'</b> bloqueadas</span><span class="problem"><b>'+c.failed+'</b> falharam</span><span><b>'+c.finished+'</b> concluídas</span><span><b>'+c.total+'</b> registros</span></div>';
+}
 function taskRow(t){
  const latest=t.lastActivity||null,stamp=latest&&Date.parse(latest.at),fresh=Number.isFinite(stamp)&&Date.now()-stamp<120000;
  const pendingDiagnosis=taskWaitingSummary(t);
@@ -217,22 +224,22 @@ function taskRow(t){
    '</div></div>';
   }).join('')+'</div>':
   '<p class="smallprint">Não há detalhes de etapas anteriores registrados.</p>';
- const taskId=escapeHTML(t.id);
+ const taskId=escapeHTML(t.id),advanced=Boolean(snapshot?.available?.advancedControls);
  const controls=PAGES_MODE?'':t.status==='arquivada'?
  '<div class="task-controls"><button class="secondary" data-task-action="restore" data-task-id="'+taskId+'">Restaurar como pausada</button></div>':
  '<details class="task-actions-disclosure"><summary>Gerenciar tarefa <span aria-hidden="true">⌄</span></summary><div class="task-controls">'+(t.inQueue?
- '<button class="secondary" data-task-action="up" data-task-id="'+taskId+'" title="Adiantar na ordem de execução">↑ Subir</button>'+
- '<button class="secondary" data-task-action="down" data-task-id="'+taskId+'" title="Atrasar na ordem de execução">↓ Descer</button>'+
- '<button class="secondary" data-task-action="pause" data-task-id="'+taskId+'">Pausar</button>':
+ (advanced?'<button class="secondary" data-task-action="up" data-task-id="'+taskId+'" title="Adiantar na ordem de execução">↑ Subir</button><button class="secondary" data-task-action="down" data-task-id="'+taskId+'" title="Atrasar na ordem de execução">↓ Descer</button>':'')+
+ '<button class="secondary" data-task-action="pause" data-task-id="'+taskId+'">Pausar</button><button class="secondary" data-task-action="cancel" data-task-id="'+taskId+'">Cancelar</button>':
  /pausada|cancelada/.test(t.status)?'<button class="secondary" data-task-action="resume" data-task-id="'+taskId+'">Devolver à fila</button>':'')+
- (t.inQueue||t.status==='pausada'?
+ (['failed','blocked'].includes(t.rawStatus)||['falhou','bloqueada'].includes(t.status)?'<button class="secondary" data-task-action="retry" data-task-id="'+taskId+'">↻ Tentar novamente</button>':'')+
+ (advanced&&(t.inQueue||t.status==='pausada')?
  '<label class="task-setting">Prioridade <select data-task-priority="'+taskId+'" aria-label="Alterar prioridade da tarefa">'+
  ['P0','P1','P2','P3'].map(p=>'<option value="'+p+'"'+(t.priority===p?' selected':'')+'>'+({P0:'Urgente',P1:'Alta',P2:'Normal',P3:'Baixa'}[p])+'</option>').join('')+'</select></label>'+
  '<label class="task-setting">Agente <select data-task-agent="'+taskId+'" aria-label="Configurar agente responsável">'+
  Object.keys(AGENT_NAMES).map(id=>'<option value="'+id+'"'+(t.agent===id?' selected':'')+'>'+escapeHTML(label(id))+'</option>').join('')+'</select></label>':'')+
- (t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
+ (advanced&&t.status!=='arquivada'?'<button class="secondary" data-task-action="archive" data-task-id="'+taskId+'">Excluir da lista</button>':'')+
  '</div></details>'+
- (t.inQueue||t.status==='pausada'?'<details class="task-editor" data-editor="'+taskId+'"'+(editPanels.has(t.id)?' open':'')+'><summary>Editar solicitação e posição</summary>'+
+ (advanced&&(t.inQueue||t.status==='pausada')?'<details class="task-editor" data-editor="'+taskId+'"'+(editPanels.has(t.id)?' open':'')+'><summary>Editar solicitação e posição</summary>'+
  '<label>Instrução original<textarea data-edit-objective="'+taskId+'" maxlength="2800">'+escapeHTML(taskDrafts.get(t.id)??String(t.description||'').replace(/^P[0-3]\s*\|\s*/,''))+'</textarea></label>'+
  '<button class="secondary" data-save-objective="'+taskId+'">Salvar instrução</button>'+
  (t.inQueue?'<div class="task-move"><label>Posição na fila <input data-move-position="'+taskId+'" type="number" min="1" max="'+Math.max(1,(snapshot?.tasks||[]).filter(x=>x.inQueue).length)+'" value="'+(t.queuePosition||1)+'"></label>'+
@@ -318,21 +325,23 @@ function pageTarefas(){
  const filtered=tasks.filter(t=>(filter==='todos'||(filter==='fora'?!t.inQueue:t.status===filter))&&(!text||[t.project,t.id,t.title,t.agent].join(' ').toLocaleLowerCase('pt-BR').includes(text)));
  return heading('Tarefas','Solicitações registradas na fila e os respectivos resultados verificáveis.')+
  '<div class="searchbar"><input id="search" placeholder="Buscar por projeto ou tarefa…" aria-label="Buscar tarefas" value="'+escapeHTML(term)+'">'+
- '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="arquivada">Excluídas (recuperáveis)</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="concluída">Concluída</option></select></div>'+
+ '<select id="filter"><option value="todos">Todas, inclusive histórico</option><option value="fora">Fora da fila</option><option value="arquivada"'+(snapshot?.available?.advancedControls?'':' disabled')+'>Arquivadas</option><option value="em execução">Em execução</option><option value="aguardando">Aguardando</option><option value="na fila">Na fila</option><option value="bloqueada">Bloqueada</option><option value="falhou">Falhou</option><option value="concluída">Concluída</option></select></div>'+
  '<div class="section-heading"><h2>'+filtered.length+' solicitações</h2><span class="meta">Fonte: fila e resultados da VPS</span></div>'+
  (filter==='arquivada'?'':'<div class="bulk-toolbar"><label><input type="checkbox" id="select-visible" aria-label="Selecionar tarefas visíveis"> Selecionar visíveis</label>'+
  '<span id="selected-count">'+taskSelections.size+' selecionadas</span>'+
- '<button class="secondary" data-bulk="pause">Pausar</button><button class="secondary" data-bulk="cancel">Cancelar</button><button class="secondary" data-bulk="archive">Excluir da lista</button></div>')+
+ '<button class="secondary" data-bulk="pause">Pausar</button><button class="secondary" data-bulk="cancel">Cancelar</button>'+(snapshot?.available?.advancedControls?'<button class="secondary" data-bulk="archive">Arquivar</button>':'')+'</div>')+
  listTasks(filtered);
 }
 function agentRow(a){
- return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(a.currentTask||'Nenhuma tarefa individual identificada')+'</div></div>'+
- chip(a.held?'novas tarefas pausadas':a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Ver agente →</button>'+
- (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado: '+escapeHTML(a.status)+'\nAtividade: '+escapeHTML(a.currentTask||'não verificada')+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa</button><button class="secondary" data-agent-action="'+(a.held?'resume':'pause')+'" data-agent-id="'+escapeHTML(a.id)+'">'+(a.held?'Liberar novas tarefas':'Pausar novas tarefas')+'</button></div>'+
- agentConfigMarkup(a.id)+'<p class="smallprint">As configurações limitam as novas tarefas aceitas. Uma etapa iniciada pode continuar.</p></div>':'')+'</div>';
+ const latest=a.lastTask?'Última tarefa: '+a.lastTaskTitle+' · '+emPortugues(a.lastTaskStatus):'Nenhuma tarefa atribuída no histórico consultado';
+ const active=a.currentTask?'Atividade atual: '+a.currentTask:latest;
+ return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(active)+'</div></div>'+
+ chip(a.held?'novas tarefas pausadas':a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Gerenciar →</button>'+
+ (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado atual: '+escapeHTML(a.status)+'\n'+escapeHTML(active)+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa</button><button class="secondary" data-agent-action="'+(a.held?'resume':'pause')+'" data-agent-id="'+escapeHTML(a.id)+'">'+(a.held?'Liberar novas tarefas':'Pausar novas tarefas')+'</button>'+(a.lastTask?'<button class="secondary" data-open-agent-task="'+escapeHTML(a.lastTask)+'">Ver última tarefa</button>':'')+'</div>'+
+ agentConfigMarkup(a.id)+'<p class="smallprint">Pausa afeta novas atribuições; execução já iniciada pode terminar.</p></div>':'')+'</div>';
 }
 function agentConfigMarkup(id){
- if(PAGES_MODE)return '';
+ if(PAGES_MODE||!snapshot?.available?.advancedControls)return '<p class="smallprint">Pausa e liberação disponíveis. Ajustes avançados ainda não suportados pelo executor.</p>';
  const cfg=agentDrafts.get(id)||agentConfigs.get(id);
  if(!cfg)return '<p class="smallprint">Carregando configurações do agente...</p>';
  return '<form class="agent-config" data-agent-config="'+escapeHTML(id)+'">'+
@@ -343,8 +352,8 @@ function agentConfigMarkup(id){
 }
 function pageAgentes(){
  const a=snapshot?.agents||[];
- return heading('Os 17 especialistas','Estado individual apenas quando houver registro concreto de execução.')+
- '<div class="summary"><span><b>17</b> cadastrados</span><span>Atualização individual conforme registros disponíveis</span></div>'+
+ return heading('Os 17 especialistas','Envie tarefas, pause atribuições e consulte a última atividade registrada.')+
+ '<div class="summary"><span><b>'+a.length+'</b> cadastrados</span><span><b>'+a.filter(x=>x.currentTask).length+'</b> executando agora</span><span>Histórico individual sem simular agentes ativos</span></div>'+
  '<div class="list">'+(snapshot?.available?.vps?a.map(agentRow).join(''):'<div class="empty">VPS desconectada. Nenhum estado individual pode ser confirmado.</div>')+'</div>';
 }
 
@@ -440,15 +449,15 @@ function pageSistema(){
 }
 
 function studioProgress(){
- const active=(snapshot?.tasks||[]).filter(t=>t.inQueue).slice(0,5);
- return '<h2>Agentes trabalhando</h2>'+
- (active.length?active.map(t=>'<div class="studio-progress-line"><strong>'+escapeHTML(String(t.title||t.project||'Tarefa').slice(0,68))+'</strong>'+
- chip(t.status)+'</div>').join(''):'<p class="smallprint">Nenhuma tarefa em execução confirmada. Envie uma solicitação para acompanhar o progresso.</p>')+
- '<p class="smallprint">Indicadores da fila local do servidor. O preview abre a publicação real do projeto.</p>';
+ const tasks=snapshot?.tasks||[],active=tasks.filter(t=>t.inQueue).slice(0,5),failures=tasks.filter(t=>['failed','blocked'].includes(t.rawStatus));
+ return '<h2>Execuções verificadas</h2>'+
+ (active.length?active.map(t=>'<div class="studio-progress-line"><strong>'+escapeHTML(String(t.title||t.project||'Tarefa').slice(0,68))+'</strong>'+chip(t.status)+'</div>').join(''):'<p class="smallprint">Nenhuma tarefa executando. Worker conectado não significa agente trabalhando.</p>')+
+ (failures.length?'<div class="studio-failures"><strong>'+failures.length+' tarefas com falha ou bloqueio</strong><a href="#tarefas">Recuperar tarefas →</a></div>':'')+
+ '<p class="smallprint">O preview mostra somente versões publicadas.</p>';
 }
 function pageEstudio(){
- return heading('Estúdio de criação','Primeiro desenhe o layout, depois organize páginas e fluxos.')+
- '<div class="studio-controls" role="group" aria-label="Área do estúdio" style="margin-bottom:12px"><button type="button" class="studio-device selected" id="studio-tab-wireframe">Desenho arquitetural</button><button type="button" class="studio-device" id="studio-tab-code">Aplicação real</button></div>'+
+ return heading('Estúdio de criação','Comande a equipe, acompanhe tarefas e a publicação do projeto.')+
+ '<div class="studio-controls" role="group" aria-label="Área do estúdio" style="margin-bottom:12px"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Comandar agentes</button></div>'+
  '<div id="studio-builder-panel">'+wireframeMarkup()+'</div>'+
  '<div id="studio-code-panel" hidden><div class="studio-layout" ><div class="studio-compose">'+
  (PAGES_MODE?'<section class="panel request"><h2>Prévia do projeto</h2><p class="subtitle">No GitHub Pages, o estúdio funciona em modo de acompanhamento.</p></section>':requestForm())+
@@ -473,9 +482,9 @@ function render(){
  if(page==='estudio'){
   mountWireframe();
   const builder=$('studio-builder-panel'),code=$('studio-code-panel'),b=$('studio-tab-wireframe'),c=$('studio-tab-code');
-  const switchTab=value=>{const building=value!=='code';builder.hidden=!building;code.hidden=building;b.classList.toggle('selected',building);c.classList.toggle('selected',!building);if(!building)notifyStudioChanged()};
+  const switchTab=value=>{const building=value==='builder';studioView=building?'builder':'code';try{sessionStorage.setItem('horizon.studio.active-view',studioView)}catch{}builder.hidden=!building;code.hidden=building;b.classList.toggle('selected',building);c.classList.toggle('selected',!building);b.setAttribute('aria-pressed',String(building));c.setAttribute('aria-pressed',String(!building));if(!building)notifyStudioChanged()};
   b.onclick=()=>switchTab('builder');c.onclick=()=>switchTab('code');
-  switchTab('builder');
+  switchTab(studioView);
   mountStudio({repositories:repoList,onProjectChange:repository=>{
  selectedRepository=repository;const selector=$('project');if(selector&&[...selector.options].some(o=>o.value===repository))selector.value=repository;
  }});}
@@ -581,7 +590,7 @@ function bind(){
  }));
  document.querySelectorAll('[data-agent]').forEach(el=>el.addEventListener('click',async()=>{
  selectedAgent=selectedAgent===el.dataset.agent?null:el.dataset.agent;
- if(selectedAgent&&!agentConfigs.has(selectedAgent))try{agentConfigs.set(selectedAgent,await api('agents/'+selectedAgent+'/config'));}
+ if(selectedAgent&&snapshot?.available?.advancedControls&&!agentConfigs.has(selectedAgent))try{agentConfigs.set(selectedAgent,await api('agents/'+selectedAgent+'/config'));}
  catch(e){note(e.message,true);}
  render();
  }));
@@ -605,6 +614,7 @@ function bind(){
  });}
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);
  document.querySelectorAll('[data-assign-agent]').forEach(btn=>btn.addEventListener('click',()=>{selectedAgentId=btn.dataset.assignAgent;location.hash='#inicio';render();$('objective')?.focus();}));
+ document.querySelectorAll('[data-open-agent-task]').forEach(btn=>btn.addEventListener('click',()=>{term=btn.dataset.openAgentTask;filter='todos';location.hash='#tarefas';render();}));
  bindTaskActions(document);
  const diagnosis=$('diagnose-ai');if(diagnosis)diagnosis.addEventListener('click',()=>void runAnalysis('diagnose','ai/diagnose',{}));
  const form=$('task-form');
@@ -696,6 +706,34 @@ $('passkey-button').addEventListener('click',async()=>{
  finally{button.disabled=false;}
 });
 
+// Comandos determinísticos: somente IDs confirmados na tela e ações já
+// suportadas pela VPS. Nunca executar interpretação livre do modelo como comando.
+function chaveComando(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9:-]+/g,' ').trim();}
+async function comandoNaConversa(texto){
+ const q=chaveComando(texto);
+ if(/^(ver|mostrar|abrir) (os )?(agentes|especialistas)$/.test(q)){location.hash='#agentes';render();return 'Abri os agentes. Toque em Gerenciar para atribuir tarefas ou controlar novas execuções.';}
+ if(/^(ver|mostrar|abrir) (as )?(tarefas|falhas|fila)$/.test(q)){term='';filter='todos';location.hash='#tarefas';render();return 'Abri a fila real da VPS. Falhas e bloqueios possuem a opção Tentar novamente.';}
+ const nova=q.match(/^(criar|enviar|nova) (uma )?(tarefa|solicitacao)(?:\s+(.+))?$/);
+ if(nova){draft=String(texto).replace(/^(criar|enviar|nova)\s+(uma\s+)?(tarefa|solicita[cç][aã]o)\s*/i,'').trim();studioView='code';location.hash='#estudio';render();if($('objective')){$('objective').value=draft;$('objective').focus();}return 'Abri o comando do Estúdio. Revise projeto, agente e prioridade antes de enviar à fila.';}
+ const matchAgent=q.match(/^(pausar|liberar|retomar) (?:o )?(?:agente|especialista) (.+)$/);
+ if(matchAgent){
+  const name=matchAgent[2];
+  const candidates=Object.keys(AGENT_NAMES).filter(id=>chaveComando(id)===name||chaveComando(label(id))===name||chaveComando(id).split(' ')[0]===name);
+  if(candidates.length!==1)return 'Não identifiquei um agente único. Use o nome da lista de Agentes.';
+  const action=matchAgent[1]==='pausar'?'pause':'resume';
+  await executeAgentAction(candidates[0],action);
+  return 'Controle de '+label(candidates[0])+' solicitado. O resultado será mostrado no aviso e no estado atualizado da VPS.';
+ }
+ const matchTask=q.match(/^(pausar|retomar|cancelar|repetir|reexecutar|tentar novamente) (?:a )?tarefa ([a-z0-9:-]{3,110})$/);
+ if(matchTask){
+  const id=matchTask[2],task=(snapshot?.tasks||[]).find(t=>t.id===id);
+  if(!task)return 'ID não encontrado nos registros atuais. Abra Tarefas e copie o identificador correto.';
+  const action=matchTask[1]==='pausar'?'pause':matchTask[1]==='cancelar'?'cancel':matchTask[1]==='retomar'?'resume':'retry';
+  await executeTaskAction(id,action);
+  return 'Comando de '+action+' solicitado para '+id+'. Confira a confirmação e o resultado atualizado no painel.';
+ }
+ return null;
+}
 function mensagemAjuda(role,text){
  const element=document.createElement('p');
  element.className='help-bubble '+(role==='user'?'from-me':'from-ai');
@@ -716,9 +754,11 @@ $('help-form').addEventListener('submit',async e=>{
  e.preventDefault();
  const input=$('help-input'),question=input.value.trim();if(question.length<3)return;
  input.value='';mensagemAjuda('user',question);
- const waiting=mensagemAjuda('assistant','Consultando as informações disponíveis...');
+ const waiting=mensagemAjuda('assistant','Consultando a VPS...');
  const send=$('help-send');send.disabled=true;
  try{
+  const routed=await comandoNaConversa(question);
+  if(routed){waiting.textContent=routed;return;}
   const output=await api('ai/chat',{method:'POST',body:JSON.stringify({message:question})});
   waiting.textContent=output.response||'Não encontrei informações suficientes para responder.';
   helpHistory.push({question,response:waiting.textContent});if(helpHistory.length>5)helpHistory.shift();
