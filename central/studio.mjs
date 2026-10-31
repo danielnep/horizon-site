@@ -72,6 +72,11 @@ async function probe({force=false}={}){
  const saved=validPreview(state.manualUrls[project]||'');
  const checkButton=$(root,'studio-check');checkButton.disabled=true;
  try{
+  if(!project){
+   display('');
+   setStatus('Escolha um projeto para consultar a publicação.','empty');
+   return;
+  }
   if(saved){
    state.source='custom';
    display(saved);
