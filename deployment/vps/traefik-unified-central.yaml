@@ -1,0 +1,24 @@
+# One Horizon domain, same authenticated Orbita backend.
+# Dedicated path router wins over the institutional site host router.
+http:
+  routers:
+    horizon-unified-central-http:
+      entryPoints: [http]
+      rule: "(Host(`horizonsolucoes.com`) || Host(`www.horizonsolucoes.com`)) && (Path(`/central`) || PathPrefix(`/central/`))"
+      priority: 180
+      middlewares: [redirect-to-https]
+      service: horizon-unified-panel
+    horizon-unified-central-https:
+      entryPoints: [https]
+      rule: "(Host(`horizonsolucoes.com`) || Host(`www.horizonsolucoes.com`)) && (Path(`/central`) || PathPrefix(`/central/`))"
+      priority: 180
+      middlewares: [gzip]
+      service: horizon-unified-panel
+      tls:
+        certResolver: letsencrypt
+  services:
+    horizon-unified-panel:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://horizon-orbita-painel:3000"
