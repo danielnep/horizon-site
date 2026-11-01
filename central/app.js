@@ -173,9 +173,25 @@ function counts(){
  finished:tasks.filter(t=>t.rawStatus==='succeeded'||t.status==='concluída').length};
 }
 const receipts=new Map(),proofPanels=new Set();
+function commandMeaning(command){
+ if(!command)return 'Nenhuma atividade registrada';
+ const args=command.args||{}, target=args.path||args.name||args.query||'';
+ const names={'model.complete':'Consulta à inteligência artificial para decidir o próximo passo',
+ 'read_file':'Leitura do arquivo', 'list_files':'Busca de arquivos do projeto',
+ 'write_file':'Alteração do arquivo', 'run_check':'Validação',
+ 'verification_import':'Registro de validação executada na VPS',
+ 'delegate':'Distribuição de tarefas para especialistas', 'escalate':'Encaminhamento do bloqueio à coordenação',
+ 'remember':'Registro na memória do projeto', 'finish':'Envio do resultado da etapa',
+ 'search_web':'Pesquisa na internet', 'fetch_public':'Consulta a uma página pública',
+ 'inspect_image':'Análise de imagem', 'workspace.prepare':'Preparação do projeto'};
+ let description=names[command.action]||('Executou o comando '+String(command.action||'não informado'));
+ if(target)description+=': '+String(target);
+ const phase=({running:'em andamento',completed:'comando executado',failed:'comando falhou',recorded:'registro anterior'})[command.phase]||String(command.phase||'estado não informado');
+ return description+' · '+phase;
+}
 function rawCommand(command){
  if(!command)return 'Nenhum comando registrado';
- return '#'+command.number+' '+command.action+' '+JSON.stringify(command.args||{})+' ['+command.phase+']';
+ return commandMeaning(command)+' — #'+command.number+' '+command.action+' '+JSON.stringify(command.args||{})+' ['+command.phase+']';
 }
 function executionReason(t){
  if(t.blocker)return t.blocker;
