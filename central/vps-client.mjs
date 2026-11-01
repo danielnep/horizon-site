@@ -68,6 +68,7 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
  const agents=agentIds.map(id=>{
   const found=agentMap.get(id);
   return {id,status:found?String(found.status||'não informado').slice(0,90):'sem telemetria individual',
+   waitingTask:found?.waitingTask||null,currentCommand:found?.currentCommand||null,waitingReason:found?.waitingReason||null,
    held:found?.held===true,currentTask:typeof found?.currentTask==='string'?found.currentTask:null,
    updatedAt:typeof found?.updatedAt==='string'?found.updatedAt:null,
    lastTask:typeof found?.lastTask==='string'&&TASK_ID.test(found.lastTask)?found.lastTask:null,
@@ -75,6 +76,9 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
    lastTaskStatus:typeof found?.lastTaskStatus==='string'?found.lastTaskStatus.slice(0,60):null};
  });
  const tasks=(Array.isArray(data.tasks)?data.tasks:[]).filter(t=>t&&TASK_ID.test(t.id)).slice(0,200).map(t=>({
+  sequence:t.sequence,executionState:t.executionState,waitReason:t.waitReason,blockedBy:t.blockedBy||[],nextRetryAt:t.nextRetryAt,
+  recoveryTask:t.recoveryTask,recoveryAgent:t.recoveryAgent,currentCommand:t.currentCommand,lastCommand:t.lastCommand,
+  workspace:t.workspace,branch:t.branch,hasEvidence:t.hasEvidence,resultSummary:t.resultSummary,completionKind:t.completionKind,
   id:t.id,project:String(t.project||'não informado').slice(0,90),
   repository:String(t.repository||'').slice(0,120),title:String(t.title||'Sem descrição').slice(0,200),
   description:String(t.description||t.title||'').slice(0,2800),
@@ -86,7 +90,7 @@ export function normalizeVpsSnapshot(value,agentIds=[]){
   progress:t.progress&&Number.isInteger(t.progress.done)&&Number.isInteger(t.progress.total)?{
    done:t.progress.done,total:t.progress.total,verified:Number.isInteger(t.progress.verified)?t.progress.verified:0,
   }:null,
-  stages:normalizeStages(t.stages),blocker:t.blocker?String(t.blocker).slice(0,260):null,
+  stages:normalizeStages(t.stages),blocker:t.blocker?String(t.blocker).slice(0,1500):null,
   updatedAt:typeof t.updatedAt==='string'?t.updatedAt:null,
   lastActivity:t.lastActivity&&typeof t.lastActivity==='object'?{
    at:t.lastActivity.at||null,agent:t.lastActivity.agent||null,action:t.lastActivity.action||null,
@@ -151,7 +155,7 @@ async function unixRequest(socket,path,{method,data,token,timeout}){
 export async function vpsRequest(path,{method='GET',data,fetcher=fetch,env=process.env}={}){
  const conn=vpsConnectionConfig(env);
  if(!conn.ok)throw new Error(conn.reason);
- if(!/^\/v1\/[a-z0-9/_-]+$/.test(path)||path.includes('//'))throw new Error('rota_vps_invalida');
+ if(!/^\/v1\/[a-z0-9:/_-]+$/.test(path)||path.includes('//'))throw new Error('rota_vps_invalida');
  const timeout=path==='/v1/ai/complete'?45000:8500;
  if(conn.socket)return unixRequest(conn.socket,path,{method,data,token:conn.token,timeout});
  const ctrl=new AbortController();
