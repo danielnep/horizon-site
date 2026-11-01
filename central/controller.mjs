@@ -12,12 +12,12 @@ export const SPECIALISTS=Object.freeze([
 function passwordlessPanel(){return process.env.HORIZON_PANEL_ONLY==='true';}
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css',
+'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css','experience.css':'experience.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 // Asset fingerprints invalidate stale CSS/JS across deploys, including under an
 // already-installed service worker. Every deploy generates its own version.
-const UI_VERSION_FILES=Object.freeze(['index.html','style.css','studio.css','wireframe.css',
+const UI_VERSION_FILES=Object.freeze(['index.html','style.css','studio.css','wireframe.css','experience.css',
  'app.js','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs','sw.js']);
 const MODULE_FILES=Object.freeze(['studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs']);
 let uiVersionMemo;
@@ -32,7 +32,7 @@ function uiVersion(){
 }
 function versionHtml(value,version){
  let text=value.toString('utf8');
- for(const name of ['style.css','studio.css','wireframe.css','app.js']){
+ for(const name of ['style.css','studio.css','wireframe.css','experience.css','app.js']){
   text=text.replaceAll('"./'+name+'"','"./'+name+'?v='+version+'"');
  }
  return Buffer.from(text);

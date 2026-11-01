@@ -388,6 +388,11 @@ test('studio assets, responsive controls and safe embedded-preview policy are sh
   ]);
   assert.match(html,/data-page="estudio"/);
   assert.match(html,/studio\.css/);
+  assert.match(html,/experience\.css\?v=/);
+  const stylesheet=await fetch(url+'/central/experience.css');
+  assert.equal(stylesheet.status,200);
+  assert.match(stylesheet.headers.get('content-type'),/text\/css/);
+  assert.match(await stylesheet.text(),/\.help-panel/);
   assert.match(js,/mobile.*tablet.*desktop/);
   assert.match(js,/setInterval\(\(\)=>void probe\(\),20000\)/);
   assert.match(js,/iframe id="studio-frame"/);
