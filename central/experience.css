@@ -137,3 +137,9 @@ main {padding-top:32px;line-height:1.5}
   body:has(#help-panel:not([hidden])) .bottom-nav,body:has(#help-panel:not([hidden])) .help-fab {display:none!important}
 }
 @media(prefers-reduced-motion:reduce) {*{transition:none!important}}
+
+/* Command access belongs to the IDE toolbar, not over task content. */
+.topbar .help-fab{position:static!important;right:auto;bottom:auto;flex:none;width:39px;height:39px;min-width:39px;min-height:39px;border-radius:10px;background:#243e55;border:1px solid #477395;color:#8ed0ff;box-shadow:none;padding:0;transform:none!important}
+.topbar .help-fab::before{font-size:22px}
+.topbar .help-fab:hover{background:#315a7a;border-color:#7ac0fa}
+@media(max-width:650px){.topbar .help-fab{width:33px;height:35px;min-width:33px;min-height:35px}.topbar .help-fab::before{font-size:20px}.topbar .top-actions{gap:1px}.topbar .heading{max-width:30vw}.topbar .mode-switch a{padding:7px 8px}}

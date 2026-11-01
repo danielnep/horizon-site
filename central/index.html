@@ -21,6 +21,7 @@
     <header class="topbar">
       <div class="heading"><span class="compact-logo">H</span><span id="page-label">Central de Agentes</span></div><div class="mode-switch" aria-label="Escolher ambiente"><a href="#inicio" id="mode-painel">Painel</a><a href="#estudio" id="mode-estudio">Estúdio</a></div>
       <div class="top-actions"><span id="connection" class="connection"><i></i><span>Conectando…</span></span>
+      <button id="help-open" class="help-fab" type="button" aria-expanded="false" aria-controls="help-panel">✦ <span>Ajuda da IA</span></button>
       <button id="refresh" class="icon-button" title="Atualizar dados" aria-label="Atualizar dados">↻</button>
       <button id="logout" class="icon-button" title="Encerrar administração" aria-label="Encerrar administração" hidden>⇥</button></div>
     </header>
@@ -40,7 +41,7 @@
     <a data-page="sistema" href="#sistema">Sistema</a>
   </nav>
 </div>
-<button id="help-open" class="help-fab" type="button" aria-expanded="false" aria-controls="help-panel">✦ <span>Ajuda da IA</span></button>
+
 <aside id="help-panel" class="help-panel" aria-label="Converse com a IA da Central" hidden>
  <header class="help-head"><div><strong>Central de Comandos</strong><small>Consulte e controle a equipe da VPS</small></div><button type="button" id="help-close" aria-label="Fechar ajuda">✕</button></header>
  <div id="help-messages" class="help-messages" aria-live="polite"><p class="help-bubble from-ai">Comandos: “ver agentes”, “ver tarefas”, “pausar agente frontend”, “tentar novamente tarefa ID” ou “criar tarefa”. Operações exigem confirmação.</p></div>
