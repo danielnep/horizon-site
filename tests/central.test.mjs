@@ -23,7 +23,7 @@ async function withServer(fn){
   if(old===undefined)delete process.env.HORIZON_MCP_TOKEN;else process.env.HORIZON_MCP_TOKEN=old;
  }
 }
-test('central includes all 17 real specialist identifiers',()=>assert.equal(SPECIALISTS.length,17));
+test('central includes all 18 real specialist identifiers',()=>assert.equal(SPECIALISTS.length,18));
 test('PWA loads on existing Horizon server without changing the institutional homepage',async()=>{
  await withServer(async({url})=>{
   const [site,central,manifest,script,health]=await Promise.all(['/','/central/','/central/manifest.webmanifest','/central/app.js','/health'].map(p=>fetch(url+p)));

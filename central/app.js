@@ -22,8 +22,8 @@ const AGENT_NAMES={
 'ui-ux-designer':'Design UI/UX','horizon-ui-guardian':'UI Guardian','database-engineer':'Banco de Dados',
 'integration-engineer':'Integrações','qa-engineer':'QA / Testes','security-engineer':'Segurança',
 'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
-'corregedoria-may':'Corregedoria','may-persona':'May Persona'};
-const LABELS={estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'17 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
+'corregedoria-may':'Corregedoria','may-persona':'May Persona','horizon-supervisor':'Supervisor Horizon'};
+const LABELS={estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'18 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let studioView='code';
 try{studioView=sessionStorage.getItem('horizon.studio.active-view')==='builder'?'builder':'code';}catch{}
@@ -172,6 +172,71 @@ function counts(){
  failed:tasks.filter(t=>t.rawStatus==='failed'||t.status==='falhou').length,
  finished:tasks.filter(t=>t.rawStatus==='succeeded'||t.status==='concluída').length};
 }
+const receipts=new Map(),proofPanels=new Set();
+function commandMeaning(command){
+ if(!command)return 'Nenhuma atividade registrada';
+ const args=command.args||{}, target=args.path||args.name||args.query||'';
+ const names={'model.complete':'Consulta à inteligência artificial para decidir o próximo passo',
+ 'read_file':'Leitura do arquivo', 'list_files':'Busca de arquivos do projeto',
+ 'write_file':'Alteração do arquivo', 'run_check':'Validação',
+ 'verification_import':'Registro de validação executada na VPS',
+ 'delegate':'Distribuição de tarefas para especialistas', 'escalate':'Encaminhamento do bloqueio à coordenação',
+ 'remember':'Registro na memória do projeto', 'finish':'Envio do resultado da etapa',
+ 'search_web':'Pesquisa na internet', 'fetch_public':'Consulta a uma página pública',
+ 'inspect_image':'Análise de imagem', 'workspace.prepare':'Preparação do projeto'};
+ let description=names[command.action]||('Executou o comando '+String(command.action||'não informado'));
+ if(target)description+=': '+String(target);
+ const phase=({running:'em andamento',completed:'comando executado',failed:'comando falhou',recorded:'registro anterior'})[command.phase]||String(command.phase||'estado não informado');
+ return description+' · '+phase;
+}
+function rawCommand(command){
+ if(!command)return 'Nenhum comando registrado';
+ return commandMeaning(command)+' — #'+command.number+' '+command.action+' '+JSON.stringify(command.args||{})+' ['+command.phase+']';
+}
+function executionReason(t){
+ if(t.blocker)return t.blocker;
+ const deps=(t.blockedBy||[]).map(x=>x.id+' ['+x.agent+' / '+x.state+']');
+ if(deps.length)return 'Depende de '+deps.join('; ');
+ return ({ready:'Pronta para execução',provider_retry:'Provedor de IA indisponível; nova tentativa agendada',
+  groq_capacity_wait:'Aguardando a janela de capacidade do provedor',repair_cycle:'Falha repetida; reparo pendente',
+  escalated_to_maestro:'Bloqueio encaminhado a '+(t.recoveryAgent||'may-maestro'),reported:'Resultado registrado sem comprovação de execução',
+  delegated_implementation_pending:'Especialistas ainda não terminaram',running:'Executando',scheduled:'Execução agendada'})[t.waitReason]||t.waitReason||'';
+}
+function receiptMarkup(id){
+ const data=receipts.get(id);
+ if(!data)return '<p role="status">Carregando comandos e evidências…</p>';
+ if(data.error)return '<p class="error">'+escapeHTML(data.error)+'</p><button class="secondary" data-reload-receipt="'+escapeHTML(id)+'">Recarregar comprovantes</button>';
+ const commands=data.commands||[],images=data.evidence||[],checks=data.checks||[];
+ const history=commands.length?commands:data.legacyHistory||[];
+ return '<p><code>'+escapeHTML(data.id)+' · '+escapeHTML(data.status)+'</code></p>'+
+  (data.resultSummary?'<h4>Resultado registrado</h4><pre>'+escapeHTML(data.resultSummary)+'</pre>':'')+
+  (data.workspace?'<p class="smallprint">Diretório: <code>'+escapeHTML(data.workspace)+'</code><br>Branch: <code>'+escapeHTML(data.branch)+'</code></p>':'')+
+  '<h4>Capturas reais · '+images.length+'</h4>'+(images.length?'<div class="evidence-gallery">'+images.map(i=>{
+   const url='/central/api/tasks/'+encodeURIComponent(id)+'/evidence/'+i.index;
+   return '<a href="'+url+'" target="_blank" rel="noopener" class="evidence-image"><img src="'+url+'" loading="lazy" alt="Captura real '+escapeHTML(i.file)+'"><span>'+escapeHTML(i.file)+' · '+escapeHTML(i.check)+' · '+(i.passed?'passed':'failed')+'</span><code>sha256 '+escapeHTML(i.sha256)+'</code></a>';
+  }).join('')+'</div>':'<p class="smallprint">Nenhum print foi produzido nesta execução. Os logs abaixo mostram os erros registrados.</p>')+
+  '<h4>Validação · '+checks.length+'</h4>'+checks.map(c=>'<details class="receipt-check"><summary><code>'+escapeHTML(c.check)+' · '+(c.passed===true?'passed':'failed')+' · exit_code='+escapeHTML(c.exit_code)+' · tests_run='+escapeHTML(c.tests_run??c.tests??0)+'</code></summary><pre>'+escapeHTML(JSON.stringify(c,null,2))+'</pre></details>').join('')+
+  '<h4>Comandos · '+history.length+'</h4>'+(!commands.length?'<p class="smallprint">Histórico anterior à numeração de comandos; a ordem abaixo é a ordem preservada no checkpoint.</p>':'')+
+  '<ol class="command-receipts">'+history.slice(-100).map(c=>'<li><details><summary><code>'+escapeHTML(c.source==='legacy_checkpoint'?'history['+c.number+'] '+c.action:rawCommand(c))+'</code></summary><pre>'+escapeHTML(JSON.stringify(c.outcome||{},null,2))+'</pre>'+(c.summary?'<p>'+escapeHTML(c.summary)+'</p>':'')+'</details></li>').join('')+'</ol>'+
+  '<button class="secondary" data-reload-receipt="'+escapeHTML(id)+'">Atualizar comprovantes</button>';
+}
+async function loadReceipt(id,force=false){
+ if(!force&&receipts.has(id))return;
+ try{receipts.set(id,await api('tasks/'+encodeURIComponent(id)+'/details'));}
+ catch(e){receipts.set(id,{error:e.message});}
+ for(const el of document.querySelectorAll('[data-receipt-body]'))if(el.dataset.receiptBody===id){el.innerHTML=receiptMarkup(id);bindReceiptReload(el);}
+}
+function bindReceiptReload(root=document){
+ root.querySelectorAll('[data-reload-receipt]').forEach(b=>b.addEventListener('click',()=>void loadReceipt(b.dataset.reloadReceipt,true)));
+}
+function bindReceipts(root=document){
+ root.querySelectorAll('[data-proof-task]').forEach(d=>d.addEventListener('toggle',()=>{
+  const id=d.dataset.proofTask;
+  if(d.open){proofPanels.add(id);void loadReceipt(id);}else proofPanels.delete(id);
+ }));
+ bindReceiptReload(root);
+}
+
 function summary(){
  if(!snapshot?.available?.vps)return '<div class="central-vps-offline" role="status"><strong>VPS desconectada</strong><p>Sem dados confirmados da fila.</p></div>';
  const c=counts();
@@ -179,18 +244,18 @@ function summary(){
 }
 function taskRow(t){
  const latest=t.lastActivity||null,stamp=latest&&Date.parse(latest.at),fresh=Number.isFinite(stamp)&&Date.now()-stamp<120000;
- const pendingDiagnosis=taskWaitingSummary(t);
- const active=fresh&&t.inQueue&&!/pausada|cancelada|concluída/.test(t.status);
+ const pendingDiagnosis=executionReason(t)||taskWaitingSummary(t);
+ const active=t.executionState==='running'&&t.rawStatus==='running';
  const progress=t.progress;
  const validProgress=progress&&Number.isInteger(progress.done)&&Number.isInteger(progress.total)&&progress.total>0&&progress.done<=progress.total;
  const value=validProgress?Math.round(100*progress.done/progress.total):null;
  const track=validProgress?'<div class="task-progress-display"><div data-progress-width="'+value+'"></div></div><span class="smallprint">'+
   progress.done+' de '+progress.total+' etapas com resultado registrado</span>':
   active?'<div class="task-progress-display indefinite"><div></div></div><span class="smallprint">Trabalhando. Sem previsão confiável de conclusão.</span>':'';
- const activity=latest?acaoEmPortugues(latest.action,latest.path):t.inQueue?'Aguardando o próximo registro do executor':'Não há atividade recente registrada.';
+ const activity=t.currentCommand||t.lastCommand?rawCommand(t.currentCommand||t.lastCommand):latest?String(latest.action)+(latest.path?' '+latest.path:''):'Nenhum comando registrado';
  const subtitle=latest?'Especialista: '+label(latest.agent)+' • Último sinal: '+time(latest.at):'Especialista: '+label(t.agent);
  const live='<div class="live-operation"><div class="live-operation-title">'+(active?'<i class="pulse" aria-hidden="true"></i>':'')+
-  escapeHTML(active?'Atividade atual':'Última atividade conhecida')+'</div><p class="live-operation-message">'+escapeHTML(activity)+'</p>'+
+  escapeHTML(active?'Atividade atual':'Última atividade conhecida')+'</div><p class="live-operation-message">'+escapeHTML(activity)+'</p><code class="command-task-id">'+escapeHTML(t.id)+' · task_seq='+escapeHTML(t.sequence??'—')+'</code>'+
   '<span class="live-operation-time">'+escapeHTML(subtitle)+'</span>'+track+'</div>';
  const writtenPlan=splitTaskPlan(t.description||t.title);
  const recordedStages=Array.isArray(t.stages)?t.stages:[];
@@ -253,16 +318,20 @@ function taskRow(t){
  '<div class="mobile-detail-summary"><strong>'+escapeHTML(t.project)+'</strong><p>'+escapeHTML(t.title)+'</p>'+chip(t.status)+'</div>'+live+diagnosis+controls+
  '<p class="smallprint">'+(t.inQueue?'Esta tarefa está na fila do servidor.':
  'Esta tarefa não está na fila atual. O registro anterior pode ser consultado no histórico.')+'</p>'+
+ (t.recoveryTask?'<p class="error">Responsável pelo reparo: <code>'+escapeHTML(t.recoveryAgent)+'</code> · <code>'+escapeHTML(t.recoveryTask)+'</code></p>':'')+
+ (t.nextRetryAt?'<p>Retomada: '+escapeHTML(time(t.nextRetryAt))+'</p>':'')+
  (t.blocker?'<p class="error">Problema: '+escapeHTML(t.blocker)+'</p>':'')+
  checklist+'<h3 class="stages-heading">Etapas, motivos e retomada</h3>'+steps+
- '<details><summary class="history-toggle">Ver comprovantes e validação</summary>'+
+ '<details class="task-proof" data-proof-task="'+taskId+'"'+(proofPanels.has(t.id)?' open':'')+'><summary class="history-toggle">Ver comprovantes e validação</summary>'+
+ '<div data-receipt-body="'+taskId+'">'+receiptMarkup(t.id)+'</div>'+
  '<div class="detail-grid"><div><small>Responsável</small><b>'+escapeHTML(label(t.agent))+'</b></div>'+
  '<div><small>Situação</small><b>'+escapeHTML(emPortugues(t.rawStatus))+'</b></div>'+
  '<div><small>Testes</small><b>'+(t.approved?'Aprovados':'Sem aprovação comprovada')+'</b></div>'+
  '<div><small>Publicação</small><b>'+(t.published?'Confirmada':'Não confirmada')+'</b></div></div></details>'+
  '<a class="linkrow" href="#historico">Abrir histórico completo →</a></div>';
  return '<div class="task-row">'+(!PAGES_MODE&&t.status!=='arquivada'?'<input class="task-checkbox" type="checkbox" data-select-task="'+escapeHTML(t.id)+'" aria-label="Selecionar tarefa '+escapeHTML(t.id)+'"'+(taskSelections.has(t.id)?' checked':'')+'>':'')+'<div><div class="name">'+escapeHTML(t.project)+(t.queuePosition?' · #'+t.queuePosition+' na fila':'')+'</div><div class="details">'+escapeHTML(t.title)+'</div>'+
- (latest?'<div class="recent-action">'+escapeHTML(acaoEmPortugues(latest.action,latest.path))+'</div>':'')+
+ '<code class="command-task-id">'+escapeHTML(t.id)+' · task_seq='+escapeHTML(t.sequence??'—')+'</code>'+
+ (t.currentCommand||t.lastCommand?'<div class="recent-action"><code>'+escapeHTML(rawCommand(t.currentCommand||t.lastCommand))+'</code></div>':'')+
  (pendingDiagnosis?'<div class="pending-reason">'+escapeHTML(pendingDiagnosis)+'</div>':'')+
  (validProgress?'<div class="tiny-progress">'+progress.done+'/'+progress.total+' etapas com resultado</div>':'')+'</div>'+
  chip(t.status)+'<button class="linkrow" data-detail="'+escapeHTML(t.id)+'" aria-expanded="false">Acompanhar ▾</button>'+
@@ -334,7 +403,7 @@ function pageTarefas(){
 }
 function agentRow(a){
  const latest=a.lastTask?'Última tarefa: '+a.lastTaskTitle+' · '+emPortugues(a.lastTaskStatus):'Nenhuma tarefa atribuída no histórico consultado';
- const active=a.currentTask?'Atividade atual: '+a.currentTask:latest;
+ const active=a.currentTask?'Tarefa: '+a.currentTask+' · '+rawCommand(a.currentCommand):a.waitingTask?'Aguardando: '+a.waitingTask+' · '+String(a.waitingReason||'na fila'):latest;
  return '<div class="agent-row"><div><div class="name">'+escapeHTML(label(a.id))+'</div><div class="details">'+escapeHTML(active)+'</div></div>'+
  chip(a.held?'novas tarefas pausadas':a.status)+'<button class="linkrow" data-agent="'+escapeHTML(a.id)+'">Gerenciar →</button>'+
  (selectedAgent===a.id?'<div class="inline-detail">Agente: '+escapeHTML(a.id)+'\nEstado atual: '+escapeHTML(a.status)+'\n'+escapeHTML(active)+'\nÚltimo registro: '+escapeHTML(time(a.updatedAt))+'<div class="task-controls"><button class="secondary" data-assign-agent="'+escapeHTML(a.id)+'">Atribuir tarefa</button><button class="secondary" data-agent-action="'+(a.held?'resume':'pause')+'" data-agent-id="'+escapeHTML(a.id)+'">'+(a.held?'Liberar novas tarefas':'Pausar novas tarefas')+'</button>'+(a.lastTask?'<button class="secondary" data-open-agent-task="'+escapeHTML(a.lastTask)+'">Ver última tarefa</button>':'')+'</div>'+
@@ -579,6 +648,7 @@ function closeTaskDetail(id){
  trigger.focus({preventScroll:true});
 }
 function bindTaskDetailClose(root=document){
+ bindReceipts(root);
  root.querySelectorAll('[data-detail-close]').forEach(el=>el.addEventListener('click',()=>closeTaskDetail(el.dataset.detailClose)));
 }
 function bind(){
@@ -655,6 +725,8 @@ async function refresh(force=false){
  if(refreshing)return refreshing;
  refreshing=(async()=>{
   try{const data=await api('overview');snapshot=data;online=data.available?.vps===true;
+ for(const id of proofPanels){const task=(data.tasks||[]).find(t=>t.id===id),cached=receipts.get(id),last=cached?.commands?.at(-1),next=task?.lastCommand;
+ if(next&&(last?.number!==next.number||last?.phase!==next.phase))void loadReceipt(id,true);}
    const focused=document.activeElement;
    const formFocused=!force&&focused&&['TEXTAREA','INPUT','SELECT'].includes(focused.tagName)&&$('task-form')?.contains(focused);
    if(formFocused&&active()==='inicio'&&$('live-overview')){

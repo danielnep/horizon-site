@@ -1,0 +1,139 @@
+/* Horizon Órbita | acabamento operacional, responsivo e acessível. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
+:root { --work-surface:#171f29; --work-raised:#222e3a; --work-line:#405065; --work-muted:#adbed0; }
+html {scroll-padding-top:84px}
+body {font-family:Inter,system-ui,-apple-system,sans-serif;letter-spacing:-.008em;overflow-x:hidden;background:#191e26;color:#e5edf5}
+button,input,select,textarea {font-family:inherit}
+button,a,[tabindex] { -webkit-tap-highlight-color:transparent}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible {outline:2px solid #71bfff;outline-offset:3px}
+h1,h2,h3,.page-head h1,.section-heading h2,.request h2 {font-family:Manrope,Inter,system-ui,sans-serif;letter-spacing:-.032em}
+.side {background:#151d26;border-right:1px solid #364454;padding-top:28px}
+.side .brand {padding-bottom:27px}
+.side nav {gap:5px}
+.side nav a {border-left:0;border-radius:10px;min-height:44px;font-size:13px;color:#aebed0}
+.side nav a.active {color:#fff;border:1px solid #38638a;background:linear-gradient(100deg,#26445e,#1d2c3b);box-shadow:inset 3px 0 0 #1f98ff}
+.side nav a:hover {color:#fff;background:#243446}
+.nav-icon {display:inline-flex;align-items:center;justify-content:center;flex:none}
+.nav-icon svg,.bottom-nav svg {width:19px;height:19px;stroke:currentColor;stroke-width:1.85;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.topbar {border-bottom:1px solid #344151;background:#171f28f5;backdrop-filter:blur(18px);height:70px;box-shadow:0 3px 15px #0002}
+.heading {font-size:14px;font-weight:750;letter-spacing:-.025em;min-width:0}
+.heading #page-label {overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.compact-logo {font-family:Manrope,sans-serif;font-weight:800}
+.connection {font-size:11px;color:#b2c2d1}
+.connection.ok i {box-shadow:0 0 0 4px #39c49d1a}
+.mode-switch {display:inline-flex;gap:3px;border:1px solid #415468;background:#1b2835;border-radius:11px;padding:4px}
+.mode-switch a {font-size:12px;font-weight:650;border-radius:8px;padding:9px 14px;color:#b8c8d8;transition:background .15s,color .15s}
+.mode-switch a.active,.mode-switch a[aria-current=page] {background:#315779;color:white;box-shadow:0 2px 9px #0004}
+.icon-button {border-radius:9px;min-width:38px;min-height:38px}
+main {padding-top:32px;line-height:1.5}
+.page-head {align-items:flex-start;margin-bottom:22px}
+.page-head h1 {font-weight:800;font-size:clamp(24px,3vw,32px)}
+.eyebrow {letter-spacing:.12em}
+.subtitle {font-size:13px;line-height:1.65;color:#b7c7d6}
+.panel {background:linear-gradient(150deg,#25313f 0%,#202b37 100%);border:1px solid #39495c;border-radius:13px;box-shadow:0 8px 28px #050b151c}
+.primary,.secondary,.quiet,.studio-device,.studio-tool {border-radius:9px;transition:background .14s,transform .14s,border-color .14s}
+.primary,.secondary {font-size:13px;min-height:42px}
+.primary:hover,.studio-tool:hover {transform:translateY(-1px)}
+.request textarea,.field input,.field select,.field textarea,.searchbar input,.searchbar select {border-color:#44566a;background:#192632;border-radius:9px}
+.request textarea:focus,.field input:focus,.field select:focus {border-color:#1f98ff}
+.section-heading {padding-top:21px}
+.section-heading h2 {font-size:15px;font-weight:800}
+.stat-strip {border:0;gap:8px}
+.stat-strip>div {border:1px solid #3a4b5e;border-radius:12px;background:#222e3a}
+.stat-strip>div:last-child {border:1px solid #3a4b5e}
+.stat-strip strong {font-family:Manrope,Inter,sans-serif;font-weight:800}
+.list {border-top:none;min-width:0}
+.task-row,.agent-row {background:#222d39;border:1px solid #3a4b60;box-shadow:none;margin:8px 0;border-radius:12px;padding:14px 16px;transition:border-color .16s,background .16s}
+.task-row:hover,.agent-row:hover {background:#263544;border-color:#587086}
+.task-row .name,.agent-row .name {font-size:14px;line-height:1.4;letter-spacing:-.015em;font-weight:700}
+.task-row .details,.agent-row .details {font-size:12px;color:#b8c8d8;line-height:1.5}
+.task-row .recent-action {font-family:'IBM Plex Mono',monospace;font-size:11px;background:#172631;border-left:2px solid #399efa;border-radius:0 8px 8px 0;line-height:1.5}
+.chip {border-radius:7px;font-size:10px;font-weight:650;letter-spacing:0;line-height:1.3;padding:6px 9px;white-space:normal;overflow-wrap:anywhere;min-width:0}
+.linkrow {min-height:36px;padding:5px 2px}
+.task-detail,.inline-detail {overflow-wrap:anywhere}
+.task-proof {border-radius:11px;background:#1a2836}
+.task-proof>summary {color:#afdaff}
+.studio-controls[aria-label="Área do estúdio"] {border-radius:11px;box-shadow:none;padding:4px;border:1px solid #405267;background:#1a2733;display:flex;width:max-content;max-width:100%}
+.studio-controls[aria-label="Área do estúdio"] .studio-device {min-height:40px;min-width:132px;font-size:12px;color:#b8c8d8}
+.studio-controls[aria-label="Área do estúdio"] .studio-device.selected {background:#1f98ff;color:#071e31;box-shadow:0 2px 14px #1f98ff32}
+.studio-layout {gap:16px}
+.studio-preview {background:#1b2734;border:1px solid #41536a;border-radius:14px;box-shadow:none}
+.studio-toolbar {background:#233344;border-bottom:1px solid #3b4d61}
+.studio-caption strong {font-size:14px}
+.studio-project-row {background:#1d2a38}
+.studio-canvas {background:radial-gradient(circle at 50% 5%,#283d50,#17212b 72%)}
+.studio-source {background:#1c2a36}
+.studio-compose .request {border-radius:13px}
+.studio-progress {margin-top:10px;border-top:1px solid #3c5062}
+.studio-progress-line {min-width:0;align-items:flex-start}
+.studio-progress-line strong {white-space:normal;overflow-wrap:anywhere;line-height:1.5}
+.studio-progress-line .chip {max-width:45%;flex:none}
+.help-fab {background:#1f98ff;color:#081b2b;border:1px solid #66baff;box-shadow:0 12px 32px #0008,0 0 0 4px #1f98ff12;border-radius:50%;width:56px;height:56px;display:grid;place-items:center;font-size:0}
+.help-fab::before {content:"✦";font-size:26px}
+.help-fab>span {display:none}
+.help-panel {width:min(470px,calc(100vw - 30px));height:min(700px,calc(100dvh - 110px));border:1px solid #4b6075;background:#1b2632;border-radius:16px;box-shadow:0 28px 90px #000b;z-index:41}
+.help-head {padding:18px 20px;background:#243343;border-bottom:1px solid #3e5266}
+.help-head strong {font:800 17px Manrope,Inter,sans-serif}
+.help-head small {font-size:12px}
+.help-head button {font-size:22px;min-height:40px;min-width:40px;border-radius:9px}
+.help-head button:hover {background:#3b5065}
+.help-messages {gap:15px;padding:20px;overscroll-behavior:contain}
+.help-bubble {font-size:13px;max-width:88%;border-radius:13px;line-height:1.6;padding:13px 15px;box-shadow:none}
+.help-bubble.from-ai {background:#243446;border:1px solid #40556a;border-top-left-radius:4px}
+.help-bubble.from-me {background:#174b74;border:1px solid #2d7ab3;border-top-right-radius:4px}
+.help-form {background:#223242;padding:14px;gap:10px}
+.help-form input {background:#142331;border:1px solid #4c6177;border-radius:11px;font-size:15px;min-height:46px;padding:12px 14px}
+.help-form button {border-radius:10px;font-size:13px;min-height:46px;padding:0 17px}
+.help-form button:disabled {opacity:.5;cursor:progress}
+@media(max-width:850px) { .studio-layout {grid-template-columns: minmax(0,1fr)} }
+@media(max-width:650px) {
+  .topbar {height:61px;padding:0 12px;gap:6px}
+  .heading {font-size:12px;gap:7px;max-width:33vw}
+  .heading #page-label {max-width:115px}
+  .mode-switch {padding:3px;gap:2px;flex:none;border-radius:10px}
+  .mode-switch a {font-size:11px;padding:7px 9px;border-radius:7px}
+  .connection {max-width:31px;gap:3px}
+  .connection span {display:none}
+  .connection i {width:8px;height:8px}
+  .top-actions {gap:1px}
+  .icon-button {min-width:32px;min-height:34px;padding:2px 5px}
+  main,body:has(#studio-root) main {padding:18px 14px calc(102px + env(safe-area-inset-bottom));width:100%}
+  .page-head {margin-bottom:16px;gap:8px}
+  .page-head h1 {font-size:24px}
+  .subtitle {font-size:12px}
+  .panel {border-radius:12px}
+  .request {padding:16px}
+  .task-row,.agent-row {margin:7px 0;padding:15px 14px;border-radius:12px}
+  .task-row .name,.agent-row .name {font-size:14px;line-height:1.5}
+  .task-row .details,.agent-row .details {font-size:12px}
+  .task-row:has(>.task-checkbox) {grid-template-columns:22px minmax(0,1fr) auto;gap:9px}
+  .task-row:has(>.task-checkbox)>.chip {max-width:128px;text-align:center;justify-self:end;align-self:start;font-size:10px}
+  .task-row:has(>.task-checkbox)>div:not(.inline-detail) {min-width:0}
+  .task-row .recent-action {font-size:11px;padding:9px}
+  .chip {font-size:10px;padding:5px 8px}
+  .studio-controls[aria-label="Área do estúdio"] {width:100%;display:grid;grid-template-columns:1fr 1fr}
+  .studio-controls[aria-label="Área do estúdio"] .studio-device {min-width:0;font-size:12px}
+  .studio-toolbar {padding:13px 12px}
+  .studio-preview {border-radius:12px}
+  .studio-progress-line {flex-wrap:wrap}
+  .studio-progress-line .chip {max-width:100%}
+  .bottom-nav {height:calc(70px + env(safe-area-inset-bottom));padding:7px 6px calc(7px + env(safe-area-inset-bottom));background:#18232eeb;backdrop-filter:blur(18px);border-top:1px solid #405065;gap:2px;box-shadow:0 -8px 30px #0004}
+  .bottom-nav>a,.bottom-nav>button,.bottom-nav>.nav-more {flex:1 1 0;min-width:0;max-width:none;align-items:center;justify-content:center;border-radius:9px;gap:5px}
+  .bottom-nav a {font-size:10px}
+  .bottom-nav a>span {font-size:0;line-height:1}
+  .bottom-nav svg {width:21px;height:21px}
+  .bottom-nav a.active {background:#203c55;color:#79c4ff}
+  .bottom-nav button {font-size:11px}
+  .bottom-nav button>span {font-size:20px;line-height:1}
+  .help-fab {right:18px;bottom:calc(86px + env(safe-area-inset-bottom));width:54px;height:54px;padding:0}
+  .help-panel {position:fixed;inset:0!important;width:100vw!important;max-width:none;height:100dvh!important;border:0;border-radius:0;z-index:41;box-shadow:none;background:#17232f}
+  .help-head {padding:calc(12px + env(safe-area-inset-top)) 16px 13px;min-height:70px}
+  .help-messages {padding:18px 15px}
+  .help-bubble {max-width:91%;font-size:14px;padding:12px 14px}
+  .help-form {padding:12px 12px calc(12px + env(safe-area-inset-bottom));flex:none}
+  .help-form input {font-size:16px;min-width:0;min-height:48px}
+  .help-form button {padding:0 14px;min-height:48px}
+  body:has(#help-panel:not([hidden])) {overflow:hidden}
+  body:has(#help-panel:not([hidden])) .bottom-nav,body:has(#help-panel:not([hidden])) .help-fab {display:none!important}
+}
+@media(prefers-reduced-motion:reduce) {*{transition:none!important}}

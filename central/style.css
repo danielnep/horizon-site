@@ -351,3 +351,37 @@
  .task-row:has(>.task-checkbox)>[data-detail]{grid-column:2/-1;grid-row:2;justify-self:start;min-height:40px}
  .task-row:has(>.task-checkbox)>.inline-detail{grid-column:1/-1;grid-row:3;min-width:0}
 }
+/* Operational evidence and exact command receipts. */
+.command-task-id{display:block;font-family:monospace;font-size:11px;color:var(--muted,#a9b5c6);overflow-wrap:anywhere;margin:6px 0}
+.live-operation-message,.command-receipts code{font-family:monospace;overflow-wrap:anywhere;white-space:pre-wrap}
+.task-proof{margin:16px 0}.task-proof>summary{padding:12px 0;cursor:pointer}
+.task-proof h4{margin:18px 0 8px}.task-proof pre{max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;padding:12px;background:#10151d;border-radius:8px}
+.command-receipts{padding-left:20px}.command-receipts li{padding:7px 0;border-bottom:1px solid #ffffff18}.command-receipts summary{cursor:pointer}
+.evidence-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.evidence-image{display:block;min-width:0;color:inherit}.evidence-image img{display:block;width:100%;max-height:320px;object-fit:contain;background:#10151d;border:1px solid #ffffff30}.evidence-image span{display:block;font-size:12px;margin:6px 0}.evidence-image code{display:block;font-size:10px;overflow-wrap:anywhere}.receipt-check summary{cursor:pointer;padding:8px 0}
+
+/* Horizon Central: operacional, claro e legível em telas pequenas. */
+:root{--accent:#1f98ff;--white:#fff;--muted:#b7c8d9;--line:#42576b}
+body{background:#191e26;color:#e5edf5;letter-spacing:.005em}
+#content{max-width:1460px;margin-inline:auto}
+.task-row,.agent-row{background:#26303d;border:1px solid #405367;border-radius:16px;box-shadow:0 8px 24px #080e171f;margin:9px 0;padding:16px}
+.task-row .name,.agent-row .name{font-size:15px;font-weight:750;color:#fff;letter-spacing:-.01em}
+.task-row .details,.agent-row .details{font-size:13px;line-height:1.55;color:#cfdae6;margin-top:6px;overflow-wrap:anywhere}
+.task-row .recent-action{font-size:13px;line-height:1.5;color:#e5edf5;margin-top:10px;padding:10px 12px;border-left:3px solid #1f98ff;background:#1c2734;border-radius:0 9px 9px 0;overflow-wrap:anywhere}
+.task-row .recent-action code{font:inherit}
+.command-task-id{font-size:10px;color:#9bb4cb}
+.pending-reason,.stage-reason{line-height:1.5;overflow-wrap:anywhere}
+.live-operation{background:#1c2734;border:1px solid #405b75;border-radius:14px;padding:15px;margin:14px 0}
+.live-operation-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#88c5ff;font-weight:750}
+.live-operation-message{font:500 14px/1.55 Inter,system-ui,sans-serif;color:#f4f8fc;margin:9px 0}
+.task-proof{background:#202b37;border:1px solid #405367;border-radius:14px;padding:0 14px 14px}
+.task-proof>summary{font-weight:700;color:#a8d6ff;font-size:14px}
+.task-proof pre{border:1px solid #354a5d;color:#dbe8f4}
+.evidence-image{background:#16212d;border:1px solid #405367;border-radius:12px;overflow:hidden;padding:8px;text-decoration:none}
+.evidence-image img{border-radius:7px}.evidence-image span{line-height:1.4}
+.command-receipts li{padding:10px 0}.command-receipts summary{line-height:1.55}
+.command-receipts summary code{font:500 13px/1.55 Inter,system-ui,sans-serif;color:#dcecf9}
+.summary{gap:8px}.summary span{border-radius:10px}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #74bdff;outline-offset:3px}
+@media(max-width:650px){.task-row,.agent-row{padding:14px;margin:8px 0;border-radius:14px}.task-row .recent-action{font-size:12px}.mobile-detail-summary strong{font-size:19px}.task-proof{padding-inline:12px}.evidence-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}

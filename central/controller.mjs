@@ -8,7 +8,7 @@ import {vpsSnapshot,vpsSubmitTask,vpsTaskAction,vpsAgentAction,vpsRequest,discon
 import {submitDirectTask,directTasks,directTaskAction,directAgentAction,agentHolds,agentSettings,setAgentSettings} from '../maestro/direct-queue.mjs';
 
 export const SPECIALISTS=Object.freeze([
-'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona']);
+'may-maestro','horizon-project-studio','software-architect','frontend-engineer','backend-engineer','mobile-app-builder','ui-ux-designer','horizon-ui-guardian','database-engineer','integration-engineer','qa-engineer','security-engineer','devops-engineer','horizon-evolution-agent','horizon-skills','corregedoria-may','may-persona','horizon-supervisor']);
 function passwordlessPanel(){return process.env.HORIZON_PANEL_ONLY==='true';}
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
@@ -551,6 +551,18 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   for(const event of events.filter(e=>e.id>since))res.write('id: '+event.id+'\nevent: update\ndata: '+JSON.stringify(event)+'\n\n');
   const ping=setInterval(()=>{try{res.write(': ping\n\n');}catch{}},24000);
   req.on('close',()=>{clearInterval(ping);live.delete(res);stopLiveMonitorIfUnused();});return true;
+ }
+ const receiptPath=raw.match(/^\/central\/api\/tasks\/([a-z0-9:-]{3,110})\/(details|evidence\/([0-9]{1,4}))$/);
+ if(req.method==='GET'&&receiptPath){
+  try{
+   const output=await vpsRequest('/v1/tasks/'+receiptPath[1]+'/'+receiptPath[2]);
+   if(receiptPath[3]!==undefined){
+    const image=Buffer.from(output.data,'base64');
+    if(output.mime!=='image/png'||image.length>3000000)throw Error('evidencia_invalida');
+    res.writeHead(200,{'content-type':'image/png','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(image);
+   }else send(res,200,output);
+  }catch(e){send(res,404,{error:String(e.message||'evidencia_indisponivel').slice(0,180)});}
+  return true;
  }
  if(req.method==='GET'&&raw==='/central/api/preview'){
   const project=new URL(req.url,'http://local').searchParams.get('repository')||'';

@@ -78,6 +78,11 @@ class AiBridgeTests(unittest.TestCase):
         def reply(request, timeout):
             name=identity(request)
             seen.append(name)
+            # The Groq endpoint rejects Python's default urllib user-agent
+            # with HTTP 403/1010, even while GET /models authenticates.
+            if name == MODELS[1]:
+                self.assertEqual(request.get_header("User-agent"), "Horizon-Agent-Executor/1")
+                self.assertEqual(request.get_header("Accept"), "application/json")
             if name == MODELS[0]:
                 raise urllib.error.HTTPError(request.full_url, 429, "quota", None, None)
             return good(name)
