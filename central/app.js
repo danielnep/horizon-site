@@ -789,6 +789,15 @@ $('passkey-button').addEventListener('click',async()=>{
 function chaveComando(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9:-]+/g,' ').trim();}
 async function comandoNaConversa(texto){
  const q=chaveComando(texto);
+ // Perguntas sobre o servidor usam o snapshot autenticado, nunca a opinião do modelo.
+ if(/^(qual e o |qual o |como esta o |como esta a |ver o |mostrar o )(?:estado|status|situacao|saude) (?:da|do) (?:vps|servidor|sistema|worker)$/.test(q) || /^(?:status|estado|situacao) (?:da|do) (?:vps|servidor|sistema|worker)$/.test(q)){
+  if(!online||!snapshot)return 'Não foi possível confirmar o estado da VPS nesta consulta. Os dados não estão disponíveis.';
+  const worker=snapshot.worker||{};
+  const tasks=snapshot.tasks||[];
+  const executing=tasks.filter(t=>t.rawStatus==='running'||t.status==='em execução').length;
+  const pending=tasks.filter(t=>t.inQueue&&t.rawStatus!=='running'&&t.status!=='em execução').length;
+  return 'VPS conectada. Worker: '+String(worker.status||'não verificado')+'. Tarefas em execução: '+executing+'. Tarefas na fila ou aguardando: '+pending+'. Fonte: telemetria real da Central, recebida da VPS.';
+ }
  if(/^(ver|mostrar|abrir) (os )?(agentes|especialistas)$/.test(q)){location.hash='#agentes';render();return 'Abri os agentes. Toque em Gerenciar para atribuir tarefas ou controlar novas execuções.';}
  if(/^(ver|mostrar|abrir) (as )?(tarefas|falhas|fila)$/.test(q)){term='';filter='todos';location.hash='#tarefas';render();return 'Abri a fila real da VPS. Falhas e bloqueios possuem a opção Tentar novamente.';}
  const nova=q.match(/^(criar|enviar|nova) (uma )?(tarefa|solicitacao)(?:\s+(.+))?$/);

@@ -158,12 +158,21 @@ function statusLabel(obj){
 
 async function githubOwner(endpoint){
  const token=process.env.GITHUB_TOKEN;
- const response=await fetch('https://api.github.com/'+endpoint,{
-  headers:{accept:'application/vnd.github+json','user-agent':'Horizon-Control/1',
-   ...(token?{authorization:'Bearer '+token}:{})},
-  signal:AbortSignal.timeout(12000)});
- if(!response.ok)throw Error('github_repos_http_'+response.status);
- return response.json();
+ // Only GET is used here. A transient GitHub 5xx/transport failure may retry once.
+ for(let attempt=0;attempt<2;attempt++){
+  try{
+   const response=await fetch('https://api.github.com/'+endpoint,{
+    headers:{accept:'application/vnd.github+json','user-agent':'Horizon-Control/1',
+     ...(token?{authorization:'Bearer '+token}:{})},
+    signal:AbortSignal.timeout(12000)});
+   if(response.ok)return response.json();
+   if(response.status<500||attempt>0)throw Error('github_repos_http_'+response.status);
+  }catch(error){
+   if(attempt>0||/^github_repos_http_[1-4]/.test(String(error?.message||'')))throw error;
+  }
+  await new Promise(resolve=>setTimeout(resolve,450));
+ }
+ throw Error('github_repos_indisponivel');
 }
 export async function ownerRepositories(){
  if(repoCache.value&&repoCache.expires>Date.now())return repoCache.value;
@@ -183,7 +192,7 @@ export async function ownerRepositories(){
   .sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
   repoCache.value=repositories;repoCache.expires=Date.now()+300000;
   return repositories;
- })().finally(()=>{repoCache.promise=null});
+ })().catch(error=>{if(repoCache.value?.length)return repoCache.value;throw error}).finally(()=>{repoCache.promise=null});
  return repoCache.promise;
 }
 export function deriveCodePaths(items,repo){
