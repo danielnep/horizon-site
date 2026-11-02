@@ -23,7 +23,7 @@ const AGENT_NAMES={
 'integration-engineer':'Integrações','qa-engineer':'QA / Testes','security-engineer':'Segurança',
 'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
 'corregedoria-may':'Corregedoria','may-persona':'May Persona','horizon-supervisor':'Supervisor Horizon'};
-const LABELS={estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'18 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
+const LABELS={evidencias:'Evidências',estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'18 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let studioView='code';
 try{studioView=sessionStorage.getItem('horizon.studio.active-view')==='builder'?'builder':'code';}catch{}
@@ -375,8 +375,42 @@ function requestForm(){
  '<div class="actions-right"><button type="button" class="secondary" id="ai-action">Analisar com IA</button><button type="submit" class="primary" id="task-submit"'+(!repoList.length?' disabled':'')+'>Enviar solicitação ↑</button></div></div>'+
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
+// Evidence comes only from authenticated/filtered task receipt routes.
+const evidenceCache=new Map();
+async function loadHomeEvidence(){
+ const root=$('home-evidence');if(!root||PAGES_MODE)return;
+ try{
+  const status=await api('evidence/session');
+  if(!root.isConnected)return;
+  if(!status.authenticated){
+   root.innerHTML='<p class="smallprint">Capturas de QA preservadas na VPS. <a href="#evidencias">Abrir galeria privada de prints →</a></p>';
+   return;
+  }
+  const data=await api('evidence/list');if(!root.isConnected||active()!=='inicio')return;
+  const images=(data.items||[]).slice(0,4);
+  root.innerHTML='<div class="row-between"><strong>'+data.count+' capturas arquivadas</strong><a class="linkrow" href="#evidencias">Ver galeria completa →</a></div>'+
+   (images.length?'<div class="evidence-gallery home-gallery">'+images.map(i=>{
+    const url='/central/api/evidence/'+i.id;
+    return '<a class="evidence-image" href="'+url+'" target="_blank" rel="noopener noreferrer"><img src="'+url+'" loading="lazy" alt="Captura '+escapeHTML(i.file)+'"><span>'+escapeHTML(i.project)+' · '+escapeHTML(i.file)+'</span></a>';
+   }).join('')+'</div>':'<p class="smallprint">Ainda não foram identificados prints de QA.</p>');
+ }catch(e){if(root.isConnected)root.textContent='Não foi possível consultar evidências: '+e.message;}
+}
+function activityFeed(){
+ const entries=(snapshot?.activity||[]).slice(-10).reverse();
+ if(!entries.length)return '<p class="smallprint">Nenhum comando recente registrado nesta instância.</p>';
+ return '<div class="list">'+entries.map(e=>{
+  const task=(snapshot?.tasks||[]).find(t=>t.id===e.taskId);
+  const action=String(e.action||'atividade');
+  const title=acaoEmPortugues(action,e.path);
+  return '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(title)+'</strong>'+
+    '<p>'+escapeHTML(label(e.agent))+(task?' · '+escapeHTML(task.title):'')+'</p>'+
+    (e.taskId?'<code class="smallprint">'+escapeHTML(e.taskId)+'</code>':'')+
+    (task?.hasEvidence?' <a class="linkrow" href="#tarefas">Ver comprovantes</a>':'')+
+    '</div></div>';
+ }).join('')+'</div>';
+}
 function overviewMarkup(){
- return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
+ return summary()+'<div class="section-heading"><h2>Capturas e evidências recentes</h2><a class="linkrow" href="#tarefas">Ver tarefas →</a></div><div id="home-evidence" class="panel" aria-live="polite">Carregando capturas…</div>'+'<div class="section-heading"><h2>Atividade dos agentes</h2><span class="meta">Dados reais da VPS</span></div>'+activityFeed()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
  listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila da VPS indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'')+
  '<div class="section-heading"><h2>Agentes</h2><a class="linkrow" href="#agentes">Ver os 17 →</a></div>'+
@@ -442,6 +476,49 @@ function explainEvent(e){
  return 'Houve uma atualização técnica no servidor.';
 }
 
+function pageEvidencias(){
+ return heading('Evidências de execução','Capturas originais de verificações na VPS, preservadas por projeto, sem simulações.')+
+ '<section class="panel" id="evidence-lock"><div class="section-heading"><h2>Arquivo visual</h2><span class="meta">Acesso privado do proprietário</span></div>'+
+ '<div id="evidence-content" role="status">Verificando acesso às capturas…</div></section>';
+}
+async function loadEvidenceGallery(){
+ const root=$('evidence-content');if(!root||PAGES_MODE)return;
+ try{
+  const session=await api('evidence/session');
+  if(!root.isConnected)return;
+  if(!session.authenticated){
+   root.innerHTML='<p class="smallprint">O painel de comandos continua acessível. Os prints de projetos exigem autorização para não expor informações de clientes.</p>'+
+    '<form id="evidence-unlock"><label for="evidence-pin">Chave privada de evidências</label>'+
+    '<div class="searchbar"><input id="evidence-pin" type="password" required autocomplete="one-time-code" placeholder="Informe sua chave de evidências" aria-label="Chave de evidências"/>'+
+    '<button class="primary" type="submit">Acessar prints</button></div></form>';
+   root.querySelector('#evidence-unlock').addEventListener('submit',async e=>{
+    e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;
+    try{await api('evidence/unlock',{method:'POST',body:JSON.stringify({key:e.target.querySelector('input').value.trim()})});
+     await loadEvidenceGallery();
+    }catch(error){note('Acesso às capturas: '+error.message,true);button.disabled=false;}
+   });
+   return;
+  }
+  const response=await api('evidence/list');
+  if(!root.isConnected||active()!=='evidencias')return;
+  const items=response.items||[];
+  if(!items.length){root.innerHTML='<p class="smallprint">Nenhuma captura de validação encontrada na VPS. Arquivos originais não foram apagados.</p>';return;}
+  const projects=[...new Set(items.map(i=>i.project))].sort();
+  root.innerHTML='<div class="row-between"><p><strong>'+items.length+' capturas reais</strong> armazenadas e preservadas na VPS</p>'+
+   '<label class="field">Projeto <select id="evidence-filter"><option value="">Todos os projetos</option>'+projects.map(project=>'<option value="'+escapeHTML(project)+'">'+escapeHTML(project)+'</option>').join('')+'</select></label></div>'+
+   '<div class="evidence-gallery home-gallery" id="evidence-grid">'+items.map(i=>{
+    const url='/central/api/evidence/'+i.id;
+    return '<a data-evidence-project="'+escapeHTML(i.project)+'" href="'+url+'" target="_blank" rel="noopener noreferrer" class="evidence-image">'+
+    '<img src="'+url+'" loading="lazy" alt="Captura '+escapeHTML(i.file)+' do projeto '+escapeHTML(i.project)+'">'+
+    '<span><strong>'+escapeHTML(i.project)+'</strong> · '+escapeHTML(i.kind)+'</span>'+
+    '<small>'+escapeHTML(i.file)+' · '+escapeHTML(time(i.at))+(i.session?' · Sessão '+escapeHTML(i.session):'')+'</small></a>';
+   }).join('')+'</div>'+
+   '<p class="smallprint">Imagens obtidas diretamente dos arquivos. Uma captura arquivada não é, por si só, aprovação do teste.</p>';
+  root.querySelector('#evidence-filter').addEventListener('change',e=>{
+   for(const item of root.querySelectorAll('[data-evidence-project]'))item.style.display=e.target.value&&item.dataset.evidenceProject!==e.target.value?'none':'';
+  });
+ }catch(e){if(root.isConnected)root.textContent='Não foi possível carregar as capturas: '+e.message;}
+}
 function pageHistorico(){
  const events=snapshot?.available?.vps?snapshot?.events||[]:[];
  return heading('Histórico','Resultados confirmados pela VPS e eventos recentes da equipe.')+
@@ -541,9 +618,9 @@ function render(){
   notifyStudioChanged();updateConn();return;
  }
  if(renderedPage==='estudio')stopStudio();
- const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
+ const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,evidencias:pageEvidencias,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();const logout=$('logout');if(logout)logout.hidden=!adminAuthorized||PAGES_MODE||panelPasswordless;
- renderedPage=page;bind();positionProgress(content);repaintAnalysis();
+ renderedPage=page;bind();positionProgress(content);repaintAnalysis();if(page==='inicio')void loadHomeEvidence();if(page==='evidencias')void loadEvidenceGallery();
  for(const id of openTasks){
   const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
   if(detail&&trigger){detail.hidden=false;trigger.setAttribute('aria-expanded','true');trigger.textContent='Recolher ▴';}
@@ -738,6 +815,7 @@ async function refresh(force=false){
     }));
     bindTaskActions($('live-overview'));
     bindTaskDetailClose($('live-overview'));
+    void loadHomeEvidence();
     updateConn();
    }else render();
   }catch(e){online=false;snapshot=null;render();note('Falha ao atualizar dados da VPS: '+e.message,true);}

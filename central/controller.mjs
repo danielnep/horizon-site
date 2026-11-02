@@ -68,6 +68,13 @@ function send(res,status,value,headers={}){
 function sec(){return process.env.HORIZON_CONTROL_PASSWORD||process.env.HORIZON_OWNER_SESSION_SECRET||process.env.HORIZON_MCP_TOKEN||'';}
 function same(a,b){if(!a||!b)return false;const aa=Buffer.from(a),bb=Buffer.from(b);return aa.length===bb.length&&timingSafeEqual(aa,bb);}
 function signature(message){return createHmac('sha256',sec()).update('horizon-control:v1:'+message).digest('base64url');}
+function evidenceAuthorized(req){
+ const m=(req.headers.cookie||'').match(/(?:^|;\s*)horizon_evidence=([^;]+)/);
+ if(!m||!sec())return false;
+ const [stamp,sig]=decodeURIComponent(m[1]).split('.');
+ const n=Number(stamp);
+ return Number.isSafeInteger(n)&&n<=Date.now()+30000&&n>Date.now()-2592000000&&same(signature('evidence:'+stamp),sig);
+}
 function authenticated(req){
  const match=(req.headers.cookie||'').match(/(?:^|;\s*)horizon_session=([^;]+)/);
  if(!sec()||!match)return false;
@@ -548,6 +555,39 @@ export async function handleCentral(req,res,{reader=readFile}={}){
  '/central/api/ai/chat'
  ].includes(raw);
  if(!publicRead&&!passwordlessPanel()&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
+ if(raw==='/central/api/evidence/session'&&req.method==='GET'){
+  send(res,200,{authenticated:evidenceAuthorized(req),available:Boolean(process.env.HORIZON_EVIDENCE_ACCESS_KEY)});
+  return true;
+ }
+ if(raw==='/central/api/evidence/unlock'&&req.method==='POST'){
+  const ip=String(req.socket.remoteAddress||'unknown').slice(0,80);
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  if(!limit('evidence-unlock:'+ip,8)){send(res,429,{error:'tentativas_excedidas'});return true;}
+  try{
+   const input=await body(req,1200);
+   if(!same(String(process.env.HORIZON_EVIDENCE_ACCESS_KEY||''),String(input.key||''))){
+    send(res,401,{error:'chave_de_evidencias_incorreta'});return true;
+   }
+   const stamp=String(Date.now());
+   const token=stamp+'.'+signature('evidence:'+stamp);
+   send(res,200,{ok:true},{'set-cookie':'horizon_evidence='+token+'; Path=/central/api/evidence; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000'});
+  }catch{send(res,400,{error:'solicitacao_invalida'});}
+  return true;
+ }
+ const evidencePath=raw.match(/^\/central\/api\/evidence\/([0-9a-f]{32})$/);
+ if(req.method==='GET'&&(raw==='/central/api/evidence/list'||evidencePath)){
+  if(!evidenceAuthorized(req)){send(res,401,{error:'evidencias_exigem_acesso_do_proprietario'});return true;}
+  try{
+   const result=await vpsRequest(evidencePath?'/v1/evidence/'+evidencePath[1]:'/v1/evidence');
+   if(evidencePath){
+    const content=Buffer.from(result.data||'','base64');
+    if(result.mime!=='image/png'||content.length>3000000||!content.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))throw Error('captura_invalida');
+    res.writeHead(200,{'content-type':'image/png','cache-control':'private, no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer'});
+    res.end(content);
+   }else send(res,200,result);
+  }catch(e){send(res,503,{error:String(e.message||'captura_indisponivel').slice(0,160)});}
+  return true;
+ }
  if(raw==='/central/api/logout'&&req.method==='POST'){
   if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
   send(res,200,{ok:true},{'set-cookie':'horizon_session=; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=0'});return true;

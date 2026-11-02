@@ -143,3 +143,6 @@ main {padding-top:32px;line-height:1.5}
 .topbar .help-fab::before{font-size:22px}
 .topbar .help-fab:hover{background:#315a7a;border-color:#7ac0fa}
 @media(max-width:650px){.topbar .help-fab{width:33px;height:35px;min-width:33px;min-height:35px}.topbar .help-fab::before{font-size:20px}.topbar .top-actions{gap:1px}.topbar .heading{max-width:30vw}.topbar .mode-switch a{padding:7px 8px}}
+
+/* Evidence thumbnails from task receipts: no simulated or decorative screenshots. */
+.home-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.home-gallery .evidence-image{display:grid;gap:6px;min-width:0;text-decoration:none}.home-gallery img{width:100%;max-height:240px;object-fit:contain;background:#131b25;border-radius:8px}.home-gallery small{color:#98a9bb;overflow-wrap:anywhere}.home-gallery .evidence-image:focus-visible{outline:2px solid #1f98ff;outline-offset:3px}
