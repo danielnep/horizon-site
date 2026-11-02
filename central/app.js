@@ -375,8 +375,43 @@ function requestForm(){
  '<div class="actions-right"><button type="button" class="secondary" id="ai-action">Analisar com IA</button><button type="submit" class="primary" id="task-submit"'+(!repoList.length?' disabled':'')+'>Enviar solicitação ↑</button></div></div>'+
  '<div id="ai-result" class="assist-result" hidden aria-live="polite"></div></form></section>';
 }
+// Evidence comes only from authenticated/filtered task receipt routes.
+const evidenceCache=new Map();
+async function loadHomeEvidence(){
+ const target=$('home-evidence');if(!target||PAGES_MODE)return;
+ const relevant=(snapshot?.tasks||[]).filter(t=>t.hasEvidence).slice(0,8);
+ if(!relevant.length){target.innerHTML='<p class="smallprint">Nenhuma tarefa com captura vinculada. Prints produzidos fora das tarefas ainda precisam de associação.</p>';return;}
+ const loaded=await Promise.all(relevant.map(async task=>{
+  const key=task.id+':'+(task.lastCommand?.number??'');
+  if(!evidenceCache.has(key)){
+   try{evidenceCache.set(key,await api('tasks/'+encodeURIComponent(task.id)+'/details'));}
+   catch(error){evidenceCache.set(key,{error:error.message});}
+  }
+  return {task,detail:evidenceCache.get(key)};
+ }));
+ if(!target.isConnected||active()!=='inicio')return;
+ const proof=loaded.flatMap(({task,detail})=>(detail.evidence||[]).slice(-3).map(item=>({task,item}))).slice(0,8);
+ target.innerHTML=proof.length?'<div class="evidence-gallery home-gallery">'+proof.map(({task,item})=>{
+  const url='/central/api/tasks/'+encodeURIComponent(task.id)+'/evidence/'+item.index;
+  return '<a class="evidence-image" href="'+url+'" target="_blank" rel="noopener noreferrer" title="Abrir captura original"><img src="'+url+'" loading="lazy" alt="Print '+escapeHTML(item.file)+'"><span>'+escapeHTML(task.project||task.title)+' · '+escapeHTML(item.check||'Validação')+'</span><small>'+escapeHTML(item.file)+'</small></a>';
+ }).join('')+'</div>':'<p class="smallprint">Há validações registradas, mas nenhuma captura PNG vinculada a elas.</p>';
+}
+function activityFeed(){
+ const entries=(snapshot?.activity||[]).slice(-10).reverse();
+ if(!entries.length)return '<p class="smallprint">Nenhum comando recente registrado nesta instância.</p>';
+ return '<div class="list">'+entries.map(e=>{
+  const task=(snapshot?.tasks||[]).find(t=>t.id===e.taskId);
+  const action=String(e.action||'atividade');
+  const title=acaoEmPortugues(action,e.path);
+  return '<div class="event-row"><time>'+escapeHTML(time(e.at))+'</time><div><strong>'+escapeHTML(title)+'</strong>'+
+    '<p>'+escapeHTML(label(e.agent))+(task?' · '+escapeHTML(task.title):'')+'</p>'+
+    (e.taskId?'<code class="smallprint">'+escapeHTML(e.taskId)+'</code>':'')+
+    (task?.hasEvidence?' <a class="linkrow" href="#tarefas">Ver comprovantes</a>':'')+
+    '</div></div>';
+ }).join('')+'</div>';
+}
 function overviewMarkup(){
- return summary()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
+ return summary()+'<div class="section-heading"><h2>Capturas e evidências recentes</h2><a class="linkrow" href="#tarefas">Ver tarefas →</a></div><div id="home-evidence" class="panel" aria-live="polite">Carregando capturas…</div>'+'<div class="section-heading"><h2>Atividade dos agentes</h2><span class="meta">Dados reais da VPS</span></div>'+activityFeed()+'<div class="section-heading"><h2>Operações e pendências</h2><a class="linkrow" href="#tarefas">Ver todas →</a></div>'+
  listTasks(snapshot?.tasks||[],7)+(!snapshot?.available?.queue?'<p class="error">Fila da VPS indisponível: não é possível confirmar que está vazia.</p>':'')+
  (snapshot?.issues?.length?'<div class="smallprint warning">'+snapshot.issues.map(escapeHTML).join(' • ')+'</div>':'')+
  '<div class="section-heading"><h2>Agentes</h2><a class="linkrow" href="#agentes">Ver os 17 →</a></div>'+
@@ -543,7 +578,7 @@ function render(){
  if(renderedPage==='estudio')stopStudio();
  const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();const logout=$('logout');if(logout)logout.hidden=!adminAuthorized||PAGES_MODE||panelPasswordless;
- renderedPage=page;bind();positionProgress(content);repaintAnalysis();
+ renderedPage=page;bind();positionProgress(content);repaintAnalysis();if(page==='inicio')void loadHomeEvidence();
  for(const id of openTasks){
   const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
   if(detail&&trigger){detail.hidden=false;trigger.setAttribute('aria-expanded','true');trigger.textContent='Recolher ▴';}
@@ -738,6 +773,7 @@ async function refresh(force=false){
     }));
     bindTaskActions($('live-overview'));
     bindTaskDetailClose($('live-overview'));
+    void loadHomeEvidence();
     updateConn();
    }else render();
   }catch(e){online=false;snapshot=null;render();note('Falha ao atualizar dados da VPS: '+e.message,true);}
