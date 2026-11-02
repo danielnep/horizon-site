@@ -23,7 +23,7 @@ const AGENT_NAMES={
 'integration-engineer':'Integrações','qa-engineer':'QA / Testes','security-engineer':'Segurança',
 'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
 'corregedoria-may':'Corregedoria','may-persona':'May Persona','horizon-supervisor':'Supervisor Horizon'};
-const LABELS={estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'18 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
+const LABELS={evidencias:'Evidências',estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'18 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let studioView='code';
 try{studioView=sessionStorage.getItem('horizon.studio.active-view')==='builder'?'builder':'code';}catch{}
@@ -378,23 +378,22 @@ function requestForm(){
 // Evidence comes only from authenticated/filtered task receipt routes.
 const evidenceCache=new Map();
 async function loadHomeEvidence(){
- const target=$('home-evidence');if(!target||PAGES_MODE)return;
- const relevant=(snapshot?.tasks||[]).filter(t=>t.hasEvidence).slice(0,8);
- if(!relevant.length){target.innerHTML='<p class="smallprint">Nenhuma tarefa com captura vinculada. Prints produzidos fora das tarefas ainda precisam de associação.</p>';return;}
- const loaded=await Promise.all(relevant.map(async task=>{
-  const key=task.id+':'+(task.lastCommand?.number??'');
-  if(!evidenceCache.has(key)){
-   try{evidenceCache.set(key,await api('tasks/'+encodeURIComponent(task.id)+'/details'));}
-   catch(error){evidenceCache.set(key,{error:error.message});}
+ const root=$('home-evidence');if(!root||PAGES_MODE)return;
+ try{
+  const status=await api('evidence/session');
+  if(!root.isConnected)return;
+  if(!status.authenticated){
+   root.innerHTML='<p class="smallprint">Capturas de QA preservadas na VPS. <a href="#evidencias">Abrir galeria privada de prints →</a></p>';
+   return;
   }
-  return {task,detail:evidenceCache.get(key)};
- }));
- if(!target.isConnected||active()!=='inicio')return;
- const proof=loaded.flatMap(({task,detail})=>(detail.evidence||[]).slice(-3).map(item=>({task,item}))).slice(0,8);
- target.innerHTML=proof.length?'<div class="evidence-gallery home-gallery">'+proof.map(({task,item})=>{
-  const url='/central/api/tasks/'+encodeURIComponent(task.id)+'/evidence/'+item.index;
-  return '<a class="evidence-image" href="'+url+'" target="_blank" rel="noopener noreferrer" title="Abrir captura original"><img src="'+url+'" loading="lazy" alt="Print '+escapeHTML(item.file)+'"><span>'+escapeHTML(task.project||task.title)+' · '+escapeHTML(item.check||'Validação')+'</span><small>'+escapeHTML(item.file)+'</small></a>';
- }).join('')+'</div>':'<p class="smallprint">Há validações registradas, mas nenhuma captura PNG vinculada a elas.</p>';
+  const data=await api('evidence/list');if(!root.isConnected||active()!=='inicio')return;
+  const images=(data.items||[]).slice(0,4);
+  root.innerHTML='<div class="row-between"><strong>'+data.count+' capturas arquivadas</strong><a class="linkrow" href="#evidencias">Ver galeria completa →</a></div>'+
+   (images.length?'<div class="evidence-gallery home-gallery">'+images.map(i=>{
+    const url='/central/api/evidence/'+i.id;
+    return '<a class="evidence-image" href="'+url+'" target="_blank" rel="noopener noreferrer"><img src="'+url+'" loading="lazy" alt="Captura '+escapeHTML(i.file)+'"><span>'+escapeHTML(i.project)+' · '+escapeHTML(i.file)+'</span></a>';
+   }).join('')+'</div>':'<p class="smallprint">Ainda não foram identificados prints de QA.</p>');
+ }catch(e){if(root.isConnected)root.textContent='Não foi possível consultar evidências: '+e.message;}
 }
 function activityFeed(){
  const entries=(snapshot?.activity||[]).slice(-10).reverse();
@@ -477,6 +476,49 @@ function explainEvent(e){
  return 'Houve uma atualização técnica no servidor.';
 }
 
+function pageEvidencias(){
+ return heading('Evidências de execução','Capturas originais de verificações na VPS, preservadas por projeto, sem simulações.')+
+ '<section class="panel" id="evidence-lock"><div class="section-heading"><h2>Arquivo visual</h2><span class="meta">Acesso privado do proprietário</span></div>'+
+ '<div id="evidence-content" role="status">Verificando acesso às capturas…</div></section>';
+}
+async function loadEvidenceGallery(){
+ const root=$('evidence-content');if(!root||PAGES_MODE)return;
+ try{
+  const session=await api('evidence/session');
+  if(!root.isConnected)return;
+  if(!session.authenticated){
+   root.innerHTML='<p class="smallprint">O painel de comandos continua acessível. Os prints de projetos exigem autorização para não expor informações de clientes.</p>'+
+    '<form id="evidence-unlock"><label for="evidence-pin">Chave privada de evidências</label>'+
+    '<div class="searchbar"><input id="evidence-pin" type="password" required autocomplete="one-time-code" placeholder="Informe sua chave de evidências" aria-label="Chave de evidências"/>'+
+    '<button class="primary" type="submit">Acessar prints</button></div></form>';
+   root.querySelector('#evidence-unlock').addEventListener('submit',async e=>{
+    e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;
+    try{await api('evidence/unlock',{method:'POST',body:JSON.stringify({key:e.target.querySelector('input').value.trim()})});
+     await loadEvidenceGallery();
+    }catch(error){note('Acesso às capturas: '+error.message,true);button.disabled=false;}
+   });
+   return;
+  }
+  const response=await api('evidence/list');
+  if(!root.isConnected||active()!=='evidencias')return;
+  const items=response.items||[];
+  if(!items.length){root.innerHTML='<p class="smallprint">Nenhuma captura de validação encontrada na VPS. Arquivos originais não foram apagados.</p>';return;}
+  const projects=[...new Set(items.map(i=>i.project))].sort();
+  root.innerHTML='<div class="row-between"><p><strong>'+items.length+' capturas reais</strong> armazenadas e preservadas na VPS</p>'+
+   '<label class="field">Projeto <select id="evidence-filter"><option value="">Todos os projetos</option>'+projects.map(project=>'<option value="'+escapeHTML(project)+'">'+escapeHTML(project)+'</option>').join('')+'</select></label></div>'+
+   '<div class="evidence-gallery home-gallery" id="evidence-grid">'+items.map(i=>{
+    const url='/central/api/evidence/'+i.id;
+    return '<a data-evidence-project="'+escapeHTML(i.project)+'" href="'+url+'" target="_blank" rel="noopener noreferrer" class="evidence-image">'+
+    '<img src="'+url+'" loading="lazy" alt="Captura '+escapeHTML(i.file)+' do projeto '+escapeHTML(i.project)+'">'+
+    '<span><strong>'+escapeHTML(i.project)+'</strong> · '+escapeHTML(i.kind)+'</span>'+
+    '<small>'+escapeHTML(i.file)+' · '+escapeHTML(time(i.at))+(i.session?' · Sessão '+escapeHTML(i.session):'')+'</small></a>';
+   }).join('')+'</div>'+
+   '<p class="smallprint">Imagens obtidas diretamente dos arquivos. Uma captura arquivada não é, por si só, aprovação do teste.</p>';
+  root.querySelector('#evidence-filter').addEventListener('change',e=>{
+   for(const item of root.querySelectorAll('[data-evidence-project]'))item.style.display=e.target.value&&item.dataset.evidenceProject!==e.target.value?'none':'';
+  });
+ }catch(e){if(root.isConnected)root.textContent='Não foi possível carregar as capturas: '+e.message;}
+}
 function pageHistorico(){
  const events=snapshot?.available?.vps?snapshot?.events||[]:[];
  return heading('Histórico','Resultados confirmados pela VPS e eventos recentes da equipe.')+
@@ -576,9 +618,9 @@ function render(){
   notifyStudioChanged();updateConn();return;
  }
  if(renderedPage==='estudio')stopStudio();
- const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
+ const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,evidencias:pageEvidencias,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();const logout=$('logout');if(logout)logout.hidden=!adminAuthorized||PAGES_MODE||panelPasswordless;
- renderedPage=page;bind();positionProgress(content);repaintAnalysis();if(page==='inicio')void loadHomeEvidence();
+ renderedPage=page;bind();positionProgress(content);repaintAnalysis();if(page==='inicio')void loadHomeEvidence();if(page==='evidencias')void loadEvidenceGallery();
  for(const id of openTasks){
   const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
   if(detail&&trigger){detail.hidden=false;trigger.setAttribute('aria-expanded','true');trigger.textContent='Recolher ▴';}

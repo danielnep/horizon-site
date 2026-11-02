@@ -26,6 +26,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn, UnixStreamServer
 from urllib.parse import urlparse
 from horizon_core.task_receipts import describe as describe_task, detail as task_detail, evidence as task_evidence, commands as task_commands
+from evidence_catalog import list_evidence, read_evidence
 
 DB = Path(os.getenv("HORIZON_ACTIVE_DB", "/var/lib/horizon-worker/state/active.sqlite3"))
 TELEMETRY = Path(os.getenv("HORIZON_VPS_TELEMETRY", "/var/lib/horizon-worker/workspace/tasks/telemetry"))
@@ -679,6 +680,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.command == "GET" and path == "/v1/snapshot":
                 return self.send_json(200, snapshot())
+            if self.command == "GET" and path == "/v1/evidence":
+                return self.send_json(200, list_evidence())
+            hit = re.fullmatch(r"/v1/evidence/([0-9a-f]{32})", path)
+            if self.command == "GET" and hit:
+                return self.send_json(200, read_evidence(hit[1]))
             if self.command == "GET" and path == "/v1/tasks/archived":
                 return self.send_json(200, {"tasks": snapshot(include_archived=True)["tasks"]})
             hit=re.fullmatch(r'/v1/tasks/([a-z0-9:-]{3,110})/details',path)
