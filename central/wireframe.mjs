@@ -2,6 +2,15 @@
 const KEY='horizon.orbita.wireframes.v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const templates={button:'Botão',text:'Texto',input:'Campo',nav:'Menu',image:'Imagem',card:'Área'};
+const variants={nav:[['simple','Simples'],['centered','Título central'],['brand','Marca e ações']],button:[['filled','Preenchido'],['outline','Contornado'],['soft','Suave']],card:[['surface','Painel'],['elevated','Cartão elevado']],image:[['cover','Preencher'],['contain','Imagem inteira']]};
+function componentBody(e){
+ const t=esc(e.text),v=e.variant||'';
+ if(e.type==='image'&&/^data:image\/(png|jpeg|webp|gif);base64,/i.test(e.src||''))return '<img alt="'+t+'" src="'+esc(e.src)+'" class="wf-photo wf-photo-'+esc(v||'cover')+'">';
+ if(e.type==='nav')return '<span class="wf-nav-inner wf-nav-'+esc(v||'simple')+'"><span aria-hidden="true">‹</span><strong>'+t+'</strong><span aria-hidden="true">⋯</span></span>';
+ if(e.type==='input')return '<span class="wf-input-inner">'+t+'</span>';
+ if(e.type==='image')return '<span class="wf-image-placeholder">＋<br>'+t+'</span>';
+ return '<span>'+t+'</span>';
+}
 const sizes={mobile:[393,852],tablet:[800,1100],desktop:[1440,900]};
 let docs=[],activeId='',pageId='',selectedId='',device='current',dirty=false,history=[];
 function makeId(){return Math.random().toString(36).slice(2,11)}
@@ -59,7 +68,7 @@ function paint(){
  const box=document.getElementById('wf-canvas');box.style.setProperty('--wf-accent',doc.palette);box.style.setProperty('--wf-width',size[0]+'px');box.dataset.theme=doc.theme;box.style.aspectRatio=size[0]+'/'+size[1];
  // The production CSP forbids HTML style attributes. CSSOM assignments below
  // are allowed and keep positioned components interactive without unsafe-inline.
- box.innerHTML=p.elements.map(e=>'<button type="button" class="wf-element wf-'+esc(e.type)+(e.id===selectedId?' selected':'')+'" data-el="'+esc(e.id)+'">'+esc(e.text)+'</button>').join('');
+ box.innerHTML=p.elements.map(e=>'<button type="button" class="wf-element wf-'+esc(e.type)+' wf-variant-'+esc(e.variant||'default')+(e.id===selectedId?' selected':'')+'" data-el="'+esc(e.id)+'">'+componentBody(e)+'</button>').join('');
  const nodes=box.querySelectorAll('.wf-element');
  p.elements.forEach((e,i)=>{
   const node=nodes[i];if(!node)return;
@@ -71,6 +80,9 @@ function paint(){
  const el=activeEl();const detail=document.getElementById('wf-properties-body');
  detail.innerHTML=el?'<label>Texto <input id="wf-label" maxlength="100" value="'+esc(el.text)+'"></label>'+
   '<label>Largura (%) <input id="wf-width" type="number" min="8" max="100" value="'+el.w+'"></label>'+
+  (variants[el.type]?'<label>Modelo <select id="wf-variant">'+variants[el.type].map(([v,n])=>'<option value="'+v+'"'+(el.variant===v?' selected':'')+'>'+n+'</option>').join('')+'</select></label>':'')+
+  (el.type==='image'?'<label>Adicionar imagem <input id="wf-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>':'')+
+  '<label>Alterar este elemento com IA <input id="wf-element-prompt" placeholder="Ex.: deixe o título centralizado" maxlength="650"></label><button type="button" id="wf-element-ai">Aplicar ao elemento</button>'+
   '<div class="wf-property-actions"><button id="wf-copy" type="button">Duplicar</button><button id="wf-remove" type="button">Excluir</button></div>':
   '<p>Selecione um elemento para editar ou arraste para reposicionar.</p>';
 }
@@ -82,6 +94,7 @@ export function mountWireframe(){
   const el=e.target.closest('[data-el]');if(el){selectedId=el.dataset.el;paint();return}
   const p=e.target.closest('[data-page-id]');if(p){pageId=p.dataset.pageId;selectedId='';paint();return}
   const add=e.target.closest('[data-add]');if(add){update(()=>page().elements.push({id:makeId(),type:add.dataset.add,text:templates[add.dataset.add],x:18,y:42,w:64,h:8}));return}
+  if(e.target.id==='wf-element-ai'&&activeEl()){void editOne();return}
   if(e.target.id==='wf-copy'&&activeEl()){update(()=>{const a=activeEl();page().elements.push({...a,id:makeId(),y:Math.min(a.y+12,88)});selectedId=page().elements.at(-1).id;});return}
   if(e.target.id==='wf-remove'){update(()=>{page().elements=page().elements.filter(a=>a.id!==selectedId);selectedId=''});return}
  });
@@ -97,13 +110,33 @@ export function mountWireframe(){
  $('wf-theme').onchange=e=>update(()=>{current().theme=e.target.value});
  $('wf-properties-body').addEventListener('change',e=>{
   if(!activeEl())return;
-  const key={'wf-label':'text','wf-width':'w'}[e.target.id];if(!key)return;
+  if(e.target.id==='wf-image-file'){
+   const file=e.target.files?.[0];if(!file)return;
+   if(!/^image\/(png|jpeg|webp|gif)$/.test(file.type)||file.size>900000){show('Escolha uma imagem PNG, JPG, WebP ou GIF de até 900 KB.',true);return}
+   const id=selectedId,reader=new FileReader();
+   reader.onload=()=>{const target=page()?.elements.find(x=>x.id===id);if(target)update(()=>{target.src=String(reader.result)})};
+   reader.onerror=()=>show('Não foi possível carregar a imagem.',true);reader.readAsDataURL(file);return;
+  }
+  const key={'wf-label':'text','wf-width':'w','wf-variant':'variant'}[e.target.id];if(!key)return;
   update(()=>activeEl()[key]=key==='w'?Math.min(100,Math.max(8,Number(e.target.value)||40)):e.target.value);
  });
+ async function editOne(){
+  const selected=activeEl(),prompt=$('wf-element-prompt')?.value.trim();if(!selected||!prompt||prompt.length<12){show('Descreva a mudança com pelo menos 12 caracteres.',true);return}
+  const id=selected.id,pageAtStart=pageId,projectAtStart=activeId,button=$('wf-element-ai');button.disabled=true;show('Alterando somente o elemento selecionado…');
+  try{
+   const context='Identidade visual: '+current().theme+', cor '+current().palette+'. Altere apenas este elemento, preserve seu tipo. '+prompt;
+   const response=await fetch('/central/api/ai/wireframe',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:context.slice(0,650),elements:[{type:selected.type,text:selected.text,x:selected.x,y:selected.y,w:selected.w,h:selected.h}]})});
+   const data=await response.json();if(!response.ok)throw Error(data.error||'IA indisponível');
+   const result=data.elements?.find(x=>x.type===selected.type);if(!result)throw Error('A IA não retornou o tipo do elemento selecionado.');
+   if(pageId!==pageAtStart||activeId!==projectAtStart||!page().elements.some(x=>x.id===id))throw Error('O contexto mudou; selecione o elemento novamente.');
+   update(()=>{const target=page().elements.find(x=>x.id===id);Object.assign(target,result,{id})});show('Elemento atualizado pela IA; os demais foram preservados.');
+  }catch(err){show('IA: '+err.message,true)}finally{if(button.isConnected)button.disabled=false}
+ }
  let dragging=null;
  $('wf-canvas').addEventListener('pointerdown',e=>{
   const el=e.target.closest('[data-el]');if(!el)return;
   const a=page().elements.find(x=>x.id===el.dataset.el);if(!a)return;
+  selectedId=a.id;
   dragging={id:a.id,startX:e.clientX,startY:e.clientY,x:a.x,y:a.y};
   el.setPointerCapture(e.pointerId);
  });
@@ -130,13 +163,13 @@ export function mountWireframe(){
   try{
    const response=await fetch('/central/api/ai/wireframe',{method:'POST',
     credentials:'same-origin',headers:{'content-type':'application/json'},
-    body:JSON.stringify({prompt,elements:page().elements.map(({type,text,x,y,w,h})=>({type,text,x,y,w,h}))})});
+    body:JSON.stringify({prompt:('Identidade visual: '+current().theme+', cor '+current().palette+'. '+prompt).slice(0,650),elements:page().elements.map(({type,text,x,y,w,h})=>({type,text,x,y,w,h}))})});
    const data=await response.json();
    if(!response.ok){
     if(response.status===401){const gate=document.getElementById('gate');if(gate)gate.hidden=false;}
     throw Error(data.error||'IA indisponível');
    }
-   update(()=>{page().elements=data.elements.map(e=>({...e,id:makeId()}));selectedId=''});
+   update(()=>{const existing=page().elements;const images=existing.filter(e=>e.type==='image'&&e.src);let nextImage=0;page().elements=data.elements.map(e=>{const prior=e.type==='image'?images[nextImage++]:null;return {...e,id:makeId(),...(prior?{src:prior.src,variant:prior.variant}: {})}});page().elements.push(...images.slice(nextImage));selectedId=''});
    show('Protótipo atualizado pela '+String(data.model||data.provider)+' e salvo localmente.');
   }catch(err){show('IA: '+err.message,true)}
   finally{button.disabled=false}

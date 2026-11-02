@@ -54,3 +54,14 @@
 .bottom-more-menu a:hover,.bottom-more-menu a.active{background:#2b587b;color:white}
 @media(max-width:650px){.bottom-nav button{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#a5b7ca;font-size:10px;background:none;border:0;border-radius:5px;padding:2px;min-width:0}.bottom-nav button span{font-size:24px;color:#a6b3c1;line-height:1}.bottom-nav a{font-size:10px}}
 @media(min-width:651px){.bottom-more-menu{display:none}}
+
+/* Real component previews inside the visual editor */
+.wf-nav-inner{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:0 9px}
+.wf-nav-centered strong{flex:1;text-align:center}.wf-nav-brand strong{margin-right:auto;text-align:left}
+.wf-input-inner{width:100%;text-align:left;opacity:.7;padding:0 8px}
+.wf-photo{width:100%;height:100%;object-fit:cover}.wf-photo-contain{object-fit:contain}
+.wf-image-placeholder{font-size:12px;line-height:1.4}.wf-image{padding:0}
+.wf-element.wf-variant-outline{background:transparent;color:var(--wf-accent);border:1px solid var(--wf-accent)}
+.wf-element.wf-variant-soft{background:color-mix(in srgb,var(--wf-accent) 22%,transparent);color:var(--wf-accent)}
+.wf-element.wf-variant-elevated{box-shadow:0 8px 18px #0004;border-style:solid}
+#wf-element-ai{margin-top:6px;padding:9px;border:1px solid #468fca;background:#245079;color:white;border-radius:6px}
