@@ -1,6 +1,6 @@
 # HORIZON | Guia de aplicação da identidade visual
 
-**Versão 0.5 | 06/11/2026**
+**Versão 0.6 | 08/11/2026**
 **Status:** decisão aprovada. Complemento operacional ao manual da marca.
 
 ## Identidade e slogan
@@ -13,9 +13,9 @@ O logotipo Horizon é a imagem mestre já aprovada, sem redesenho, alteração d
 | Papel | Código |
 | --- | --- |
 | Único azul celeste autorizado | #1F98FF |
-| Fundo grafite quase preto | #191919 |
-| Painel cinza escuro | #262626 |
-| Elevação e cards | #303030 |
+| Fundo quase preto | #080808 |
+| Superfície preta suave | #101010 |
+| Elevação e cards | #181818 |
 | Contorno neutro | #535353 |
 | Branco principal | #FFFFFF |
 | Branco suave | #E5E5E5 |
@@ -38,3 +38,6 @@ Cinzas sempre puros (R=G=B). Não usar azul-marinho, ciano, teal, petróleo, gra
 
 ## Validação de marca
 Conferir fidelidade do logo original, slogan, fontes renderizadas, CSS e estados de interação, contrastes, responsividade mobile e desktop, e ausência de qualquer outro azul. Respeitar identidades visuais próprias de clientes.
+
+## Correção visual de 08/11/2026
+Preservar a estrutura, os textos e o logo mestre. Integrar o fundo preto do logo à superfície usando composição CSS screen, sem redesenhar a marca. Exibir o slogan também no cabeçalho, com quebra responsiva. Validar em 360, 412, 768 e 1440 px, sem overflow; conferir menu, sete detalhes do portfólio, abas e movimento reduzido. Portfólio: Romaneio Digital, AirSoft, ProspectIA, Fluxo, Entre Elas, Ronda Pro e Painel de Gestão. Entre Elas é apresentado como proposta/protótipo, sem alegar lançamento.
