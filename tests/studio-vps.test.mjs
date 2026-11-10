@@ -14,6 +14,7 @@ test('One project identity links VPS publication and repository, VPS entries fir
  assert.equal(ronda.url,'https://maxvel.hzsys.tech/');
  assert.equal(ronda.repository,'danielnep/app-hondas-maxvel');
  assert.equal(apps.find(a=>a.id==='elo').repository,'danielnep/app-elo');
+ assert.equal(apps.find(a=>a.id==='antigravity-horizon').repository,'danielnep/May-Maestro-Executor-Antigravity');
  const firstSourceOnly=apps.findIndex(a=>!a.url);
  assert.ok(firstSourceOnly>0);
  for(const app of apps.slice(0,firstSourceOnly)){

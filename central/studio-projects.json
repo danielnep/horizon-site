@@ -46,5 +46,11 @@
     "name": "Horizon Preview",
     "url": null,
     "repository": "danielnep/horizon-preview"
+  },
+  {
+    "id": "antigravity-horizon",
+    "name": "Antigravity Horizon",
+    "url": null,
+    "repository": "danielnep/May-Maestro-Executor-Antigravity"
   }
 ]
