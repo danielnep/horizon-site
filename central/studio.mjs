@@ -69,7 +69,7 @@ async function probe({force=false}={}){
  if(!force&&Date.now()-state.lastCheck<14000)return;
  state.lastCheck=Date.now();state.checking=true;
  const project=state.project;
- const saved=validPreview(state.manualUrls[project]||'');
+
  const checkButton=$(root,'studio-check');checkButton.disabled=true;
  try{
   if(!project){
@@ -77,24 +77,19 @@ async function probe({force=false}={}){
    setStatus('Escolha um projeto para consultar a publicação.','empty');
    return;
   }
-  if(saved){
-   state.source='custom';
-   display(saved);
-   setStatus('Endereço personalizado · recarregue para ver novas alterações','ready');
-   return;
-  }
-  state.source='verified';setStatus('Procurando publicação deste projeto…');
-  const response=await fetch('/central/api/preview?repository='+encodeURIComponent(project),{cache:'no-store',credentials:'same-origin'});
+  state.source='vps';setStatus('Consultando aplicativo na VPS…');
+  const response=await fetch('/central/api/studio/preview?appId='+encodeURIComponent(project),{cache:'no-store',credentials:'same-origin'});
   const data=await response.json();
   if(project!==state.project||state.disposed)return;
   if(!response.ok||!data.ready||!validPreview(data.url)){
-   display('');setStatus(data.message||'Este projeto ainda não tem uma publicação acessível','empty');
+   display('');setStatus(data.message||'Aplicativo da VPS não acessível','empty');
    return;
   }
+  if(force)state.lastRevision='manual-refresh-'+Date.now();
   display(data.url,data.revision||'');
-  setStatus(data.revision?'Publicação identificada · verificando versão':'Publicação identificada · aguardando nova versão','ready');
+  setStatus('VPS · '+(data.httpStatus===200?'publicação ativa':'publicação protegida'),'ready');
  }catch{
-  if(project===state.project){display('');setStatus('Não foi possível consultar a publicação. Use um endereço de preview direto.','error');}
+  if(project===state.project){display('');setStatus('Não foi possível consultar o aplicativo na VPS.','error');}
  }finally{state.checking=false;if(state.root===root)checkButton.disabled=false;
   if(state.wantedReload&&!state.disposed){state.wantedReload=false;queueMicrotask(()=>void probe({force:true}));}}
 }
@@ -102,7 +97,7 @@ function chooseProject(value){
  if(!value||value===state.project)return;
  state.project=value;state.currentUrl='';state.lastRevision='';persist();
  const root=state.root;
- $(root,'studio-url').value=state.manualUrls[value]||'';
+
  display('');void probe({force:true});
 }
 function setManual(value){
@@ -112,17 +107,16 @@ function setManual(value){
  state.currentUrl='';state.lastRevision='';persist();void probe({force:true});
 }
 export function studioMarkup(repositories=[]){
- const available=repositories.filter(r=>r&&/^danielnep\/[A-Za-z0-9._-]+$/.test(r.repository));
- if(!available.some(r=>r.repository===state.project))state.project=available[0]?.repository||'';
- const options=available.map(r=>'<option value="'+safe(r.repository)+'"'+(state.project===r.repository?' selected':'')+'>'+safe(r.label||r.name||r.repository)+'</option>').join('');
+ const available=repositories.filter(r=>r&&/^[a-z][a-z0-9-]+$/.test(r.id)&&/^https:\/\/[a-z0-9.-]+\.hzsys\.tech\/$/.test(r.url));
+ if(!available.some(r=>r.id===state.project))state.project=available[0]?.id||'';
+ const options=available.map(r=>'<option value="'+safe(r.id)+'"'+(state.project===r.id?' selected':'')+'>'+safe(r.label||r.name||r.id)+'</option>').join('');
  return '<section id="studio-root" class="studio-preview" aria-label="Preview interativo">'+
-  '<div class="studio-toolbar"><div class="studio-caption"><span class="studio-indicator" aria-hidden="true"></span><strong>Prévia publicada</strong><small id="studio-status" role="status" aria-live="polite">Verificando publicação…</small></div>'+
+  '<div class="studio-toolbar"><div class="studio-caption"><span class="studio-indicator" aria-hidden="true"></span><strong>Aplicativo na VPS</strong><small id="studio-status" role="status" aria-live="polite">Verificando publicação…</small></div>'+
   '<div class="studio-controls" role="group" aria-label="Formato da tela">'+Object.keys(SIZES).map(k=>'<button type="button" class="studio-device'+(state.device===k?' selected':'')+'" data-device="'+k+'" aria-pressed="'+(state.device===k)+'">'+SIZES[k].label+'</button>').join('')+'</div></div>'+
   '<div class="studio-project-row"><label for="studio-project">Projeto</label><select id="studio-project"'+(available.length?'':' disabled')+'>'+options+'</select><button type="button" id="studio-check" class="studio-tool" title="Verificar nova publicação">↻ <span>Atualizar</span></button></div>'+
   '<div class="studio-canvas" id="studio-canvas"><div id="studio-stage" class="studio-stage"><div id="studio-viewport" class="studio-viewport"><iframe id="studio-frame" title="Aplicativo em desenvolvimento" sandbox="allow-scripts allow-forms allow-same-origin allow-popups" referrerpolicy="no-referrer" hidden></iframe>'+
-  '<div id="studio-blank" class="studio-blank"><span class="studio-empty-icon" aria-hidden="true">▣</span><strong>Seu aplicativo aparece aqui</strong><p>Selecione um projeto publicado ou conecte o endereço do ambiente de desenvolvimento.</p></div></div></div></div>'+
+  '<div id="studio-blank" class="studio-blank"><span class="studio-empty-icon" aria-hidden="true">▣</span><strong>Seu aplicativo aparece aqui</strong><p>Escolha um aplicativo publicado na VPS.</p></div></div></div></div>'+
   '<div class="studio-footer"><span id="studio-dimensions">'+SIZES[state.device].width+' × '+SIZES[state.device].height+'</span><span class="studio-footer-actions"><a id="studio-open" class="studio-tool" href="#" target="_blank" rel="noopener noreferrer" aria-label="Abrir aplicação em outra guia">↗ Abrir</a><button type="button" class="studio-tool" id="studio-full" aria-pressed="false">⛶ Ampliar</button></span></div>'+
-  '<details class="studio-source"><summary>Conectar endereço do preview</summary><div class="studio-source-form"><label for="studio-url">URL HTTPS do app ou servidor de desenvolvimento</label><input id="studio-url" type="url" inputmode="url" placeholder="https://meu-projeto.exemplo.com/" autocomplete="url"><button id="studio-connect" type="button" class="secondary">Conectar</button><button id="studio-clear" type="button" class="quiet">Usar publicação detectada</button></div><p class="smallprint">O preview mostra a aplicação real. Se o servidor bloquear incorporação, abra o endereço em outra guia. Alterações locais ainda não publicadas precisam de um servidor de preview.</p></details>'+
   '</section>';
 }
 export function mountStudio({repositories=[],onProjectChange=()=>{}}={}){
@@ -134,20 +128,18 @@ export function mountStudio({repositories=[],onProjectChange=()=>{}}={}){
  const select=$(root,'studio-project');
  if(!state.project&&select.options.length)state.project=select.value;
  select.value=state.project;
- $(root,'studio-url').value=state.manualUrls[state.project]||'';
+
  select.addEventListener('change',()=>{chooseProject(select.value);onProjectChange(select.value)});
  if(state.project)onProjectChange(state.project);
  root.querySelectorAll('[data-device]').forEach(b=>b.addEventListener('click',()=>setDevice(b.dataset.device)));
- $(root,'studio-check').addEventListener('click',()=>{if(state.source==='custom'){state.currentUrl='';display(validPreview(state.manualUrls[state.project]),String(Date.now()));setStatus('Preview recarregado','ready');}else void probe({force:true})});
+ $(root,'studio-check').addEventListener('click',()=>void probe({force:true}));
  $(root,'studio-open').addEventListener('click',e=>{if(!state.currentUrl){e.preventDefault();setStatus('Primeiro conecte uma publicação.','empty')}});
  $(root,'studio-full').addEventListener('click',()=>{
   const now=!root.classList.contains('studio-expanded');root.classList.toggle('studio-expanded',now);
   $(root,'studio-full').setAttribute('aria-pressed',String(now));$(root,'studio-full').textContent=now?'↙ Reduzir':'⛶ Ampliar';
   fitPreview();
  });
- $(root,'studio-connect').addEventListener('click',()=>setManual($(root,'studio-url').value));
- $(root,'studio-clear').addEventListener('click',()=>{delete state.manualUrls[state.project];$(root,'studio-url').value='';state.currentUrl='';persist();void probe({force:true})});
- $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Visualizador atualizado · se ficar vazio, toque em Abrir','ready')});
+ $(root,'studio-frame').addEventListener('load',()=>{if(state.currentUrl)setStatus('Prévia carregada','ready')});
  if(typeof ResizeObserver!=='undefined'){state.observer=new ResizeObserver(fitPreview);state.observer.observe($(root,'studio-canvas'));}
  window.addEventListener('resize',fitPreview);
  state.loop=setInterval(()=>void probe(),20000);

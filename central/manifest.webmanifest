@@ -1,13 +1,13 @@
 {
-  "name": "Horizon | Central de Agentes",
-  "short_name": "Horizon Central",
+  "name": "Horizon Studio | Central Horizon",
+  "short_name": "Horizon Studio",
   "id": "./",
-  "start_url": "./",
+  "start_url": "./#estudio",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#191e26",
-  "theme_color": "#191e26",
-  "description": "Gerenciamento dos agentes e tarefas Horizon.",
+  "background_color": "#191919",
+  "theme_color": "#191919",
+  "description": "Studio pessoal de criação e acompanhamento de aplicativos Horizon.",
   "icons": [
     {
       "src": "./icon-192.png",
