@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {createHmac,createHash,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -12,14 +13,14 @@ export const SPECIALISTS=Object.freeze([
 function passwordlessPanel(){return process.env.HORIZON_PANEL_ONLY==='true';}
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css','experience.css':'experience.css',
+'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio-shell.mjs':'studio-shell.mjs','studio-shell.css':'studio-shell.css','studio-mark.svg':'studio-mark.svg','studio-chat.mjs':'studio-chat.mjs','studio-chat.css':'studio-chat.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css','experience.css':'experience.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 // Asset fingerprints invalidate stale CSS/JS across deploys, including under an
 // already-installed service worker. Every deploy generates its own version.
-const UI_VERSION_FILES=Object.freeze(['index.html','style.css','studio.css','wireframe.css','experience.css',
- 'app.js','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs','sw.js']);
-const MODULE_FILES=Object.freeze(['studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs']);
+const UI_VERSION_FILES=Object.freeze(['studio-shell.mjs','studio-shell.css','studio-mark.svg','index.html','style.css','studio.css','wireframe.css','experience.css',
+ 'app.js','studio-chat.mjs','studio-chat.css','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs','sw.js']);
+const MODULE_FILES=Object.freeze(['studio-shell.mjs','studio-chat.mjs','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs']);
 let uiVersionMemo;
 function uiVersion(){
  if(!uiVersionMemo){
@@ -32,7 +33,7 @@ function uiVersion(){
 }
 function versionHtml(value,version){
  let text=value.toString('utf8');
- for(const name of ['style.css','studio.css','wireframe.css','experience.css','app.js']){
+ for(const name of ['studio-shell.css','style.css','studio.css','studio-chat.css','wireframe.css','experience.css','app.js']){
   text=text.replaceAll('"./'+name+'"','"./'+name+'?v='+version+'"');
  }
  return Buffer.from(text);
@@ -74,6 +75,17 @@ function evidenceAuthorized(req){
  const [stamp,sig]=decodeURIComponent(m[1]).split('.');
  const n=Number(stamp);
  return Number.isSafeInteger(n)&&n<=Date.now()+30000&&n>Date.now()-2592000000&&same(signature('evidence:'+stamp),sig);
+}
+function studioAuthorized(req){
+ if(authenticated(req)||evidenceAuthorized(req))return true;
+ const m=(req.headers.cookie||'').match(/(?:^|;\s*)horizon_studio=([^;]+)/);
+ if(!m||!sec())return false;
+ const [stamp,sig]=m[1].split('.'),n=Number(stamp);
+ return Number.isSafeInteger(n)&&n<=Date.now()+30000&&n>Date.now()-2592000000&&same(signature('studio:'+stamp),sig);
+}
+function studioInvite(value){
+ const [stamp,sig]=String(value||'').split('.'),n=Number(stamp);
+ return Number.isSafeInteger(n)&&n<=Date.now()+30000&&n>Date.now()-3600000&&same(signature('studio-invite:'+stamp),sig);
 }
 function authenticated(req){
  const match=(req.headers.cookie||'').match(/(?:^|;\s*)horizon_session=([^;]+)/);
@@ -223,12 +235,42 @@ async function resolveTaskDefaults(value){
  if(!selected)throw Error('selecione_um_repositorio_da_lista');
  const valueProject=String(value.project||selected.name).toLowerCase();
  if(value.delivery_type==='new_product')return {...value,project:valueProject,repository:repo,allowed_paths:[]};
- const root=await githubOwner('repos/'+repo+'/contents?ref='+encodeURIComponent(selected.defaultBranch));
+ let root;
+ try{root=await githubOwner('repos/'+repo+'/contents?ref='+encodeURIComponent(selected.defaultBranch));}
+ catch(error){
+  if(error?.message==='github_repos_http_404'){
+   let info;
+   try{info=await githubOwner('repos/'+repo);}
+   catch{throw Error('Repositório não localizado no GitHub. Confira o projeto selecionado.');}
+   if(info.size===0)throw Error('Repositório vazio: escolha Novo produto para iniciar ou selecione um repositório com arquivos.');
+  }
+  throw error;
+ }
  const resolved=deriveCodePaths(root,repo);
  if(!resolved.length)throw Error('nao_encontrei_arquivos_editaveis_nesse_projeto');
  return {...value,project:valueProject,repository:repo,allowed_paths:resolved};
 }
 
+
+// One project identity owns both the deployed application and its GitHub source.
+// Keep only verified associations; an unknown association is not a second project.
+const STUDIO_PROJECTS=Object.freeze(JSON.parse(readFileSync(new URL('./studio-projects.json',import.meta.url),'utf8')));
+const VPS_STUDIO_APPS=STUDIO_PROJECTS.filter(project=>project.url);
+export function vpsStudioApps(){return STUDIO_PROJECTS.map(project=>({...project,label:project.name,source:project.url?'vps':'github'}));}
+export async function vpsStudioPreview(appId){
+ const app=VPS_STUDIO_APPS.find(x=>x.id===appId);
+ if(!app)return {ready:false,source:'vps',message:'A publicação deste projeto ainda não foi identificada no catálogo. O código continua disponível pelo GitHub.'};
+ try{
+  const response=await fetch(app.url,{method:'HEAD',redirect:'manual',signal:AbortSignal.timeout(6500),
+    headers:{'user-agent':'Horizon-Studio-VPS-Preview/2','accept':'text/html'}});
+  // Auth redirects still resolve to the actual VPS deployment, not a GitHub fallback.
+  if(response.ok||[301,302,303,307,308,401,403].includes(response.status)){
+   const revision=(response.headers.get('etag')||response.headers.get('last-modified')||'').replace(/[^a-zA-Z0-9._-]/g,'').slice(0,36);
+   return {ready:true,name:app.name,id:app.id,url:app.url,revision,source:'vps',httpStatus:response.status};
+  }
+  return {ready:false,id:app.id,source:'vps',message:'A publicação da VPS respondeu HTTP '+response.status+'.',httpStatus:response.status};
+ }catch{return {ready:false,id:app.id,source:'vps',message:'Publicação da VPS temporariamente inacessível.'};}
+}
 
 // Public preview discovery is scoped to repos owned by this account and a fixed set of public hosts.
 // Never fetch arbitrary URLs received from a browser (SSRF) and never imply that a commit equals a working build.
@@ -549,9 +591,43 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    send(res,200,{ok:true},{'set-cookie':'horizon_session='+session+'; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=43200'});
   }catch{send(res,400,{error:'solicitacao_invalida'});}return true;
  }
+ // The legacy panel can be public; privileged Antigravity access never inherits that bypass.
+ if(raw==='/central/api/studio/session'&&req.method==='GET'){
+  send(res,200,{authenticated:studioAuthorized(req),mode:'consultation'});return true;
+ }
+ if(raw==='/central/api/studio/unlock'&&req.method==='POST'){
+  if(!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  const ip=String(req.socket.remoteAddress||'unknown').slice(0,80);
+  if(!limit('studio-unlock:'+ip,8)){send(res,429,{error:'tentativas_excedidas'});return true;}
+  try{
+   const input=await body(req,1800);
+   if(!studioAuthorized(req)&&!studioInvite(input.invite)){
+    send(res,401,{error:'acesso_do_proprietario_necessario'});return true;
+   }
+   const stamp=String(Date.now()),token=stamp+'.'+signature('studio:'+stamp);
+   send(res,200,{authenticated:true},{'set-cookie':'horizon_studio='+token+'; Path=/central; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000'});
+  }catch{send(res,400,{error:'solicitacao_invalida'});}return true;
+ }
+ const studioMessages=raw.match(/^\/central\/api\/studio\/projects\/([a-z0-9-]{2,50})\/messages$/);
+ if(studioMessages||raw==='/central/api/studio/agents'){
+  if(!studioAuthorized(req)){send(res,401,{error:'acesso_do_proprietario_necessario'});return true;}
+  if(!['GET','POST'].includes(req.method)||(!studioMessages&&req.method!=='GET')){send(res,405,{error:'metodo_invalido'});return true;}
+  if(req.method==='POST'&&!sameOrigin(req)){send(res,403,{error:'origem_nao_permitida'});return true;}
+  try{
+   if(req.method==='POST'&&!limit('studio-message',30,60000)){send(res,429,{error:'aguarde_antes_de_reenviar'});return true;}
+   const path=studioMessages?'/v1/studio/projects/'+studioMessages[1]+'/messages':'/v1/studio/agents';
+   const data=req.method==='POST'?await body(req,28000):undefined;
+   const output=await vpsRequest(path,{method:req.method,data,env:{...process.env,HORIZON_VPS_API_SOCKET:'/run/horizon-central/studio.sock'}});
+   send(res,req.method==='POST'?202:200,output);
+  }catch(e){
+   const message=String(e?.message||'');
+   send(res,/vps_http_400/.test(message)?400:503,{error:/vps_http_400/.test(message)?message.split(': ').slice(1).join(': '):'Antigravity temporariamente indisponível. Sua mensagem permanece no campo.'});
+  }return true;
+ }
  const publicRead=(req.method==='POST'&&raw==='/central/api/ai/chat')||req.method==='GET'&&[
  '/central/api/overview','/central/api/agents','/central/api/tasks',
  '/central/api/usage','/central/api/history','/central/api/events','/central/api/repositories','/central/api/preview',
+ '/central/api/studio/apps','/central/api/studio/preview',
  '/central/api/ai/chat'
  ].includes(raw);
  if(!publicRead&&!passwordlessPanel()&&!authenticated(req)){send(res,401,{error:'autorizacao_necessaria'});return true;}
@@ -612,6 +688,14 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    }else send(res,200,output);
   }catch(e){send(res,404,{error:String(e.message||'evidencia_indisponivel').slice(0,180)});}
   return true;
+ }
+ if(req.method==='GET'&&raw==='/central/api/studio/apps'){
+  send(res,200,{source:'vps',apps:vpsStudioApps(),count:STUDIO_PROJECTS.length});return true;
+ }
+ if(req.method==='GET'&&raw==='/central/api/studio/preview'){
+  const id=new URL(req.url,'http://local').searchParams.get('appId')||'';
+  if(!/^[a-z][a-z0-9-]{1,50}$/.test(id)){send(res,400,{ready:false,source:'vps',message:'Aplicativo inválido.'});return true;}
+  send(res,200,await vpsStudioPreview(id));return true;
  }
  if(req.method==='GET'&&raw==='/central/api/preview'){
   const project=new URL(req.url,'http://local').searchParams.get('repository')||'';

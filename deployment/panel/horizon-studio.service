@@ -1,0 +1,33 @@
+[Unit]
+Description=Horizon Studio conversations with canonical Antigravity agents
+After=network-online.target horizon-central-api.service
+Wants=network-online.target
+Requires=horizon-central-api.service
+
+[Service]
+Type=simple
+User=root
+Group=horizon-worker
+EnvironmentFile=/etc/horizon-site-control.env
+Environment=HORIZON_STUDIO_DB=/var/lib/horizon-studio/studio.sqlite3
+Environment=HORIZON_STUDIO_SOCKET=/run/horizon-central/studio.sock
+WorkingDirectory=/opt/antigravity-workspace
+ExecStart=/usr/bin/python3 /opt/horizon-site/source/vps/studio_runtime.py
+Restart=on-failure
+RestartSec=4
+UMask=0007
+StateDirectory=horizon-studio
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/horizon-studio /run/horizon-central /root/.local/share/horizon-antigravity-account
+ReadOnlyPaths=/opt
+InaccessiblePaths=-/root/.ssh -/opt/horizon-credentials -/opt/horizon-api-keys -/opt/horizon-publish-studio/secrets
+KillMode=control-group
+TimeoutStopSec=15
+MemoryMax=1600M
+TasksMax=180
+
+[Install]
+WantedBy=multi-user.target

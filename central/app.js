@@ -1,3 +1,5 @@
+import {studioShellMarkup,mountStudioShell} from './studio-shell.mjs';
+import {studioConversationMarkup,studioAgentsMarkup,mountStudioConversation,stopStudioConversation,selectStudioConversation} from './studio-chat.mjs';
 import {enrollOwner,loginOwner} from './passkey-client.mjs';
 import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
 import {studioMarkup,mountStudio,notifyStudioChanged,stopStudio} from './studio.mjs';
@@ -24,6 +26,7 @@ const AGENT_NAMES={
 'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
 'corregedoria-may':'Corregedoria','may-persona':'May Persona','horizon-supervisor':'Supervisor Horizon'};
 const LABELS={evidencias:'Evidências',estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'18 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
+let studioApps=[];
 let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
 let studioView='code';
 try{studioView=sessionStorage.getItem('horizon.studio.active-view')==='builder'?'builder':'code';}catch{}
@@ -346,6 +349,14 @@ function projectOptions(){return repoList.length?repoList.map(r=>'<option value=
  '<option value="">'+escapeHTML(repoLoadError?'Não foi possível consultar os projetos':'Consultando seus projetos...')+'</option>';}
 function agentOptions(){return '<option value="may-maestro">Distribuição automática (Maestro)</option>'+Object.keys(AGENT_NAMES).filter(x=>x!=='may-maestro').map(id=>'<option value="'+id+'">'+escapeHTML(label(id))+'</option>').join('');}
 
+async function loadVpsStudioApps(){
+ try{
+  if(PAGES_MODE){studioApps=[];return;}
+  const data=await api('studio/apps');
+  studioApps=(data.apps||[]).filter(a=>/^[a-z][a-z0-9-]+$/.test(a.id));
+ }catch{studioApps=[];}
+ if(active()==='estudio')render();
+}
 async function loadRepositories(){
  try{
   let data;
@@ -601,23 +612,21 @@ function studioProgress(){
  (failures.length?'<div class="studio-failures"><strong>'+failures.length+' tarefas com falha ou bloqueio</strong><a href="#tarefas">Recuperar tarefas →</a></div>':'')+
  '<p class="smallprint">O preview mostra somente versões publicadas.</p>';
 }
+function studioRoster(){return studioAgentsMarkup();}
 function pageEstudio(){
- return heading('Estúdio de criação','Comande a equipe, acompanhe tarefas e a publicação do projeto.')+
- '<div class="studio-controls" role="group" aria-label="Área do estúdio"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Comandar agentes</button></div>'+
- '<div id="studio-builder-panel">'+wireframeMarkup()+'</div>'+
- '<div id="studio-code-panel" hidden><div class="studio-layout" ><div class="studio-compose">'+
- (PAGES_MODE?'<section class="panel request"><h2>Prévia do projeto</h2><p class="subtitle">No GitHub Pages, o estúdio funciona em modo de acompanhamento.</p></section>':requestForm())+
- '<section id="studio-progress" class="studio-progress" aria-label="Atividade real dos agentes">'+studioProgress()+'</section>'+
- '</div>'+studioMarkup(repoList)+'</div></div>';
+ const tools='<div class="hz-studio-tools"><div class="studio-controls"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Enviar tarefa</button></div><div id="studio-builder-panel" hidden>'+wireframeMarkup()+'</div><div id="studio-code-panel" hidden>'+requestForm()+'<section id="studio-progress">'+studioProgress()+'</section></div></div>';
+ return studioShellMarkup(studioApps,tools);
 }
+
 let renderedPage=null;
 function render(){
- updateMenu();const page=active();
- if(page==='estudio'&&renderedPage==='estudio'&&$('studio-root')&&$('studio-project')?.options.length===repoList.length){
+ updateMenu();const page=active();document.body.classList.toggle('studio-surface',page==='estudio');
+ if(page==='estudio'&&renderedPage==='estudio'&&$('studio-root')&&$('studio-project')?.options.length===studioApps.length){
   const progress=$('studio-progress');if(progress)progress.innerHTML=studioProgress();
+  const agentsPane=$('hs-roster');if(agentsPane)agentsPane.innerHTML=studioRoster();
   notifyStudioChanged();updateConn();return;
  }
- if(renderedPage==='estudio')stopStudio();
+ if(renderedPage==='estudio'){stopStudio();stopStudioConversation();}
  const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,evidencias:pageEvidencias,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();const logout=$('logout');if(logout)logout.hidden=!adminAuthorized||PAGES_MODE||panelPasswordless;
  renderedPage=page;bind();positionProgress(content);repaintAnalysis();if(page==='inicio')void loadHomeEvidence();if(page==='evidencias')void loadEvidenceGallery();
@@ -631,9 +640,10 @@ function render(){
   const switchTab=value=>{const building=value==='builder';studioView=building?'builder':'code';try{sessionStorage.setItem('horizon.studio.active-view',studioView)}catch{}builder.hidden=!building;code.hidden=building;b.classList.toggle('selected',building);c.classList.toggle('selected',!building);b.setAttribute('aria-pressed',String(building));c.setAttribute('aria-pressed',String(!building));if(!building)notifyStudioChanged()};
   b.onclick=()=>switchTab('builder');c.onclick=()=>switchTab('code');
   switchTab(studioView);
-  mountStudio({repositories:repoList,onProjectChange:repository=>{
- selectedRepository=repository;const selector=$('project');if(selector&&[...selector.options].some(o=>o.value===repository))selector.value=repository;
- }});}
+  mountStudioShell(studioApps);
+  $('hz-studio-app').addEventListener('studio-project-selected',e=>{if(e.detail.repository){selectedRepository=e.detail.repository;const project=$('project');if(project)project.value=selectedRepository;}});
+ }
+
  updateConn();
 }
 
@@ -842,6 +852,7 @@ async function boot(){
  if(enrollmentLinkKey&&usePasskey&&!adminAuthorized)showLogin(true);
  await refresh(true);
  await loadRepositories();
+ await loadVpsStudioApps();
  connectEvents();
 }
 $('close-gate').addEventListener('click',()=>showLogin(false));

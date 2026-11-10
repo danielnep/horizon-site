@@ -1,5 +1,5 @@
 /* Horizon Órbita | acabamento operacional, responsivo e acessível. */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
+/* Use system typography: external Google Fonts import is blocked by the production CSP. */
 :root { --work-surface:#171f29; --work-raised:#222e3a; --work-line:#405065; --work-muted:#adbed0; }
 html {scroll-padding-top:84px}
 body {font-family:Inter,system-ui,-apple-system,sans-serif;letter-spacing:-.008em;overflow-x:hidden;background:#191e26;color:#e5edf5}

@@ -15,7 +15,7 @@ test('versioned UI assets cannot mix a new app with stale mobile CSS',async()=>{
   const fingerprint=html.match(/\.\/style\.css\?v=([a-f0-9]{16})/);
   assert.ok(fingerprint,'CSS must have a content-derived revision in the HTML');
   const version=fingerprint[1];
-  for(const asset of ['style.css','studio.css','wireframe.css','app.js']){
+  for(const asset of ['style.css','studio-shell.css','wireframe.css','app.js']){
    assert.ok(html.includes('./'+asset+'?v='+version),asset+' must share revision');
    const response=await fetch(base+asset+'?v='+version);
    assert.equal(response.status,200,asset);
