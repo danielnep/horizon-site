@@ -23,9 +23,8 @@ AGENTS = {
  "lume": ("Lume", "Design e experiência"), "forja": ("Forja", "Backend e dados"),
  "mosaico": ("Mosaico", "Web e PWA"), "tatil": ("Tátil", "Android"),
  "elo": ("Elo", "Integrações"), "argos": ("Argos", "Testes e qualidade")}
-PROJECTS = {"horizon-studio":"Horizon Studio", "ronda-pro":"Ronda Pro",
- "fluxo":"Fluxo Restaurantes", "elo":"Elo", "entre-elas":"Entre Elas",
- "powerbi-mc":"Power BI MC"}
+PROJECTS = {p["id"]:p["name"] for p in json.loads(
+ (Path(__file__).resolve().parents[1]/"central"/"studio-projects.json").read_text())}
 DB = Path(os.environ.get("HORIZON_STUDIO_DB", "/var/lib/horizon-studio/studio.sqlite3"))
 SOCKET = Path(os.environ.get("HORIZON_STUDIO_SOCKET", "/run/horizon-central/studio.sock"))
 RUNNER = "/usr/local/bin/horizon-agy"

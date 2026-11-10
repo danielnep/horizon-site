@@ -383,11 +383,11 @@ test('studio assets, responsive controls and safe embedded-preview policy are sh
   const [html,js,css,main]=await Promise.all([
    fetch(url+'/central/').then(r=>r.text()),
    fetch(url+'/central/studio.mjs').then(r=>r.text()),
-   fetch(url+'/central/studio.css').then(r=>r.text()),
+   fetch(url+'/central/studio-shell.css').then(r=>r.text()),
    fetch(url+'/central/app.js').then(r=>r.text())
   ]);
   assert.match(html,/data-page="estudio"/);
-  assert.match(html,/studio\.css/);
+  assert.match(html,/studio-shell\.css/);
   assert.match(html,/experience\.css\?v=/);
   const stylesheet=await fetch(url+'/central/experience.css');
   assert.equal(stylesheet.status,200);
@@ -396,8 +396,8 @@ test('studio assets, responsive controls and safe embedded-preview policy are sh
   assert.match(js,/mobile.*tablet.*desktop/);
   assert.match(js,/setInterval\(\(\)=>void probe\(\),20000\)/);
   assert.match(js,/iframe id="studio-frame"/);
-  assert.match(css,/\.studio-layout/);
-  assert.match(css,/\.studio-expanded/);
+  assert.match(css,/\.hs-shell/);
+  assert.match(css,/\.hs-panels/);
   assert.match(main,/mountStudio/);
   const headers=await fetch(url+'/central/');
   assert.match(headers.headers.get('content-security-policy'),/frame-src https:/);

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ronda-pro",
+    "name": "Ronda Pro",
+    "url": "https://maxvel.hzsys.tech/",
+    "repository": "danielnep/app-hondas-maxvel"
+  },
+  {
+    "id": "fluxo",
+    "name": "Fluxo",
+    "url": "https://fluxo.hzsys.tech/",
+    "repository": "danielnep/sistema-fluxo-restaurantes"
+  },
+  {
+    "id": "elo",
+    "name": "Elo",
+    "url": "https://elo.hzsys.tech/",
+    "repository": null
+  },
+  {
+    "id": "entre-elas",
+    "name": "Entre Elas",
+    "url": "https://entreelas.hzsys.tech/",
+    "repository": null
+  },
+  {
+    "id": "powerbi-mc",
+    "name": "Power BI MC",
+    "url": "https://powerbi-mc.hzsys.tech/",
+    "repository": "danielnep/michelle-preview"
+  },
+  {
+    "id": "horizon-studio",
+    "name": "Horizon Studio",
+    "url": null,
+    "repository": "danielnep/horizon-site"
+  },
+  {
+    "id": "romaneio-digital",
+    "name": "Romaneio Digital",
+    "url": null,
+    "repository": "danielnep/romaneio-digital"
+  },
+  {
+    "id": "horizon-preview",
+    "name": "Horizon Preview",
+    "url": null,
+    "repository": "danielnep/horizon-preview"
+  }
+]
