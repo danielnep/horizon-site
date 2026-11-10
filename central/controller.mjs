@@ -239,7 +239,9 @@ async function resolveTaskDefaults(value){
  try{root=await githubOwner('repos/'+repo+'/contents?ref='+encodeURIComponent(selected.defaultBranch));}
  catch(error){
   if(error?.message==='github_repos_http_404'){
-   const info=await githubOwner('repos/'+repo);
+   let info;
+   try{info=await githubOwner('repos/'+repo);}
+   catch{throw Error('Repositório não localizado no GitHub. Confira o projeto selecionado.');}
    if(info.size===0)throw Error('Repositório vazio: escolha Novo produto para iniciar ou selecione um repositório com arquivos.');
   }
   throw error;
