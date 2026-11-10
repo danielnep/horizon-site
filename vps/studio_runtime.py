@@ -71,8 +71,20 @@ def initialize():
  os.chmod(DB,0o600)
 
 def validate_project(project):
- if project not in PROJECTS:
+ # Project IDs are controlled by the authenticated Studio API. The source-of-truth
+ # catalog may grow independently of this worker, so never hardcode the six apps.
+ if not isinstance(project,str) or not re.fullmatch(r"[a-z][a-z0-9-]{1,50}",project):
   raise ValueError("projeto_invalido")
+
+def project_label(project):
+ try:
+  catalog=json.loads(Path("/opt/horizon-site/source/central/studio-projects.json").read_text())
+  match=next((x for x in catalog if isinstance(x,dict) and x.get("id")==project),None)
+  if match and isinstance(match.get("name"),str) and match["name"].strip():
+   return match["name"].strip()[:100]
+ except (OSError,ValueError,TypeError):
+  pass
+ return PROJECTS.get(project,project)
 
 def submit(value):
  project=value.get("project_id")
@@ -150,7 +162,7 @@ def run_job(row):
   previous=db.execute("SELECT actor,prompt,response FROM messages WHERE project_id=? AND status='completed' AND sequence<? ORDER BY sequence DESC LIMIT 8",(row["project_id"],row["sequence"])).fetchall()
  context=[{"agent":r["actor"],"user":r["prompt"][:4000],"assistant":r["response"][:8000]} for r in reversed(previous)]
  prompt=("Você está respondendo à aba Conversar do Horizon Studio. Projeto ativo: "+
-  PROJECTS[row["project_id"]]+" ("+row["project_id"]+"). Agente: "+AGENTS[row["actor"]][0]+
+  project_label(row["project_id"])+" ("+row["project_id"]+"). Agente: "+AGENTS[row["actor"]][0]+
   ". Esta sessão é CONSULTIVA, em modo plan. Responda diretamente em PT-BR, sem executar mudanças, "
   "sem iniciar subtarefas ou editar arquivos. Não declare que implementou, publicou ou testou algo "
   "sem provas. Use as diretrizes canônicas do seu papel. O proprietário decide regras de negócio. "

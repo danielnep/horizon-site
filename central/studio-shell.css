@@ -108,3 +108,27 @@ body.studio-surface{--hs-bg:#191919;--hs-surface:#262626;--hs-raised:#303030;--h
 .hs-preview .studio-expanded{position:fixed!important;inset:12px!important;z-index:60;padding:12px!important;width:auto!important;background:var(--hs-bg);border:1px solid var(--hs-border);border-radius:18px}
 .hs-agents .hz-roster{margin:0;border:0}.hs-agents #hs-roster>.hz-muted{display:none}
 .hs-chat .hz-chat-bubble p strong{font-size:inherit;color:inherit}.hs-chat .hz-chat-bubble p code{font:inherit;background:var(--hs-raised);border-radius:4px;padding:1px 4px}
+
+
+/* Unified Studio: horizontal module rail, not a second mobile-only app. */
+.hs-workspace>.hs-tabs{width:100%;max-width:none;min-width:0;margin:0;display:flex;justify-content:flex-start;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;flex-shrink:0;padding:2px 2px 5px;border:0;border-radius:0;background:transparent;overscroll-behavior-inline:contain}
+.hs-workspace>.hs-tabs button{flex:none;display:flex;flex-direction:row;gap:7px;min-height:40px;min-width:max-content;padding:8px 12px;border-radius:12px;font-size:12px;white-space:nowrap}
+.hs-workspace>.hs-tabs button svg{width:17px;height:17px}
+.hs-work-area{overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-bottom:28px}
+.hs-work-area>.hs-pane-heading{position:sticky;top:0;z-index:3;background:var(--hs-bg)}
+.hs-work-area .hz-studio-tools,.hs-legacy-content{padding:20px;max-width:1100px;margin:auto}
+.hs-work-area .hz-studio-tools .studio-controls{margin-bottom:16px}
+.hs-work-area #studio-builder-panel,.hs-work-area #studio-code-panel{max-width:none}
+.hs-work-area #studio-code-panel .request{border:1px solid var(--hs-border);background:var(--hs-surface);border-radius:18px}
+.hs-work-area #task-form .field:has(#project){display:none}
+.hs-legacy-content>section,.hs-legacy-content>div{max-width:none}
+.hs-operational-detail{border:1px solid var(--hs-border);border-radius:14px;background:var(--hs-surface);margin:14px 0;padding:14px}
+.hs-operational-detail>summary{cursor:pointer;font-weight:650;padding:8px 4px}
+.hs-operational-detail[open]>summary{border-bottom:1px solid var(--hs-border);margin-bottom:14px}
+.hs-capabilities{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:12px;padding:20px}
+.hs-capability{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-height:165px;border:1px solid var(--hs-border);border-radius:16px;background:var(--hs-surface);padding:18px}
+.hs-capability strong{font-size:15px;color:white}.hs-capability p{font-size:12px;line-height:1.55;color:var(--hs-muted);margin:0;flex:1}
+.hs-capability button{min-height:34px;font-size:12px;border-color:var(--hs-border);background:var(--hs-raised);border-radius:9px}
+.hs-work-area .panel{max-width:none}
+@media(min-width:1100px){.hs-workspace>.hs-tabs{margin:0;gap:8px;width:100%;justify-content:flex-start}.hs-workspace>.hs-tabs button{width:auto;flex:none;min-width:max-content}}
+@media(max-width:599px){.hs-work-area .hz-studio-tools,.hs-legacy-content,.hs-capabilities{padding:12px}.hs-capabilities{grid-template-columns:1fr}.hs-workspace>.hs-tabs button{font-size:11px;padding:7px 10px}}

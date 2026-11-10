@@ -18,16 +18,10 @@ async function pagesOverview(){
  };
 }
 
-const AGENT_NAMES={
-'may-maestro':'May Maestro','horizon-project-studio':'Estúdio Horizon','software-architect':'Arquitetura',
-'frontend-engineer':'Frontend','backend-engineer':'Backend','mobile-app-builder':'Aplicativos Mobile',
-'ui-ux-designer':'Design UI/UX','horizon-ui-guardian':'UI Guardian','database-engineer':'Banco de Dados',
-'integration-engineer':'Integrações','qa-engineer':'QA / Testes','security-engineer':'Segurança',
-'devops-engineer':'DevOps','horizon-evolution-agent':'Aprimoramento','horizon-skills':'Habilidades',
-'corregedoria-may':'Corregedoria','may-persona':'May Persona','horizon-supervisor':'Supervisor Horizon'};
-const LABELS={evidencias:'Evidências',estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'18 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
+const AGENT_NAMES={maestra:'Maestra',iris:'Íris',lume:'Lume',forja:'Forja',mosaico:'Mosaico',tatil:'Tátil',elo:'Elo',argos:'Argos'};
+const LABELS={evidencias:'Evidências',estudio:'Estúdio Horizon',inicio:'Central de Agentes',tarefas:'Tarefas',agentes:'8 agentes',historico:'Histórico',consumo:'Consumo de tokens',sistema:'Sistema'};
 let studioApps=[];
-let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='may-maestro';
+let repoList=[],repoLoadError=null,selectedRepository='danielnep/romaneio-digital',selectedPriority='P2',selectedAgentId='maestra';
 let studioView='code';
 try{studioView=sessionStorage.getItem('horizon.studio.active-view')==='builder'?'builder':'code';}catch{}
 let snapshot=null,online=false,stream=null,refreshing=null,term='',filter='todos',draft='',working=false,selectedAgent=null;
@@ -347,7 +341,7 @@ function listTasks(tasks,limit=0){
 }
 function projectOptions(){return repoList.length?repoList.map(r=>'<option value="'+escapeHTML(r.repository)+'"'+(selectedRepository===r.repository?' selected':'')+'>'+escapeHTML(r.label)+'</option>').join(''):
  '<option value="">'+escapeHTML(repoLoadError?'Não foi possível consultar os projetos':'Consultando seus projetos...')+'</option>';}
-function agentOptions(){return '<option value="may-maestro">Distribuição automática (Maestro)</option>'+Object.keys(AGENT_NAMES).filter(x=>x!=='may-maestro').map(id=>'<option value="'+id+'">'+escapeHTML(label(id))+'</option>').join('');}
+function agentOptions(){return Object.keys(AGENT_NAMES).map(id=>'<option value="'+id+'">'+escapeHTML(label(id))+(id==='maestra'?' (coordenação)':'')+'</option>').join('');}
 
 async function loadVpsStudioApps(){
  try{
@@ -614,14 +608,17 @@ function studioProgress(){
 }
 function studioRoster(){return studioAgentsMarkup();}
 function pageEstudio(){
- const tools='<div class="hz-studio-tools"><div class="studio-controls"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Enviar tarefa</button></div><div id="studio-builder-panel" hidden>'+wireframeMarkup()+'</div><div id="studio-code-panel" hidden>'+requestForm()+'<section id="studio-progress">'+studioProgress()+'</section></div></div>';
- return studioShellMarkup(studioApps,tools);
+ const tools='<div class="hz-studio-tools"><div class="studio-controls"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Enviar tarefa à equipe</button></div><div id="studio-builder-panel" hidden>'+wireframeMarkup()+'</div><div id="studio-code-panel" hidden>'+requestForm()+'<section id="studio-progress">'+studioProgress()+'</section></div></div>';
+ const operations='<div class="hs-legacy-content">'+pageTarefas()+'<details class="hs-operational-detail"><summary>Histórico e eventos</summary>'+pageHistorico()+'</details><details class="hs-operational-detail"><summary>Consumo de tokens</summary>'+pageConsumo()+'</details><details class="hs-operational-detail"><summary>Diagnóstico e infraestrutura</summary>'+pageSistema()+'</details></div>';
+ const quality='<div class="hs-legacy-content">'+pageEvidencias()+'</div>';
+ return studioShellMarkup(studioApps,tools,operations,quality);
 }
 
 let renderedPage=null;
+let studioForceRender=false;
 function render(){
  updateMenu();const page=active();document.body.classList.toggle('studio-surface',page==='estudio');
- if(page==='estudio'&&renderedPage==='estudio'&&$('studio-root')&&$('studio-project')?.options.length===studioApps.length){
+ if(!studioForceRender&&page==='estudio'&&renderedPage==='estudio'&&$('studio-root')&&$('studio-project')?.options.length===studioApps.length){
   const progress=$('studio-progress');if(progress)progress.innerHTML=studioProgress();
   const agentsPane=$('hs-roster');if(agentsPane)agentsPane.innerHTML=studioRoster();
   notifyStudioChanged();updateConn();return;
@@ -629,7 +626,7 @@ function render(){
  if(renderedPage==='estudio'){stopStudio();stopStudioConversation();}
  const template={inicio:pageInicio,estudio:pageEstudio,tarefas:pageTarefas,agentes:pageAgentes,evidencias:pageEvidencias,historico:pageHistorico,consumo:pageConsumo,sistema:pageSistema}[page];
  const content=$('content');content.innerHTML=template();const logout=$('logout');if(logout)logout.hidden=!adminAuthorized||PAGES_MODE||panelPasswordless;
- renderedPage=page;bind();positionProgress(content);repaintAnalysis();if(page==='inicio')void loadHomeEvidence();if(page==='evidencias')void loadEvidenceGallery();
+ renderedPage=page;studioForceRender=false;bind();positionProgress(content);repaintAnalysis();if(page==='inicio')void loadHomeEvidence();if(page==='evidencias')void loadEvidenceGallery();
  for(const id of openTasks){
   const detail=$('detail-'+id),trigger=[...document.querySelectorAll('[data-detail]')].find(x=>x.dataset.detail===id);
   if(detail&&trigger){detail.hidden=false;trigger.setAttribute('aria-expanded','true');trigger.textContent='Recolher ▴';}
@@ -641,6 +638,7 @@ function render(){
   b.onclick=()=>switchTab('builder');c.onclick=()=>switchTab('code');
   switchTab(studioView);
   mountStudioShell(studioApps);
+  $('hz-studio-app').addEventListener('studio-quality-open',()=>void loadEvidenceGallery());
   $('hz-studio-app').addEventListener('studio-project-selected',e=>{if(e.detail.repository){selectedRepository=e.detail.repository;const project=$('project');if(project)project.value=selectedRepository;}});
  }
 
@@ -763,10 +761,11 @@ function bind(){
   const form=field.closest('form[data-agent-config]'),fd=new FormData(form),id=form.dataset.agentConfig;
   agentDrafts.set(id,{maxPending:Number(fd.get('maxPending')),allowedRepositories:String(fd.get('allowedRepositories')||'').split(',').map(x=>x.trim()).filter(Boolean),notes:String(fd.get('notes')||'')});
  }));
- const search=$('search');if(search)search.addEventListener('input',()=>{term=search.value;render();$('search')?.focus();$('search')?.setSelectionRange(term.length,term.length)});
+ const search=$('search');if(search)search.addEventListener('input',()=>{term=search.value;if(active()==='estudio')studioForceRender=true;render();$('search')?.focus();$('search')?.setSelectionRange(term.length,term.length)});
  const dropdown=$('filter');if(dropdown){dropdown.value=filter;dropdown.addEventListener('change',async()=>{filter=dropdown.value;
   if(filter==='arquivada')try{archivedTasks=(await api('tasks/archived')).tasks||[];}
   catch(e){note('Entre como administrador para consultar as tarefas excluídas.',true);filter='todos';}
+  if(active()==='estudio')studioForceRender=true;
   render();
  });}
  const objective=$('objective');if(objective)objective.addEventListener('input',()=>draft=objective.value);

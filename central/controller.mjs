@@ -688,7 +688,22 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   return true;
  }
  if(req.method==='GET'&&raw==='/central/api/studio/apps'){
-  send(res,200,{source:'vps',apps:vpsStudioApps(),count:STUDIO_PROJECTS.length});return true;
+  // VPS-first manifest is authoritative. Additional real GitHub repositories
+  // share this one catalog; no guessed mapping or duplicate project identities.
+  const apps=vpsStudioApps();
+  try{
+   const repositories=await ownerRepositories();
+   const linked=new Set(apps.map(project=>project.repository).filter(Boolean));
+   const usedIds=new Set(apps.map(project=>project.id));
+   for(const repo of repositories){
+    if(linked.has(repo.repository))continue;
+    const id=String(repo.name||'').toLowerCase().replace(/[^a-z0-9-]/g,'-').slice(0,50);
+    if(!/^[a-z][a-z0-9-]+$/.test(id)||usedIds.has(id))continue;
+    usedIds.add(id);
+    apps.push({id,name:repo.label||repo.name,label:repo.label||repo.name,url:null,repository:repo.repository,source:'github'});
+   }
+  }catch{/* A GitHub outage does not remove known VPS projects. */}
+  send(res,200,{source:'vps',apps,count:apps.length});return true;
  }
  if(req.method==='GET'&&raw==='/central/api/studio/preview'){
   const id=new URL(req.url,'http://local').searchParams.get('appId')||'';

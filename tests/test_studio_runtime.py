@@ -27,6 +27,12 @@ class StudioRuntimeTests(unittest.TestCase):
   self.assertEqual(studio.history("fluxo")["messages"][0]["prompt"],"Quais próximos passos?")
   self.assertEqual(studio.history("elo")["messages"][0]["prompt"],"Mensagem exclusiva de Elo")
   self.assertEqual(studio.history("ronda-pro")["messages"],[])
+ def test_new_git_project_history_and_validation(self):
+  self.send("romaneio-digital",client="new_project_1")
+  self.assertEqual(len(studio.history("romaneio-digital")["messages"]),1)
+  self.assertEqual(studio.project_label("horizon-preview"),"Horizon Preview")
+  for bad in ("../../etc/passwd","UPPER","a b",""):
+   with self.assertRaises(ValueError):studio.validate_project(bad)
  def test_invalid_project_and_retired_agents_never_enqueue(self):
   with self.assertRaises(ValueError):self.send("../etc")
   with self.assertRaises(ValueError):studio.submit({"project_id":"fluxo","actor":"may-maestro","message":"teste","client_id":"request_002"})
