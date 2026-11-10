@@ -19,6 +19,9 @@ test('Studio requires real owner access even with the public panel enabled',asyn
   }
   const send=(payload,from=origin)=>fetch(base+'/central/api/studio/unlock',{method:'POST',headers:{'content-type':'application/json',origin:from},body:JSON.stringify(payload)});
   assert.equal((await send({password:process.env.HORIZON_CONTROL_PASSWORD},'https://evil.example')).status,403);
+  assert.equal((await send({})).status,401);
+  assert.equal((await send({password:''})).status,401);
+  assert.equal((await send({password:process.env.HORIZON_CONTROL_PASSWORD})).status,401);
   assert.equal((await send({invite:'123.invalid'})).status,401);
   const expired=String(Date.now()-3600001);
   assert.equal((await send({invite:expired+'.'+signed('studio-invite',expired)})).status,401);

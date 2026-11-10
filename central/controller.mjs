@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {createHmac,createHash,timingSafeEqual,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -12,14 +13,14 @@ export const SPECIALISTS=Object.freeze([
 function passwordlessPanel(){return process.env.HORIZON_PANEL_ONLY==='true';}
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio-chat.mjs':'studio-chat.mjs','studio-chat.css':'studio-chat.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css','experience.css':'experience.css',
+'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio-shell.mjs':'studio-shell.mjs','studio-shell.css':'studio-shell.css','studio-mark.svg':'studio-mark.svg','studio-chat.mjs':'studio-chat.mjs','studio-chat.css':'studio-chat.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css','experience.css':'experience.css',
 'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 // Asset fingerprints invalidate stale CSS/JS across deploys, including under an
 // already-installed service worker. Every deploy generates its own version.
-const UI_VERSION_FILES=Object.freeze(['index.html','style.css','studio.css','wireframe.css','experience.css',
+const UI_VERSION_FILES=Object.freeze(['studio-shell.mjs','studio-shell.css','studio-mark.svg','index.html','style.css','studio.css','wireframe.css','experience.css',
  'app.js','studio-chat.mjs','studio-chat.css','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs','sw.js']);
-const MODULE_FILES=Object.freeze(['studio-chat.mjs','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs']);
+const MODULE_FILES=Object.freeze(['studio-shell.mjs','studio-chat.mjs','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs']);
 let uiVersionMemo;
 function uiVersion(){
  if(!uiVersionMemo){
@@ -32,7 +33,7 @@ function uiVersion(){
 }
 function versionHtml(value,version){
  let text=value.toString('utf8');
- for(const name of ['style.css','studio.css','studio-chat.css','wireframe.css','experience.css','app.js']){
+ for(const name of ['studio-shell.css','style.css','studio.css','studio-chat.css','wireframe.css','experience.css','app.js']){
   text=text.replaceAll('"./'+name+'"','"./'+name+'?v='+version+'"');
  }
  return Buffer.from(text);
@@ -234,26 +235,29 @@ async function resolveTaskDefaults(value){
  if(!selected)throw Error('selecione_um_repositorio_da_lista');
  const valueProject=String(value.project||selected.name).toLowerCase();
  if(value.delivery_type==='new_product')return {...value,project:valueProject,repository:repo,allowed_paths:[]};
- const root=await githubOwner('repos/'+repo+'/contents?ref='+encodeURIComponent(selected.defaultBranch));
+ let root;
+ try{root=await githubOwner('repos/'+repo+'/contents?ref='+encodeURIComponent(selected.defaultBranch));}
+ catch(error){
+  if(error?.message==='github_repos_http_404'){
+   const info=await githubOwner('repos/'+repo);
+   if(info.size===0)throw Error('Repositório vazio: escolha Novo produto para iniciar ou selecione um repositório com arquivos.');
+  }
+  throw error;
+ }
  const resolved=deriveCodePaths(root,repo);
  if(!resolved.length)throw Error('nao_encontrei_arquivos_editaveis_nesse_projeto');
  return {...value,project:valueProject,repository:repo,allowed_paths:resolved};
 }
 
 
-// Horizon Studio catalogs verified VPS deployments, independently of GitHub repositories.
-// Hosts are owner-controlled and fixed here; the browser cannot submit arbitrary URLs.
-const VPS_STUDIO_APPS=Object.freeze([
-  {id:'ronda-pro',name:'Ronda Pro',url:'https://maxvel.hzsys.tech/'},
-  {id:'fluxo',name:'Fluxo Restaurantes',url:'https://fluxo.hzsys.tech/'},
-  {id:'elo',name:'Elo',url:'https://elo.hzsys.tech/'},
-  {id:'entre-elas',name:'Entre Elas',url:'https://entreelas.hzsys.tech/'},
-  {id:'powerbi-mc',name:'Power BI MC',url:'https://powerbi-mc.hzsys.tech/'}
-]);
-export function vpsStudioApps(){return VPS_STUDIO_APPS.map(({id,name,url})=>({id,name,label:name,url,source:'vps'}));}
+// One project identity owns both the deployed application and its GitHub source.
+// Keep only verified associations; an unknown association is not a second project.
+const STUDIO_PROJECTS=Object.freeze(JSON.parse(readFileSync(new URL('./studio-projects.json',import.meta.url),'utf8')));
+const VPS_STUDIO_APPS=STUDIO_PROJECTS.filter(project=>project.url);
+export function vpsStudioApps(){return STUDIO_PROJECTS.map(project=>({...project,label:project.name,source:project.url?'vps':'github'}));}
 export async function vpsStudioPreview(appId){
  const app=VPS_STUDIO_APPS.find(x=>x.id===appId);
- if(!app)return {ready:false,source:'vps',message:'Aplicativo não cadastrado na VPS.'};
+ if(!app)return {ready:false,source:'vps',message:'A publicação deste projeto ainda não foi identificada no catálogo. O código continua disponível pelo GitHub.'};
  try{
   const response=await fetch(app.url,{method:'HEAD',redirect:'manual',signal:AbortSignal.timeout(6500),
     headers:{'user-agent':'Horizon-Studio-VPS-Preview/2','accept':'text/html'}});
@@ -595,7 +599,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   if(!limit('studio-unlock:'+ip,8)){send(res,429,{error:'tentativas_excedidas'});return true;}
   try{
    const input=await body(req,1800);
-   if(!studioAuthorized(req)&&!studioInvite(input.invite)&&!same(sec(),String(input.password||''))){
+   if(!studioAuthorized(req)&&!studioInvite(input.invite)){
     send(res,401,{error:'acesso_do_proprietario_necessario'});return true;
    }
    const stamp=String(Date.now()),token=stamp+'.'+signature('studio:'+stamp);
@@ -684,7 +688,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   return true;
  }
  if(req.method==='GET'&&raw==='/central/api/studio/apps'){
-  send(res,200,{source:'vps',apps:vpsStudioApps(),count:VPS_STUDIO_APPS.length});return true;
+  send(res,200,{source:'vps',apps:vpsStudioApps(),count:STUDIO_PROJECTS.length});return true;
  }
  if(req.method==='GET'&&raw==='/central/api/studio/preview'){
   const id=new URL(req.url,'http://local').searchParams.get('appId')||'';

@@ -1,3 +1,4 @@
+import {studioShellMarkup,mountStudioShell} from './studio-shell.mjs';
 import {studioConversationMarkup,studioAgentsMarkup,mountStudioConversation,stopStudioConversation,selectStudioConversation} from './studio-chat.mjs';
 import {enrollOwner,loginOwner} from './passkey-client.mjs';
 import {splitTaskPlan,taskPlanStatus} from './task-steps.mjs';
@@ -352,7 +353,7 @@ async function loadVpsStudioApps(){
  try{
   if(PAGES_MODE){studioApps=[];return;}
   const data=await api('studio/apps');
-  studioApps=(data.apps||[]).filter(a=>/^[a-z][a-z0-9-]+$/.test(a.id)&&/^https:\/\/[a-z0-9.-]+\.hzsys\.tech\/$/.test(a.url));
+  studioApps=(data.apps||[]).filter(a=>/^[a-z][a-z0-9-]+$/.test(a.id));
  }catch{studioApps=[];}
  if(active()==='estudio')render();
 }
@@ -613,30 +614,16 @@ function studioProgress(){
 }
 function studioRoster(){return studioAgentsMarkup();}
 function pageEstudio(){
- return '<div class="hz-studio-v2" id="hz-studio-app" aria-label="Horizon Studio">'+
- '<div class="hz-studio-heading"><span><strong>Seu espaço de criação</strong><small>Horizon Studio</small></span><a href="#inicio" aria-label="Ir à Central">Central ↗</a></div>'+
- '<div class="hz-studio-tabs" role="tablist" aria-label="Área de trabalho do Studio">'+
- '<button type="button" role="tab" aria-controls="hz-pane-preview" id="hz-tab-preview" data-hz-tab="preview" aria-selected="true">Prévia</button>'+
- '<button type="button" role="tab" aria-controls="hz-pane-chat" id="hz-tab-chat" data-hz-tab="chat" aria-selected="false">Conversar</button>'+
- '<button type="button" role="tab" aria-controls="hz-pane-agents" id="hz-tab-agents" data-hz-tab="agents" aria-selected="false">Agentes</button></div>'+
- '<section id="hz-pane-preview" class="hz-studio-pane" role="tabpanel" aria-labelledby="hz-tab-preview">'+studioMarkup(studioApps)+'</section>'+
- '<section id="hz-pane-chat" class="hz-studio-pane" role="tabpanel" aria-labelledby="hz-tab-chat" hidden>'+
- studioConversationMarkup(studioApps)+
- '</section>'+
- '<section id="hz-pane-agents" class="hz-studio-pane" role="tabpanel" aria-labelledby="hz-tab-agents" hidden>'+studioRoster()+'</section>'+
- '<details class="hz-studio-tools" id="hz-studio-tools"><summary>Ferramentas de desenvolvimento <span aria-hidden="true">⌄</span></summary>'+
- '<div class="studio-controls" role="group" aria-label="Área do estúdio"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Enviar tarefa</button></div>'+
- '<div id="studio-builder-panel" hidden>'+wireframeMarkup()+'</div>'+
- '<div id="studio-code-panel" hidden>'+ (PAGES_MODE?'<p class="hz-muted">Comandos disponíveis na VPS.</p>':requestForm())+
- '<section id="studio-progress" class="studio-progress" aria-label="Atividade real dos agentes">'+studioProgress()+'</section></div></details></div>';
+ const tools='<div class="hz-studio-tools"><div class="studio-controls"><button type="button" class="studio-device" id="studio-tab-wireframe">Desenhar telas</button><button type="button" class="studio-device" id="studio-tab-code">Enviar tarefa</button></div><div id="studio-builder-panel" hidden>'+wireframeMarkup()+'</div><div id="studio-code-panel" hidden>'+requestForm()+'<section id="studio-progress">'+studioProgress()+'</section></div></div>';
+ return studioShellMarkup(studioApps,tools);
 }
 
 let renderedPage=null;
 function render(){
- updateMenu();const page=active();
+ updateMenu();const page=active();document.body.classList.toggle('studio-surface',page==='estudio');
  if(page==='estudio'&&renderedPage==='estudio'&&$('studio-root')&&$('studio-project')?.options.length===studioApps.length){
   const progress=$('studio-progress');if(progress)progress.innerHTML=studioProgress();
-  const agentsPane=$('hz-pane-agents');if(agentsPane)agentsPane.innerHTML=studioRoster();
+  const agentsPane=$('hs-roster');if(agentsPane)agentsPane.innerHTML=studioRoster();
   notifyStudioChanged();updateConn();return;
  }
  if(renderedPage==='estudio'){stopStudio();stopStudioConversation();}
@@ -653,20 +640,10 @@ function render(){
   const switchTab=value=>{const building=value==='builder';studioView=building?'builder':'code';try{sessionStorage.setItem('horizon.studio.active-view',studioView)}catch{}builder.hidden=!building;code.hidden=building;b.classList.toggle('selected',building);c.classList.toggle('selected',!building);b.setAttribute('aria-pressed',String(building));c.setAttribute('aria-pressed',String(!building));if(!building)notifyStudioChanged()};
   b.onclick=()=>switchTab('builder');c.onclick=()=>switchTab('code');
   switchTab(studioView);
-  const tabs=[...document.querySelectorAll('[data-hz-tab]')];
-  let pane='preview';
-  try{pane=sessionStorage.getItem('horizon.studio.mobile-pane')||'preview'}catch{}
-  const activatePane=value=>{
-   if(!['preview','chat','agents'].includes(value))value='preview';
-   tabs.forEach(tab=>{const chosen=tab.dataset.hzTab===value;tab.setAttribute('aria-selected',String(chosen));tab.classList.toggle('active',chosen);});
-   for(const id of ['preview','chat','agents']){const section=$('hz-pane-'+id);if(section)section.hidden=id!==value;}
-   try{sessionStorage.setItem('horizon.studio.mobile-pane',value)}catch{}
-   if(value==='preview')notifyStudioChanged();
-  };
-  tabs.forEach(tab=>tab.addEventListener('click',()=>activatePane(tab.dataset.hzTab)));
-  activatePane(pane);
-  void mountStudioConversation();
-  mountStudio({repositories:studioApps,onProjectChange:selectStudioConversation});}
+  mountStudioShell(studioApps);
+  $('hz-studio-app').addEventListener('studio-project-selected',e=>{if(e.detail.repository){selectedRepository=e.detail.repository;const project=$('project');if(project)project.value=selectedRepository;}});
+ }
+
  updateConn();
 }
 

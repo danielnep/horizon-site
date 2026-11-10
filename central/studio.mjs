@@ -20,6 +20,7 @@ function setStatus(message,kind='pending'){
  const root=state.root;if(!root)return;
  const el=$(root,'studio-status');if(!el)return;
  el.textContent=message;el.dataset.kind=kind;
+ const summary=document.getElementById('hs-preview-status');if(summary)summary.textContent=kind==='ready'?'Prévia conectada':kind==='error'?'Prévia indisponível':kind==='empty'?'Sem publicação':'Verificando prévia';
 }
 function setDevice(name){
  if(!SIZES[name])return;
@@ -34,9 +35,10 @@ function setDevice(name){
 function fitPreview(){
  const root=state.root;if(!root)return;
  const wrap=$(root,'studio-canvas'),viewport=$(root,'studio-viewport');if(!wrap||!viewport)return;
- const spec=SIZES[state.device],padding=24;
+ const spec=SIZES[state.device],padding=8;
  const available=Math.max(240,wrap.clientWidth-padding);
- const scale=Math.min(1,available/spec.width);
+ const height=Math.max(200,wrap.clientHeight-8);
+ const scale=Math.min(1,available/spec.width,height/spec.height);
  viewport.style.width=spec.width+'px';
  viewport.style.height=spec.height+'px';
  viewport.style.transform='scale('+scale+')';
@@ -107,7 +109,7 @@ function setManual(value){
  state.currentUrl='';state.lastRevision='';persist();void probe({force:true});
 }
 export function studioMarkup(repositories=[]){
- const available=repositories.filter(r=>r&&/^[a-z][a-z0-9-]+$/.test(r.id)&&/^https:\/\/[a-z0-9.-]+\.hzsys\.tech\/$/.test(r.url));
+ const available=repositories.filter(r=>r&&/^[a-z][a-z0-9-]+$/.test(r.id));
  if(!available.some(r=>r.id===state.project))state.project=available[0]?.id||'';
  const options=available.map(r=>'<option value="'+safe(r.id)+'"'+(state.project===r.id?' selected':'')+'>'+safe(r.label||r.name||r.id)+'</option>').join('');
  return '<section id="studio-root" class="studio-preview" aria-label="Preview interativo">'+
