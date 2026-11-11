@@ -36,10 +36,10 @@ test('Public catalog and Studio assets work without GitHub API; preview remains 
   const list=await fetch(base+'/central/api/studio/apps');assert.equal(list.status,200);
   const payload=await list.json();assert.equal(payload.count,payload.apps.length);
   assert.equal(payload.apps.find(a=>a.id==='fluxo').repository,'danielnep/sistema-fluxo-restaurantes');
-  for(const file of ['studio-shell.mjs','studio-shell.css','studio-mark.svg'])assert.equal((await fetch(base+'/central/'+file)).status,200);
+  for(const file of ['studio-r3.mjs','studio-r3.css','icon.svg'])assert.equal((await fetch(base+'/central/'+file)).status,200);
   for(const id of ['','http://internal','unknown_app'])assert.equal((await (await fetch(base+'/central/api/studio/preview?appId='+encodeURIComponent(id))).json()).ready,false);
-  const script=await readFile(new URL('../central/studio.mjs',import.meta.url),'utf8');
-  assert.match(script,/\/central\/api\/studio\/preview\?appId=/);
+  const script=await readFile(new URL('../central/studio-r3.mjs',import.meta.url),'utf8');
+  assert.match(script,/studio\/preview\?appId=/);
   assert.doesNotMatch(script,/\/central\/api\/preview\?repository=/);
  }finally{server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
 });

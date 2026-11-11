@@ -13,14 +13,15 @@ export const SPECIALISTS=Object.freeze([
 function passwordlessPanel(){return process.env.HORIZON_PANEL_ONLY==='true';}
 const ROOT='https://api.github.com/repos/danielnep/May-Maestro-Executor/';
 const ASSETS=Object.freeze({
-'':'index.html','index.html':'index.html','app.js':'app.js','passkey-client.mjs':'passkey-client.mjs','style.css':'style.css','studio-shell.mjs':'studio-shell.mjs','studio-shell.css':'studio-shell.css','studio-mark.svg':'studio-mark.svg','studio-chat.mjs':'studio-chat.mjs','studio-chat.css':'studio-chat.css','studio.mjs':'studio.mjs','studio.css':'studio.css','wireframe.mjs':'wireframe.mjs','wireframe.css':'wireframe.css','experience.css':'experience.css',
-'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js','icon.svg':'icon.svg','task-steps.mjs':'task-steps.mjs','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'});
+  '':'index.html','index.html':'index.html',
+  'studio-r3.mjs':'studio-r3.mjs','studio-r3.css':'studio-r3.css',
+  'manifest.webmanifest':'manifest.webmanifest','sw.js':'sw.js',
+  'icon.svg':'icon.svg','icon-192.png':'icon-192.png','icon-512.png':'icon-512.png'
+});
 const MIME={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 // Asset fingerprints invalidate stale CSS/JS across deploys, including under an
 // already-installed service worker. Every deploy generates its own version.
-const UI_VERSION_FILES=Object.freeze(['studio-shell.mjs','studio-shell.css','studio-mark.svg','index.html','style.css','studio.css','wireframe.css','experience.css',
- 'app.js','studio-chat.mjs','studio-chat.css','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs','sw.js']);
-const MODULE_FILES=Object.freeze(['studio-shell.mjs','studio-chat.mjs','studio.mjs','wireframe.mjs','task-steps.mjs','passkey-client.mjs']);
+const UI_VERSION_FILES=Object.freeze(['index.html','studio-r3.mjs','studio-r3.css','icon.svg','sw.js']);
 let uiVersionMemo;
 function uiVersion(){
  if(!uiVersionMemo){
@@ -32,18 +33,10 @@ function uiVersion(){
  return uiVersionMemo;
 }
 function versionHtml(value,version){
- let text=value.toString('utf8');
- for(const name of ['studio-shell.css','style.css','studio.css','studio-chat.css','wireframe.css','experience.css','app.js']){
-  text=text.replaceAll('"./'+name+'"','"./'+name+'?v='+version+'"');
- }
- return Buffer.from(text);
-}
-function versionImports(value,version){
- let text=value.toString('utf8');
- for(const name of MODULE_FILES){
-  text=text.replaceAll("'./"+name+"'","'./"+name+"?v="+version+"'");
- }
- return Buffer.from(text);
+ let html=value.toString('utf8');
+ for(const name of ['studio-r3.css','studio-r3.mjs'])
+  html=html.replaceAll('"./'+name+'"','"./'+name+'?v='+version+'"');
+ return Buffer.from(html);
 }
 
 const ID=/^[a-z0-9][a-z0-9-]{2,63}$/;
@@ -531,10 +524,7 @@ export async function handleCentral(req,res,{reader=readFile}={}){
   if(!asset){send(res,404,{error:'not_found'});return true;}
   try{
    let value=await reader(fileURLToPath(new URL('./'+asset,import.meta.url)));
-   if(asset==='index.html'||asset==='app.js'){
-    const version=await uiVersion();
-    value=asset==='index.html'?versionHtml(value,version):versionImports(value,version);
-   }
+   if(asset==='index.html')value=versionHtml(value,await uiVersion());
    const ext=asset.split('.').pop();
    const headers={'content-type':MIME[ext]||'application/octet-stream','x-content-type-options':'nosniff',
     // No reusable cache for UI assets: HTML + fingerprinted URLs always agree.
@@ -621,6 +611,41 @@ export async function handleCentral(req,res,{reader=readFile}={}){
    const message=String(e?.message||'');
    send(res,/vps_http_400/.test(message)?400:503,{error:/vps_http_400/.test(message)?message.split(': ').slice(1).join(': '):'Antigravity temporariamente indisponível. Sua mensagem permanece no campo.'});
   }return true;
+ }
+ // Read-only, owner-authorized source explorer. Only public repositories
+ // returned by the owner's GitHub catalog are selectable; never accept URLs.
+ if(req.method==='GET'&&(raw==='/central/api/studio/files'||raw==='/central/api/studio/file')){
+  if(!studioAuthorized(req)){send(res,401,{error:'acesso_do_proprietario_necessario'});return true;}
+  const params=new URL(req.url,'http://local').searchParams;
+  const repository=params.get('repository')||'';
+  const path=params.get('path')||'';
+  const parts=path?path.split('/'):[];
+  const denied=/(credential|password|secret|private.?key|token|\.env|\.db$|\.sqlite|\.pem$)/i;
+  if(!REPO.test(repository)||path.length>200||parts.some(v=>!v||v==='.'||v==='..'||v.startsWith('.')||!/^[a-zA-Z0-9_.-]{1,100}$/.test(v)||denied.test(v))){
+   send(res,400,{error:'arquivo_ou_repositorio_invalido'});return true;
+  }
+  if(raw.endsWith('/file')&&!path){send(res,400,{error:'caminho_obrigatorio'});return true;}
+  try{
+   const repositories=await ownerRepositories();
+   const selected=repositories.find(x=>x.repository===repository);
+   if(!selected){send(res,404,{error:'repositorio_nao_autorizado'});return true;}
+   const loc='repos/'+repository+'/contents'+(parts.length?'/'+parts.map(encodeURIComponent).join('/'):'')+'?ref='+encodeURIComponent(selected.defaultBranch);
+   const payload=await githubOwner(loc);
+   if(raw.endsWith('/files')){
+    if(!Array.isArray(payload)){send(res,404,{error:'pasta_nao_encontrada'});return true;}
+    const items=payload.filter(x=>x&&(x.type==='file'||x.type==='dir')&&!x.name.startsWith('.')&&!denied.test(x.name)&&typeof x.path==='string')
+      .slice(0,120).map(x=>({name:x.name,path:x.path,type:x.type}));
+    send(res,200,{repository,path,items});return true;
+   }
+   if(!payload||payload.type!=='file'||payload.encoding!=='base64'||typeof payload.content!=='string'||payload.size>200000){
+    send(res,415,{error:'arquivo_indisponivel_ou_muito_grande'});return true;
+   }
+   const content=Buffer.from(payload.content.replace(/\s/g,''),'base64').toString('utf8');
+   if(content.includes('\u0000')){send(res,415,{error:'arquivo_nao_textual'});return true;}
+   send(res,200,{repository,path,content});return true;
+  }catch(error){
+   send(res,/404/.test(error.message)?404:503,{error:'codigo_do_repositorio_indisponivel'});return true;
+  }
  }
  const publicRead=(req.method==='POST'&&raw==='/central/api/ai/chat')||req.method==='GET'&&[
  '/central/api/overview','/central/api/agents','/central/api/tasks',

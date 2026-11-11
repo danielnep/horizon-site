@@ -16,15 +16,13 @@ test('não marca como concluído sem associação verificável',()=>{
  assert.equal(statuses[1].verified,false);
  assert.equal(statuses[2].verified,false);
 });
-test('servidor publica módulo do planejamento para a interface',async()=>{
+test('interface antiga de planejamento não é mais servida pelo Studio R3',async()=>{
  const {startServer}=await import('../server.mjs');
  const {once}=await import('node:events');
  const server=startServer({listenPort:0,background:false});await once(server,'listening');
  try{
   const response=await fetch('http://127.0.0.1:'+server.address().port+'/central/task-steps.mjs');
-  assert.equal(response.status,200);
-  assert.match(response.headers.get('content-type'),/text\/javascript/);
-  assert.match(await response.text(),/splitTaskPlan/);
+  assert.equal(response.status,404);
  }finally{server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
 });
 

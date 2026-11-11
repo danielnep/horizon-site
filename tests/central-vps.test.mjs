@@ -106,7 +106,7 @@ test('browser receives disconnected status without triggering development tasks'
   assert.equal(body.available.vps,false);
   assert.equal(body.tasks.length,0);
   assert.equal(body.usage.total,null);
-  const js=await fetch(base+'/central/app.js').then(x=>x.text());
-  assert.match(js,/VPS desconectada/);
+  const js=await fetch(base+'/central/studio-r3.mjs').then(x=>x.text());
+  assert.match(js,/VPS indisponível/);
  }finally{server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
 });

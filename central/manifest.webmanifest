@@ -1,13 +1,13 @@
 {
-  "name": "Horizon Studio | Central Horizon",
+  "name": "Horizon Studio",
   "short_name": "Horizon Studio",
   "id": "./",
-  "start_url": "./#estudio",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#191919",
-  "theme_color": "#191919",
-  "description": "Studio pessoal de criação e acompanhamento de aplicativos Horizon.",
+  "background_color": "#101012",
+  "theme_color": "#141416",
+  "description": "Estúdio próprio Horizon para desenvolver aplicativos na VPS.",
   "icons": [
     {
       "src": "./icon-192.png",

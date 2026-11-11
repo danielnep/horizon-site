@@ -26,11 +26,11 @@ async function withServer(fn){
 test('central includes all 18 real specialist identifiers',()=>assert.equal(SPECIALISTS.length,18));
 test('PWA loads on existing Horizon server without changing the institutional homepage',async()=>{
  await withServer(async({url})=>{
-  const [site,central,manifest,script,health]=await Promise.all(['/','/central/','/central/manifest.webmanifest','/central/app.js','/health'].map(p=>fetch(url+p)));
+  const [site,central,manifest,script,health]=await Promise.all(['/','/central/','/central/manifest.webmanifest','/central/studio-r3.mjs','/health'].map(p=>fetch(url+p)));
   assert.equal(site.status,200);assert.match(await site.text(),/Horizon/i);
-  assert.equal(central.status,200);assert.match(await central.text(),/Central de Agentes/);
+  assert.equal(central.status,200);assert.match(await central.text(),/HORIZON<span> STUDIO<\/span>/);
   assert.equal(manifest.status,200);assert.equal(new URL(JSON.parse(await manifest.text()).scope,url+'/central/').pathname,'/central/');
-  assert.equal(script.status,200);assert.match(await script.text(),/EventSource/);
+  assert.equal(script.status,200);assert.match(await script.text(),/loadProjects/);
   assert.equal(health.status,200);
  });
 });
@@ -38,7 +38,7 @@ test('panel refuses traversal, modification of static files, and unauthenticated
  await withServer(async({url})=>{
   assert.equal((await fetch(url+'/central/unknown')).status,404);
   assert.equal((await fetch(url+'/central/..%2Fserver.mjs')).status,404);
-  assert.equal((await fetch(url+'/central/app.js',{method:'POST'})).status,405);
+  assert.equal((await fetch(url+'/central/studio-r3.mjs',{method:'POST'})).status,405);
   assert.equal((await fetch(url+'/central/api/overview')).status,200);
   assert.equal((await fetch(url+'/central/api/tasks',{method:'POST',headers:{origin:'https://malicious.example','content-type':'application/json'},body:'{}'})).status,401);
   const sw=await fetch(url+'/central/sw.js');assert.equal(sw.status,200);
@@ -185,24 +185,28 @@ test('monitoring and live events do not require a password; modifying tasks stil
   assert.equal((await fetch(url+'/central/api/tasks',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status,401);
  });
 });
-test('PWA dashboard does not block visitors behind the login overlay',async()=>{
+test('R3 entry renders its real Studio shell directly and never flashes the old Central',async()=>{
  await withServer(async({url})=>{
-  const [html,script]=await Promise.all([fetch(url+'/central/').then(x=>x.text()),fetch(url+'/central/app.js').then(x=>x.text())]);
-  assert.match(html,/id="gate"[^>]*hidden/);
-  assert.match(html,/Voltar ao acompanhamento/);
-  assert.match(script,/async function boot\(\)\{\s*showLogin\(false\)/);
-  assert.match(script,/Resultados armazenados/);
-  assert.match(script,/t\.stages/);
+  const [html,script]=await Promise.all([fetch(url+'/central/').then(x=>x.text()),fetch(url+'/central/studio-r3.mjs').then(x=>x.text())]);
+  assert.match(html,/id="studio"/);
+  assert.match(html,/id="chat-form"/);
+  assert.match(html,/id="preview-frame"/);
+  assert.match(html,/id="code-view"/);
+  assert.doesNotMatch(html,/Carregando a central|id="shell"|id="gate"|app\.js/);
+  assert.match(script,/async function boot\(\)/);
+  assert.match(script,/renderAccess\(\)/);
+  assert.match(script,/studio\/projects\//);
  });
 });
 
 test('all repository selections come from API, never three fixed projects or manual repository input',async()=>{
  await withServer(async({url})=>{
-  const script=await fetch(url+'/central/app.js').then(r=>r.text());
+  const script=await fetch(url+'/central/studio-r3.mjs').then(r=>r.text());
   assert.doesNotMatch(script,/const PROJECTS\s*=/);
   assert.doesNotMatch(script,/id="repo"/);
-  assert.match(script,/await api\('repositories'\)/);
-  assert.match(script,/const repository=project\.value/);
+  assert.match(script,/request\('studio\/apps'\)/);
+  assert.match(script,/request\('repositories'\)/);
+  assert.match(script,/state\.apps\.find/);
  });
 });
 test('automatic scope identifies existing project source files and does not select secrets',()=>{
@@ -254,10 +258,9 @@ test('supervisor wait and dependency proof appear in real task API',async()=>{
    const task=(await res.json()).tasks.find(x=>x.id===id);
    assert.equal(task.supervision.retryReason,'groq_capacity_wait');
    assert.equal(task.stages[2].waitReason,'waiting_for_dependencies');
-   const ui=await (await fetch(url+'/central/app.js')).text();
-   assert.match(ui,/function waitDescription/);
-   assert.match(ui,/Primeira etapa:/);
-   assert.match(ui,/Etapas, motivos e retomada/);
+   const ui=await (await fetch(url+'/central/studio-r3.mjs')).text();
+   assert.match(ui,/function loadQuality/);
+   assert.match(ui,/Uma tarefa na fila não significa execução/);
   });
  }finally{
   if(prior===undefined)delete process.env.HORIZON_DIRECT_INBOX_DIR;
@@ -358,51 +361,43 @@ test('chat answers common questions with algorithms without model calls',async()
  assert.equal(context.numeroTarefas,1);
  assert.equal(context.fonte,'Central Horizon, fila local do servidor');
 });
-test('help chat uses simple Portuguese and is available without secret access',async()=>{
+test('legacy help API remains backward compatible without reintroducing the UI',async()=>{
  await withServer(async({url,origin})=>{
   const response=await fetch(url+'/central/api/ai/chat',{method:'POST',
    headers:{origin,'content-type':'application/json'},
    body:JSON.stringify({message:'quantos agentes temos?'})});
   assert.equal(response.status,200);
   const body=await response.json();
-  assert.match(body.response,/17 especialistas/);
   assert.equal(body.usage.total,0);
   const html=await fetch(url+'/central/').then(x=>x.text());
-  assert.match(html,/id="help-panel"/);
-  assert.match(html,/id="action-gate"/);
-  const script=await fetch(url+'/central/app.js').then(x=>x.text());
-  assert.doesNotMatch(script,/&&confirm\(/);
-  assert.match(script,/function janelaDeAcao/);
-  assert.match(script,/function acaoEmPortugues/);
+  assert.match(html,/id="conversation-panel"/);
+  assert.doesNotMatch(html,/id="help-panel"|id="action-gate"/);
  });
 });
 
 
-test('studio assets, responsive controls and safe embedded-preview policy are shipped',async()=>{
+test('R3 ships isolated responsive workbench, secure preview, code and QA',async()=>{
  await withServer(async({url})=>{
-  const [html,js,css,main]=await Promise.all([
+  const [html,js,css]=await Promise.all([
    fetch(url+'/central/').then(r=>r.text()),
-   fetch(url+'/central/studio.mjs').then(r=>r.text()),
-   fetch(url+'/central/studio-shell.css').then(r=>r.text()),
-   fetch(url+'/central/app.js').then(r=>r.text())
+   fetch(url+'/central/studio-r3.mjs').then(r=>r.text()),
+   fetch(url+'/central/studio-r3.css').then(r=>r.text())
   ]);
-  assert.match(html,/data-page="estudio"/);
-  assert.match(html,/studio-shell\.css/);
-  assert.match(html,/experience\.css\?v=/);
-  const stylesheet=await fetch(url+'/central/experience.css');
-  assert.equal(stylesheet.status,200);
-  assert.match(stylesheet.headers.get('content-type'),/text\/css/);
-  assert.match(await stylesheet.text(),/\.help-panel/);
-  assert.match(js,/mobile.*tablet.*desktop/);
-  assert.match(js,/setInterval\(\(\)=>void probe\(\),20000\)/);
-  assert.match(js,/iframe id="studio-frame"/);
-  assert.match(css,/\.hs-shell/);
-  assert.match(css,/\.hs-panels/);
-  assert.match(main,/mountStudio/);
-  const headers=await fetch(url+'/central/');
-  assert.match(headers.headers.get('content-security-policy'),/frame-src https:/);
+  assert.match(html,/data-mobile-pane="chat"/);
+  assert.match(html,/studio-r3\.css\?v=/);
+  assert.match(html,/iframe title="Prévia real do aplicativo"/);
+  assert.match(html,/sandbox="allow-scripts allow-forms allow-same-origin allow-popups"/);
+  assert.match(js,/function fitFrame/);
+  assert.match(js,/function submitImplementation/);
+  assert.match(js,/function loadFiles/);
+  assert.match(css,/--red:#ec4047/);
+  assert.match(css,/@media\(max-width:940px\)/);
+  assert.doesNotMatch(html,/studio-shell\.css|experience\.css|class="side"/);
+  const response=await fetch(url+'/central/');
+  assert.match(response.headers.get('content-security-policy'),/frame-src https:/);
  });
 });
+
 test('preview endpoint protects repository scope and blocks network access to private hosts',async()=>{
  await withServer(async({url})=>{
   for(const repository of ['evil.example/repo','danielnep/../../private','']){

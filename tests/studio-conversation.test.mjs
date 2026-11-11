@@ -33,7 +33,7 @@ test('Studio requires real owner access even with the public panel enabled',asyn
   assert.equal((await (await fetch(base+'/central/api/studio/session',{headers:{cookie:cookie.split(';')[0]}})).json()).authenticated,true);
   const denied=await fetch(base+'/central/api/studio/projects/fluxo/messages',{method:'POST',headers:{cookie:cookie.split(';')[0],'content-type':'application/json',origin:'https://evil.example'},body:JSON.stringify({message:'test'})});
   assert.equal(denied.status,403);
-  for(const file of ['studio-chat.mjs','studio-chat.css']){
+  for(const file of ['studio-r3.mjs','studio-r3.css']){
    assert.equal((await fetch(base+'/central/'+file)).status,200);
   }
  }finally{
