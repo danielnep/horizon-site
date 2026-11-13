@@ -1,3 +1,6 @@
+# Paleta superada (11/11/2026)
+**AVISO DE PRECEDÊNCIA:** as menções abaixo a vermelho como tema do Horizon Studio foram revogadas pela decisão do proprietário em 13/11/2026. Paleta ativa: dark/grafite neutro + preto pontual, azul #1F98FF e roxo #8B5CF6 como acentos, com pequenas variações e degradês permitidos. Vermelho é específico de projetos que o autorizem, como Ronda Pro. Em caso de conflito, prevalece esta correção e /opt/horizon-manuals/manuals/01-MARCA-DESIGN-DECISOES.md.
+
 # Horizon Studio R3 | reconstrução real 11/11/2026
 
 ## Autoridade
