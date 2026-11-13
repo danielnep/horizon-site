@@ -6,7 +6,7 @@ Conforme a diretriz do proprietário expressa no briefing R3 e nos manuais norma
 
 ## 0. Camada de identidade e bloqueio de propostas
 - **Autoridade:** proprietário, decisão do Studio R3 (11/11/2026) e correção expressa de 13/11/2026.
-- **Paleta:** cinza grafite muito escuro e preto em pontos, azul `#1F98FF` e violeta `#8B5CF6` como acentos; variações leves e degradês são permitidos dentro dessas famílias.
+- **Paleta:** cinza grafite muito escuro e preto em pontos; **branco em diferentes tons** (`#FFFFFF`, `#F5F5F5`, `#E5E5E5`) como detalhes combinados aos acentos azul `#1F98FF` e violeta `#8B5CF6`; variações leves e degradês são permitidos dentro dessas famílias.
 - **Proibido:** vermelho, teal, verde, ciano independente, outros matizes e cinzas coloridos no chrome do Studio.
 - **Portão:** Lume/Íris só podem propor cor externa se o proprietário solicitar ou aprovar explicitamente após ser consultado. Toda proposta exibe `CAMADA DE IDENTIDADE | CONFORME/BLOQUEADO`. Em erro, corrigir antes de entregar; Argos verifica.
 
@@ -30,6 +30,9 @@ Conforme a diretriz do proprietário expressa no briefing R3 e nos manuais norma
 - **Tipografia & Textos:**
   - Fontes: **Manrope** (marca/cabeçalhos), **Inter** (UI/labels) e **IBM Plex Mono** (código, hash, logs e endpoints).
   - `text-primary`: `#FFFFFF` (100% contraste, títulos e inputs ativos)
+  - `detail-white`: `#FFFFFF` (detalhes claros combinados com azul/violeta)
+  - `detail-white-soft`: `#F5F5F5` (nuance branca para ícones, traços e realces)
+  - `detail-white-muted`: `#E5E5E5` (nuance mais suave para detalhe e texto)
   - `text-secondary`: `#A1A1A1` (subtítulos e metadados)
   - `text-muted`: `#717171` (placeholders e rótulos inativos)
 
